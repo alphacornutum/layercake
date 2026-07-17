@@ -318,6 +318,10 @@ try {
 
     if (anyFailed) {
       opResult.status = "failed";
+      // After any mutation in the batch, a later failure must not report overall success.
+      if (mutated && !applyError) {
+        applyError = "One or more targets failed after mutation began";
+      }
     } else if (anyChanged) {
       opResult.status = "changed";
     } else {

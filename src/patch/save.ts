@@ -60,38 +60,22 @@ function timestampSlug(d = new Date()): string {
   );
 }
 
-/**
- * Save to dest via AE. When restoreOriginalPath is set, save back to that path
- * so the active project stays bound (AE has no true "save a copy").
- */
-function buildSaveScript(destPath: string, restoreOriginalPath: string | null): string {
+/** Save As via AE — switches the active project to dest. */
+function buildSaveCopyScript(destPath: string): string {
   const dest = escapeExtendScriptStringLiteral(destPath);
-  const restore =
-    restoreOriginalPath === null
-      ? "null"
-      : `"${escapeExtendScriptStringLiteral(restoreOriginalPath)}"`;
   return `
 if (!app.project) {
   throw new Error("No After Effects project is open.");
 }
 var dest = new File("${dest}");
-var beforePath = null;
-try {
-  if (app.project.file) beforePath = app.project.file.fsName;
-} catch (e) {}
 app.project.save(dest);
-var restorePath = ${restore};
-if (restorePath) {
-  app.project.save(new File(restorePath));
-}
 var activePath = null;
 try {
   if (app.project.file) activePath = app.project.file.fsName;
-} catch (e2) {}
+} catch (e) {}
 return JSON.stringify({
   writtenPath: dest.fsName,
-  activeProjectPath: activePath,
-  beforePath: beforePath
+  activeProjectPath: activePath
 });
 `.trim();
 }
@@ -184,13 +168,21 @@ export async function saveProject(
     mkdirSync(parent, { recursive: true });
   }
 
-  // Clean on-disk project: filesystem copy keeps the AE session on the original path.
-  if (
-    input.mode === "create_backup" &&
-    !context.dirty &&
-    context.projectPath !== null &&
-    existsSync(context.projectPath)
-  ) {
+  // create_backup: filesystem copy only (keeps session on the original path).
+  // Dirty projects are refused — AE has no Save-a-Copy, and writing back to the
+  // active path would be an implicit save_current (out of scope).
+  if (input.mode === "create_backup") {
+    if (context.dirty || context.projectPath === null || !existsSync(context.projectPath ?? "")) {
+      return {
+        ok: false,
+        error:
+          "create_backup requires a clean, saved project on disk. " +
+          "AE cannot copy unsaved edits without overwriting the active project path. " +
+          "Use save_copy to a backup destination, or save/discard first.",
+        code: "validation",
+        context,
+      };
+    }
     copyFileSync(context.projectPath, destPath);
     const afterCopy = await listProjectContext(host, options.timeoutMs);
     return {
@@ -205,19 +197,8 @@ export async function saveProject(
     };
   }
 
-  // AE save(file) switches the active project; restore original path when we have one
-  // so create_backup / save_copy can keep the session bound to the caller's project.
-  const restoreOriginal =
-    input.mode === "create_backup" && context.projectPath !== null
-      ? context.projectPath
-      : input.mode === "save_copy" && context.projectPath !== null
-        ? context.projectPath
-        : null;
-
-  // save_copy: write to dest and stay on dest (normal Save As). create_backup: restore.
-  const restorePath = input.mode === "create_backup" ? restoreOriginal : null;
-
-  const script = buildSaveScript(destPath, restorePath);
+  // save_copy: AE save(file) switches the active project to the destination (Save As).
+  const script = buildSaveCopyScript(destPath);
   const result = await host.evalScript(script, options.timeoutMs);
   if (!result.ok) {
     const line = result.line !== undefined ? ` (line ${result.line})` : "";

@@ -250,6 +250,34 @@ describe("saveProject", () => {
     if (!result.ok) expect(result.code).toBe("stale_fingerprint");
   });
 
+  it("refuses create_backup when the project is dirty", async () => {
+    const host = {
+      evalScript: async () => ({
+        ok: true as const,
+        result: JSON.stringify({
+          projectName: "Demo.aep",
+          projectPath: "/tmp/Demo.aep",
+          dirty: true,
+          revision: 4,
+          aeVersion: "25.0",
+        }),
+      }),
+    } as unknown as AeHost;
+    const result = await saveProject(
+      host,
+      {
+        mode: "create_backup",
+        expectedFingerprint: "rev:4|dirty:1|path:/tmp/Demo.aep",
+      },
+      { artifactDir: "/tmp", timeoutMs: 1000 },
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe("validation");
+      expect(result.error).toMatch(/clean, saved project/i);
+    }
+  });
+
   it("requires absolute path for save_copy", async () => {
     const host = {
       evalScript: async () => ({
