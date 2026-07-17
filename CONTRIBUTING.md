@@ -29,11 +29,14 @@ Requirements:
 | `npm run build` / `start`   | Compile to `dist/` and run                           |
 | `npm run docs:fetch`        | Refresh vendored guide markdown                      |
 
-Before opening a PR, run:
+Before opening a PR, run **full QA** (AgentSync is always included):
 
 ```bash
+agentsync check
 npm audit --audit-level=high && npm run typecheck && npm run lint && npm run fmt:check && npm test && npm run build
 ```
+
+If you edited `.ai/src/`, run `agentsync sync` before `agentsync check`.
 
 ### Unit vs host tests
 
@@ -81,9 +84,9 @@ Behavior contracts and planned changes live under [`openspec/`](openspec/). Pref
 
 ## PR checklist
 
-- [ ] `npm audit --audit-level=high`, `typecheck`, `lint`, `fmt:check`, `test`, and `build` pass
+- [ ] Full QA: `agentsync check`, `npm audit --audit-level=high`, `typecheck`, `lint`, `fmt:check`, `test`, and `build` pass
 - [ ] Public `ae_*` contracts / inventory JSON stay additive unless the change intentionally breaks them (prefer OpenSpec)
-- [ ] `README.md` updated if env vars or the operator-facing tool surface changed
+- [ ] Operator docs updated if env vars or the tool surface changed (`README.md` + linked `docs/mcp-tools.md` / `docs/setup.md` / `docs/troubleshooting.md` as needed)
 - [ ] `ARCHITECTURE.md` updated if layers, tools, host protocol, or capability ownership changed
-- [ ] Agent guidance edited under `.ai/src/` then `agentsync sync` (when applicable)
+- [ ] Agent guidance edited under `.ai/src/` then `agentsync sync` (when applicable); `agentsync check` clean
 - [ ] Host-facing changes exercised with `npm run test:ae` when a local AE install is available
