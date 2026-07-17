@@ -14,6 +14,10 @@ dist/
 *.p12
 credentials.json
 
+# AgentSync source of truth — never ignore (re-asserted after AI SYNC block; last match wins)
+!.ai/
+!.ai/**
+
 # Test / coverage
 coverage/
 .vitest/
@@ -61,3 +65,7 @@ Thumbs.db
 .cursor/skills/
 AGENTS.md
 # --- AI SYNC GENERATED END ---
+
+# Re-assert after generated AGENTS.md (block may be appended/refreshed at end of file)
+!.ai/
+!.ai/**
