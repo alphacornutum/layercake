@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
-import { isAbsolute, resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { isAbsolute, join, resolve } from "node:path";
 
 export type AeConfig = {
   executable: string | undefined;
@@ -8,6 +9,8 @@ export type AeConfig = {
   scriptTimeoutMs: number;
   /** UTF-8 byte ceiling for ae_get_layer / ae_get_source success JSON. */
   inspectMaxBytes: number;
+  /** Absolute dir for backups and LayerCake-generated artifacts. */
+  artifactDir: string;
 };
 
 export type ResolvedHostConfig = {
@@ -86,12 +89,21 @@ export function loadConfig(
       : resolve(cwd, docsRaw)
     : resolve(cwd, "vendor/after-effects-scripting-guide/docs");
 
+  const artifactRaw = env.AE_ARTIFACT_DIR?.trim();
+  let artifactDir: string;
+  if (artifactRaw) {
+    artifactDir = isAbsolute(artifactRaw) ? artifactRaw : resolve(cwd, artifactRaw);
+  } else {
+    artifactDir = join(tmpdir(), `layercake-artifacts-${process.pid}`);
+  }
+
   return {
     executable,
     appName,
     docsPath,
     scriptTimeoutMs: parseTimeout(env.AE_SCRIPT_TIMEOUT_MS),
     inspectMaxBytes: parseInspectMaxBytes(env.AE_INSPECT_MAX_BYTES),
+    artifactDir,
   };
 }
 

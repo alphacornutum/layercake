@@ -8,6 +8,7 @@ import { DOCS_ATTRIBUTION, DOCS_URI_PREFIX } from "./docs/attribution.js";
 import type { DocsCorpus } from "./docs/corpus.js";
 import { DocsError } from "./docs/corpus.js";
 import { getDoc, searchDocs } from "./docs/search.js";
+import { closeProject, openProjectGuarded, SessionError } from "./host/session.js";
 import type { AeHost } from "./host/types.js";
 import { validateScriptSource } from "./host/script-wrapper.js";
 import { getLayer } from "./inventory/get-layer.js";
@@ -15,8 +16,12 @@ import { getSource } from "./inventory/get-source.js";
 import { InspectSizeError } from "./inventory/inspect-limit.js";
 import { listComps } from "./inventory/list-comps.js";
 import { listFolders } from "./inventory/list-folders.js";
+import { listProjectContext } from "./inventory/list-project-context.js";
 import { listProjectSummary } from "./inventory/list-project-summary.js";
 import { listSources } from "./inventory/list-sources.js";
+import { applyProjectPatch } from "./patch/apply.js";
+import { patchProjectInputSchema } from "./patch/schema.js";
+import { saveProject } from "./patch/save.js";
 import {
   PRODUCT_SKILL_ENTRY_URI,
   PRODUCT_SKILL_NAME,
@@ -87,16 +92,144 @@ export function createServer(
     {
       title: "Open After Effects project",
       description:
-        "Open a local .aep (or .aet) project in the configured After Effects app. Path must be absolute (not relative). Warning: this affects the live AE GUI session.",
+        "Open a local .aep (or .aet) project in the configured After Effects app. Path must be absolute (not relative). " +
+        "If another project is already open at a different path, this refuses (dirty or clean) — call ae_close_project first. " +
+        "Same path already open is a no-op success. Warning: this affects the live AE GUI session.",
       inputSchema: z.object({
         path: z.string().describe("Absolute filesystem path to a .aep / .aet project file"),
       }),
     },
     async ({ path }) => {
       try {
-        const result = await host.openProject(path);
+        const result = await openProjectGuarded(host, path, config.scriptTimeoutMs);
         return textResult(JSON.stringify(result, null, 2));
       } catch (err) {
+        if (err instanceof SessionError && err.context) {
+          return textResult(
+            JSON.stringify(
+              {
+                error: err.message,
+                code: err.code,
+                context: err.context,
+              },
+              null,
+              2,
+            ),
+            true,
+          );
+        }
+        return textResult(errorText(err), true);
+      }
+    },
+  );
+
+  server.registerTool(
+    "ae_close_project",
+    {
+      title: "Close After Effects project",
+      description:
+        "Close the open project with an explicit non-interactive policy: " +
+        '"discard" (DO_NOT_SAVE_CHANGES) or "save" (SAVE_CHANGES). ' +
+        "Never prompts. Optional expectedFingerprint refuses close when the live project changed. " +
+        "Call this before ae_open_project when another project is already open.",
+      inputSchema: z.object({
+        policy: z
+          .enum(["discard", "save"])
+          .describe('Close policy: "discard" unsaved changes, or "save" then close'),
+        expectedFingerprint: z
+          .string()
+          .optional()
+          .describe("Optional fingerprint from ae_project_context; refuses if stale"),
+      }),
+    },
+    async ({ policy, expectedFingerprint }) => {
+      try {
+        const result = await closeProject(host, {
+          policy,
+          expectedFingerprint,
+          timeoutMs: config.scriptTimeoutMs,
+        });
+        return textResult(JSON.stringify(result, null, 2));
+      } catch (err) {
+        if (err instanceof SessionError && err.context) {
+          return textResult(
+            JSON.stringify(
+              {
+                error: err.message,
+                code: err.code,
+                context: err.context,
+              },
+              null,
+              2,
+            ),
+            true,
+          );
+        }
+        return textResult(errorText(err), true);
+      }
+    },
+  );
+
+  server.registerTool(
+    "ae_patch_project",
+    {
+      title: "Apply typed project patch",
+      description:
+        "Apply-only typed mutations against the open project (no preview/plan tokens, no implicit save). " +
+        "Requires project.path + project.fingerprint guards from ae_project_context. " +
+        "Initial op: set_text_style (exact font string via TextDocument/CharacterRange). " +
+        "Prefer this over ae_eval_script for routine text-style fixes. " +
+        "Call ae_save_project create_backup before risky broad patches; persist with save_copy after.",
+      inputSchema: patchProjectInputSchema,
+    },
+    async (input) => {
+      try {
+        const result = await applyProjectPatch(host, input, config.scriptTimeoutMs);
+        return textResult(JSON.stringify(result, null, 2), !result.ok);
+      } catch (err) {
+        if (err instanceof ConfigError) {
+          return textResult(errorText(err), true);
+        }
+        return textResult(errorText(err), true);
+      }
+    },
+  );
+
+  server.registerTool(
+    "ae_save_project",
+    {
+      title: "Save project copy or backup",
+      description:
+        "Explicit persistence for the open project. Modes: save_copy (absolute destination) and " +
+        "create_backup (timestamped under AE_ARTIFACT_DIR or caller path). " +
+        "Requires expectedFingerprint. Refuses overwrite unless allowOverwrite. " +
+        "Does not support in-place save_current. Patch/context/inventory never save implicitly.",
+      inputSchema: z.object({
+        mode: z.enum(["save_copy", "create_backup"]).describe("Persistence mode"),
+        expectedFingerprint: z.string().describe("Fingerprint from ae_project_context"),
+        path: z
+          .string()
+          .optional()
+          .describe("Absolute destination (required for save_copy; optional backup override)"),
+        allowOverwrite: z.boolean().optional().describe("Allow writing over an existing file"),
+        projectPath: z
+          .string()
+          .optional()
+          .describe("Optional absolute path guard matching the open project"),
+      }),
+    },
+    async ({ mode, expectedFingerprint, path, allowOverwrite, projectPath }) => {
+      try {
+        const result = await saveProject(
+          host,
+          { mode, expectedFingerprint, path, allowOverwrite, projectPath },
+          { artifactDir: config.artifactDir, timeoutMs: config.scriptTimeoutMs },
+        );
+        return textResult(JSON.stringify(result, null, 2), !result.ok);
+      } catch (err) {
+        if (err instanceof ConfigError) {
+          return textResult(errorText(err), true);
+        }
         return textResult(errorText(err), true);
       }
     },
@@ -108,10 +241,11 @@ export function createServer(
       title: "Evaluate ExtendScript",
       description:
         "Evaluate ExtendScript in the active After Effects session and return the result. " +
-        "Prefer ae_list_* / ae_get_* first for inventory; use this for one-off or mutating work. " +
+        "Prefer ae_list_* / ae_get_* first for inventory; use ae_patch_project for typed edits. " +
         "Look up comps/layers/items by stable id (not ephemeral index/name). Scripts can mutate the open project. " +
         "Prefer returning a value from the script body. Empty scripts are rejected. " +
-        "JSON.stringify / JSON.parse are available (extendscript-json polyfill).",
+        "JSON.stringify / JSON.parse are available (extendscript-json polyfill). " +
+        "Bypasses patch fingerprint guards — use with care.",
       inputSchema: z.object({
         script: z.string().describe("ExtendScript source to evaluate"),
         timeoutMs: z
@@ -229,6 +363,30 @@ export function createServer(
   );
 
   server.registerTool(
+    "ae_project_context",
+    {
+      title: "Bind open project context",
+      description:
+        "Cheap read-only bind token for the open project: path, dirty, revision, fingerprint, AE version. " +
+        "Prefer this for frequent fingerprint polling before/after patch or save. " +
+        "Use ae_project_summary instead for heavier health/portability orientation (effects, missing footage/fonts). " +
+        "Does not walk comps or audit dependencies.",
+      inputSchema: z.object({}),
+    },
+    async () => {
+      try {
+        const context = await listProjectContext(host, config.scriptTimeoutMs);
+        return textResult(JSON.stringify(context, null, 2));
+      } catch (err) {
+        if (err instanceof ConfigError) {
+          return textResult(errorText(err), true);
+        }
+        return textResult(errorText(err), true);
+      }
+    },
+  );
+
+  server.registerTool(
     "ae_project_summary",
     {
       title: "Summarize open project",
@@ -237,6 +395,7 @@ export function createServer(
         "Returns identity (name, path, AE version), counts (comps/footage/folders/layers), cheap settings (bitsPerChannel, timeDisplayType), " +
         "effect dependencies unique by matchName with origin (firstParty|thirdParty via Scripting Guide allowlist), available (installed in app.effects), " +
         "hasThirdPartyEffects, missing footage rollup, and missing/substituted fonts (soft-fails if Fonts API unavailable). " +
+        "Prefer ae_project_context for cheap fingerprint binding; this tool is the heavier health/portability passport. " +
         "Does not replace ae_list_comps / ae_list_sources for structure or media detail.",
       inputSchema: z.object({}),
     },

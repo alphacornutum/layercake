@@ -280,6 +280,18 @@ export type ProjectSummaryMissingFootage = {
   missingFootagePath: string | null;
 };
 
+/** Lean bind token from `ae_project_context` (no health walks). */
+export type ProjectContext = {
+  projectName: string;
+  projectPath: string | null;
+  dirty: boolean;
+  revision: number;
+  fingerprint: string;
+  aeVersion: string;
+  /** Present when dirty — live state may differ from the last saved file. */
+  warning?: string;
+};
+
 /** Compact project passport from `ae_project_summary`. */
 export type ProjectSummary = {
   projectName: string;

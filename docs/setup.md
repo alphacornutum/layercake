@@ -98,7 +98,7 @@ Add LayerCake as a **stdio** MCP server. Exact config file location depends on y
 
 - **Command:** `node` (or `npx` + `tsx` during development)
 - **Entrypoint:** absolute path to `dist/index.js` (or `src/index.ts`)
-- **Env:** `AE_APP_NAME` / `AE_EXECUTABLE` as above
+- **Env:** `AE_APP_NAME` / `AE_EXECUTABLE` as above; optional `AE_ARTIFACT_DIR` for backups (default: OS temp `layercake-artifacts-<pid>`)
 - **MCP key:** `layercake`
 
 Use an **absolute path**. Relative paths often fail because agents may start MCP servers from a different working directory.
