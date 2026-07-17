@@ -263,3 +263,38 @@ export type GetSourceArgs = {
   sourceName?: string;
   detail?: SourceInspectDetail;
 };
+
+export type EffectOrigin = "firstParty" | "thirdParty";
+
+export type ProjectSummaryEffect = {
+  matchName: string;
+  displayName: string;
+  origin: EffectOrigin;
+  available: boolean;
+  instanceCount: number;
+};
+
+export type ProjectSummaryMissingFootage = {
+  id: number;
+  name: string;
+  missingFootagePath: string | null;
+};
+
+/** Compact project passport from `ae_project_summary`. */
+export type ProjectSummary = {
+  projectName: string;
+  projectPath: string | null;
+  aeVersion: string;
+  numComps: number;
+  numFootage: number;
+  numFolders: number;
+  numLayers: number;
+  bitsPerChannel: number;
+  timeDisplayType: string;
+  hasThirdPartyEffects: boolean;
+  effects: ProjectSummaryEffect[];
+  missingFootageCount: number;
+  missingFootage: ProjectSummaryMissingFootage[];
+  fontsApiAvailable: boolean;
+  missingOrSubstitutedFonts: string[];
+};

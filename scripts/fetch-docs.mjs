@@ -47,3 +47,8 @@ See the upstream repository for contribution and licensing notes.
 writeFileSync(join(vendorRoot, "ATTRIBUTION.md"), notice, "utf8");
 rmSync(join(vendorRoot, ".git"), { recursive: true, force: true });
 console.error(`Docs ready at ${vendorRoot}`);
+
+// Refresh first-party effect allowlist used by ae_project_summary
+execFileSync(process.execPath, [join(__dirname, "generate-first-party-effect-allowlist.mjs")], {
+  stdio: "inherit",
+});

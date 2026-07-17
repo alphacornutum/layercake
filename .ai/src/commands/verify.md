@@ -8,6 +8,8 @@ Run the LayerCake full verification suite and fix failures you introduce.
 
 Full QA **always** includes AgentSync. If you edited `.ai/src/`, run `agentsync sync` before `agentsync check`.
 
+In Cursor, run the QA Shell with `required_permissions: ["all"]`. `agentsync check` fails in the sandbox every time (`Failed to prepare temporary workspace for check` / `.cursor/: Operation not permitted`) — that is not drift; skip the sandboxed attempt.
+
 1. Run:
 
 ```bash

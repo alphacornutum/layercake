@@ -55,18 +55,19 @@ Thin MCP tools compose over a single host bridge. Inventory and inspect tools us
 
 Specs under `openspec/specs/<capability>/spec.md` are the behavior contracts. Code packages own the implementation.
 
-| Capability                | MCP surface                                                                    | Primary code                                           |
-| ------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------ |
-| `product-identity`        | npm/bin/MCP name `layercake`; product **LayerCake**                            | `package.json`, `src/server.ts`, `README.md`, `docs/`  |
-| `ae-host`                 | `ae_host_status`, `ae_open_project`                                            | `src/host/`, `src/config.ts`                           |
-| `extendscript-execution`  | `ae_eval_script`                                                               | `src/host/script-wrapper.ts`, `macos.ts`, `windows.ts` |
-| `ae-comp-layer-inventory` | `ae_list_comps`                                                                | `src/inventory/list-comps*.ts`                         |
-| `ae-project-sources`      | `ae_list_sources`                                                              | `src/inventory/list-sources*.ts`                       |
-| `ae-project-folders`      | `ae_list_folders`                                                              | `src/inventory/list-folders*.ts`                       |
-| `ae-scripting-docs`       | `ae_docs_search`, `ae_docs_get`, `ae://docs/...`                               | `src/docs/`                                            |
-| `ae-layer-inspect`        | `ae_get_layer`                                                                 | `src/inventory/get-layer*.ts`, `inspect-*.ts`          |
-| `ae-source-inspect`       | `ae_get_source`                                                                | `src/inventory/get-source*.ts`, `inspect-*.ts`         |
-| `ae-product-skill`        | `skill://drive-after-effects/...`, `skill://index.json`, server `instructions` | `src/skills/`, `skills/drive-after-effects/`           |
+| Capability                | MCP surface                                                                    | Primary code                                                                                      |
+| ------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
+| `product-identity`        | npm/bin/MCP name `layercake`; product **LayerCake**                            | `package.json`, `src/server.ts`, `README.md`, `docs/`                                             |
+| `ae-host`                 | `ae_host_status`, `ae_open_project`                                            | `src/host/`, `src/config.ts`                                                                      |
+| `extendscript-execution`  | `ae_eval_script`                                                               | `src/host/script-wrapper.ts`, `macos.ts`, `windows.ts`                                            |
+| `ae-comp-layer-inventory` | `ae_list_comps`                                                                | `src/inventory/list-comps*.ts`                                                                    |
+| `ae-project-sources`      | `ae_list_sources`                                                              | `src/inventory/list-sources*.ts`                                                                  |
+| `ae-project-folders`      | `ae_list_folders`                                                              | `src/inventory/list-folders*.ts`                                                                  |
+| `ae-project-summary`      | `ae_project_summary`                                                           | `src/inventory/list-project-summary*.ts`, `effect-origin.ts`, `first-party-effect-match-names.ts` |
+| `ae-scripting-docs`       | `ae_docs_search`, `ae_docs_get`, `ae://docs/...`                               | `src/docs/`                                                                                       |
+| `ae-layer-inspect`        | `ae_get_layer`                                                                 | `src/inventory/get-layer*.ts`, `inspect-*.ts`                                                     |
+| `ae-source-inspect`       | `ae_get_source`                                                                | `src/inventory/get-source*.ts`, `inspect-*.ts`                                                    |
+| `ae-product-skill`        | `skill://drive-after-effects/...`, `skill://index.json`, server `instructions` | `src/skills/`, `skills/drive-after-effects/`                                                      |
 
 Shared inventory helpers: `shared-script.ts`, `parse.ts`, `types.ts`, `filter.ts`, `inspect-limit.ts`.
 

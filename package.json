@@ -39,7 +39,8 @@
     "lint:fix": "oxlint --fix .",
     "fmt": "oxfmt .",
     "fmt:check": "oxfmt --check .",
-    "docs:fetch": "node scripts/fetch-docs.mjs"
+    "docs:fetch": "node scripts/fetch-docs.mjs",
+    "docs:allowlist": "node scripts/generate-first-party-effect-allowlist.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

@@ -15,11 +15,14 @@ import type {
   LayerInspectLayer,
   LayerInspectResult,
   LayerType,
+  ProjectSummary,
+  ProjectSummaryMissingFootage,
   SourceInspectDetail,
   SourceInspectResult,
   SourceInventory,
   SourceRefType,
 } from "./types.js";
+import { classifyEffectOrigin } from "./effect-origin.js";
 
 const LAYER_TYPES = new Set<LayerType>([
   "av",
@@ -532,5 +535,86 @@ export function parseSourceInspect(raw: string): SourceInspectResult {
     projectName: assertString(data.projectName ?? "", "projectName"),
     detail,
     source,
+  };
+}
+
+function parseMissingFootage(raw: unknown, path: string): ProjectSummaryMissingFootage {
+  if (!isRecord(raw)) {
+    throw new Error(`Invalid summary: ${path} must be an object`);
+  }
+  return {
+    id: assertNumber(raw.id, `${path}.id`),
+    name: assertString(raw.name, `${path}.name`),
+    missingFootagePath: parseNullableString(raw.missingFootagePath, `${path}.missingFootagePath`),
+  };
+}
+
+/**
+ * Parse + classify host JSON from the project-summary ExtendScript.
+ * Applies first-party allowlist classification for each effect matchName.
+ */
+export function parseProjectSummary(json: string): ProjectSummary {
+  let data: unknown;
+  try {
+    data = JSON.parse(json);
+  } catch {
+    throw new Error("Invalid summary: result is not valid JSON");
+  }
+  if (!isRecord(data)) {
+    throw new Error("Invalid summary: root must be an object");
+  }
+  if (!Array.isArray(data.effects)) {
+    throw new Error("Invalid summary: effects must be an array");
+  }
+  if (!Array.isArray(data.missingFootage)) {
+    throw new Error("Invalid summary: missingFootage must be an array");
+  }
+  if (!Array.isArray(data.missingOrSubstitutedFonts)) {
+    throw new Error("Invalid summary: missingOrSubstitutedFonts must be an array");
+  }
+
+  const effects = data.effects.map((raw, i) => {
+    if (!isRecord(raw)) {
+      throw new Error(`Invalid summary: effects[${i}] must be an object`);
+    }
+    const matchName = assertString(raw.matchName, `effects[${i}].matchName`);
+    return {
+      matchName,
+      displayName: assertString(raw.displayName, `effects[${i}].displayName`),
+      origin: classifyEffectOrigin(matchName),
+      available: assertBoolean(raw.available, `effects[${i}].available`),
+      instanceCount: assertNumber(raw.instanceCount, `effects[${i}].instanceCount`),
+    };
+  });
+
+  const hasThirdPartyEffects = effects.some((e) => e.origin === "thirdParty");
+  const missingFootage = data.missingFootage.map((raw, i) =>
+    parseMissingFootage(raw, `missingFootage[${i}]`),
+  );
+  const missingFootageCount = assertNumber(data.missingFootageCount, "missingFootageCount");
+  if (missingFootageCount !== missingFootage.length) {
+    throw new Error(
+      `Invalid summary: missingFootageCount (${missingFootageCount}) !== missingFootage.length (${missingFootage.length})`,
+    );
+  }
+
+  return {
+    projectName: assertString(data.projectName ?? "", "projectName"),
+    projectPath: parseNullableString(data.projectPath, "projectPath"),
+    aeVersion: assertString(data.aeVersion, "aeVersion"),
+    numComps: assertNumber(data.numComps, "numComps"),
+    numFootage: assertNumber(data.numFootage, "numFootage"),
+    numFolders: assertNumber(data.numFolders, "numFolders"),
+    numLayers: assertNumber(data.numLayers, "numLayers"),
+    bitsPerChannel: assertNumber(data.bitsPerChannel, "bitsPerChannel"),
+    timeDisplayType: assertString(data.timeDisplayType, "timeDisplayType"),
+    hasThirdPartyEffects,
+    effects,
+    missingFootageCount,
+    missingFootage,
+    fontsApiAvailable: assertBoolean(data.fontsApiAvailable, "fontsApiAvailable"),
+    missingOrSubstitutedFonts: data.missingOrSubstitutedFonts.map((name, i) =>
+      assertString(name, `missingOrSubstitutedFonts[${i}]`),
+    ),
   };
 }

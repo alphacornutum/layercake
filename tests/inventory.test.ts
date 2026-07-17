@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vitest";
 
 import { applyCompFilters } from "../src/inventory/filter.js";
+import {
+  classifyEffectOrigin,
+  getFirstPartyEffectAllowlist,
+} from "../src/inventory/effect-origin.js";
 import { LIST_COMPS_SCRIPT } from "../src/inventory/list-comps-script.js";
 import { LIST_FOLDERS_SCRIPT } from "../src/inventory/list-folders-script.js";
+import { LIST_PROJECT_SUMMARY_SCRIPT } from "../src/inventory/list-project-summary-script.js";
 import { LIST_SOURCES_SCRIPT } from "../src/inventory/list-sources-script.js";
 import {
   parseCompInventory,
   parseFolderInventory,
+  parseProjectSummary,
   parseSourceInventory,
 } from "../src/inventory/parse.js";
 import { SHARED_INVENTORY_HELPERS } from "../src/inventory/shared-script.js";
@@ -450,5 +456,147 @@ describe("LIST_FOLDERS_SCRIPT", () => {
     expect(LIST_FOLDERS_SCRIPT).toContain("FolderItem");
     expect(LIST_FOLDERS_SCRIPT).toContain("footageKindOf");
     expect(LIST_FOLDERS_SCRIPT).toContain("JSON.stringify");
+  });
+});
+
+describe("classifyEffectOrigin", () => {
+  it("classifies ADBE and non-ADBE stock effects as first-party", () => {
+    expect(classifyEffectOrigin("ADBE Gaussian Blur 2")).toBe("firstParty");
+    expect(classifyEffectOrigin("CC Radial Blur")).toBe("firstParty");
+    expect(classifyEffectOrigin("EXtractoR")).toBe("firstParty");
+  });
+
+  it("classifies unknown matchNames as third-party", () => {
+    expect(classifyEffectOrigin("tc Particular")).toBe("thirdParty");
+    expect(classifyEffectOrigin("VIDEOCOPILOT OpticalFlares")).toBe("thirdParty");
+  });
+
+  it("loads a non-empty allowlist from the generated corpus", () => {
+    expect(getFirstPartyEffectAllowlist().size).toBeGreaterThan(50);
+    expect(getFirstPartyEffectAllowlist().has("CC Radial Blur")).toBe(true);
+  });
+});
+
+describe("parseProjectSummary", () => {
+  const summaryFixture = {
+    projectName: "Demo.aep",
+    projectPath: "/tmp/Demo.aep",
+    aeVersion: "25.0.0",
+    numComps: 2,
+    numFootage: 3,
+    numFolders: 1,
+    numLayers: 5,
+    bitsPerChannel: 8,
+    timeDisplayType: "TIMECODE",
+    effects: [
+      {
+        matchName: "ADBE Box Blur2",
+        displayName: "Fast Box Blur",
+        available: true,
+        instanceCount: 1,
+      },
+      {
+        matchName: "CC Radial Blur",
+        displayName: "CC Radial Blur",
+        available: true,
+        instanceCount: 2,
+      },
+      {
+        matchName: "tc Particular",
+        displayName: "Particular",
+        available: false,
+        instanceCount: 1,
+      },
+    ],
+    missingFootageCount: 1,
+    missingFootage: [{ id: 99, name: "gone.mov", missingFootagePath: "/old/gone.mov" }],
+    fontsApiAvailable: false,
+    missingOrSubstitutedFonts: [],
+  };
+
+  it("parses identity, counts, settings, and classifies effects", () => {
+    const parsed = parseProjectSummary(JSON.stringify(summaryFixture));
+    expect(parsed.projectName).toBe("Demo.aep");
+    expect(parsed.projectPath).toBe("/tmp/Demo.aep");
+    expect(parsed.aeVersion).toBe("25.0.0");
+    expect(parsed.numComps).toBe(2);
+    expect(parsed.bitsPerChannel).toBe(8);
+    expect(parsed.timeDisplayType).toBe("TIMECODE");
+    expect(parsed.effects).toHaveLength(3);
+    expect(parsed.effects[0]).toMatchObject({
+      matchName: "ADBE Box Blur2",
+      origin: "firstParty",
+      available: true,
+      instanceCount: 1,
+    });
+    expect(parsed.effects[1]).toMatchObject({
+      matchName: "CC Radial Blur",
+      origin: "firstParty",
+    });
+    expect(parsed.effects[2]).toMatchObject({
+      matchName: "tc Particular",
+      origin: "thirdParty",
+      available: false,
+    });
+    expect(parsed.hasThirdPartyEffects).toBe(true);
+    expect(parsed.missingFootageCount).toBe(1);
+    expect(parsed.missingFootage[0]).toEqual({
+      id: 99,
+      name: "gone.mov",
+      missingFootagePath: "/old/gone.mov",
+    });
+    expect(parsed.fontsApiAvailable).toBe(false);
+    expect(parsed.missingOrSubstitutedFonts).toEqual([]);
+  });
+
+  it("sets hasThirdPartyEffects false when only first-party effects", () => {
+    const onlyStock = {
+      ...summaryFixture,
+      effects: [
+        {
+          matchName: "ADBE Box Blur2",
+          displayName: "Fast Box Blur",
+          available: true,
+          instanceCount: 1,
+        },
+      ],
+      missingFootageCount: 0,
+      missingFootage: [],
+    };
+    const parsed = parseProjectSummary(JSON.stringify(onlyStock));
+    expect(parsed.hasThirdPartyEffects).toBe(false);
+  });
+
+  it("accepts fonts soft-fail and populated font lists", () => {
+    const withFonts = {
+      ...summaryFixture,
+      effects: [],
+      missingFootageCount: 0,
+      missingFootage: [],
+      fontsApiAvailable: true,
+      missingOrSubstitutedFonts: ["MissingFont-Regular"],
+    };
+    const parsed = parseProjectSummary(JSON.stringify(withFonts));
+    expect(parsed.fontsApiAvailable).toBe(true);
+    expect(parsed.missingOrSubstitutedFonts).toEqual(["MissingFont-Regular"]);
+    expect(parsed.hasThirdPartyEffects).toBe(false);
+  });
+
+  it("rejects mismatched missingFootageCount", () => {
+    expect(() =>
+      parseProjectSummary(JSON.stringify({ ...summaryFixture, missingFootageCount: 0 })),
+    ).toThrow(/missingFootageCount/);
+  });
+});
+
+describe("LIST_PROJECT_SUMMARY_SCRIPT", () => {
+  it("walks effects, footage, and soft-fails fonts", () => {
+    expect(LIST_PROJECT_SUMMARY_SCRIPT).toContain("ADBE Effect Parade");
+    expect(LIST_PROJECT_SUMMARY_SCRIPT).toContain("app.effects");
+    expect(LIST_PROJECT_SUMMARY_SCRIPT).toContain("footageMissing");
+    expect(LIST_PROJECT_SUMMARY_SCRIPT).toContain("missingOrSubstitutedFonts");
+    expect(LIST_PROJECT_SUMMARY_SCRIPT).toContain("bitsPerChannel");
+    expect(LIST_PROJECT_SUMMARY_SCRIPT).toContain("timeDisplayType");
+    expect(LIST_PROJECT_SUMMARY_SCRIPT).toContain("JSON.stringify");
   });
 });
