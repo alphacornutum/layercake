@@ -86,6 +86,7 @@ Product skill files live at top-level `skills/` (shipped with the npm package). 
 
 - Agent-facing quickstart and tool tables: [`README.md`](README.md)
 - Behavior requirements: [`openspec/specs/`](openspec/specs/)
+- Architecture Decision Records: [`docs/adr/`](docs/adr/) (why we chose surprising / hard-to-reverse options)
 - Coding placement / dependency rules: `.ai/src/rules/architecture.md` (synced to agent tools)
 
 ## Maintenance

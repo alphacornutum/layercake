@@ -10,7 +10,11 @@ npm run docs:fetch   # vendors scripting-guide markdown into vendor/
 cp .env.example .env # optional; set AE_* for host tests
 ```
 
-Requirements: Node.js 20+, macOS or Windows if you will exercise the After Effects host bridge.
+Requirements:
+
+- Node.js 20+
+- [uv](https://docs.astral.sh/uv/) (provides `uvx`) — needed for [code-review-graph](https://github.com/tirth8205/code-review-graph)
+- macOS or Windows if you will exercise the After Effects host bridge
 
 ## Quality scripts
 
@@ -35,6 +39,12 @@ npm audit --audit-level=high && npm run typecheck && npm run lint && npm run fmt
 
 - **`npm test`** — config, script wrapper, inventory parse/filter, docs, skills. Safe for CI and machines without AE.
 - **`npm run test:ae`** — live host bridge (macOS AppleScript or Windows `AfterFX.exe -r`). macOS: `AE_APP_NAME` and/or `AE_EXECUTABLE`. Windows: `AE_EXECUTABLE` to `AfterFX.exe`. Open/eval cases use committed `fixtures/hello-world.aep`. See [`fixtures/README.md`](fixtures/README.md). Host tests are **not** run in GitHub Actions.
+
+## code-review-graph
+
+This repo wires [code-review-graph](https://github.com/tirth8205/code-review-graph) as an MCP server (via `uvx`) and keeps the local graph fresh through Cursor hooks in [`scripts/cursor-hooks/`](scripts/cursor-hooks/). Install [uv](https://docs.astral.sh/uv/) so `uvx` is on your `PATH`; the first hook/MCP run will pull the tool and `sentence-transformers`.
+
+Graph artifacts land in `.code-review-graph/` (gitignored).
 
 ## AgentSync
 
@@ -62,11 +72,12 @@ Behavior contracts and planned changes live under [`openspec/`](openspec/). Pref
 
 ## Architecture pointers
 
-| Doc                                  | Use for                                      |
-| ------------------------------------ | -------------------------------------------- |
-| [`ARCHITECTURE.md`](ARCHITECTURE.md) | Layers, dependency direction, capability map |
-| [`AGENTS.md`](AGENTS.md)             | Agent orientation for this codebase          |
-| [`openspec/specs/`](openspec/specs/) | Formal requirements per capability           |
+| Doc                                  | Use for                                                                 |
+| ------------------------------------ | ----------------------------------------------------------------------- |
+| [`ARCHITECTURE.md`](ARCHITECTURE.md) | Layers, dependency direction, capability map                            |
+| [`docs/adr/`](docs/adr/)             | Architecture Decision Records (surprising / hard-to-reverse trade-offs) |
+| [`AGENTS.md`](AGENTS.md)             | Agent orientation (generated from `.ai/src/AGENTS.md` via AgentSync)    |
+| [`openspec/specs/`](openspec/specs/) | Formal requirements per capability                                      |
 
 ## PR checklist
 

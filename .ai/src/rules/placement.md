@@ -7,18 +7,19 @@ alwaysApply: true
 
 ## Default locations
 
-| Kind                        | Location                                                                                               |
-| --------------------------- | ------------------------------------------------------------------------------------------------------ |
-| MCP tool registration       | `src/server.ts`                                                                                        |
-| Host bridge / wrap protocol | `src/host/`                                                                                            |
-| Inventory tool              | `src/inventory/` — `list-<name>.ts`, `list-<name>-script.ts`, types in `types.ts`, parse in `parse.js` |
-| Shared ExtendScript helpers | `src/inventory/shared-script.ts` when two+ inventory scripts need the same helper                      |
-| Docs corpus/search          | `src/docs/`                                                                                            |
-| Unit / AE tests             | `tests/*.test.ts` / `tests/*.ae.test.ts`                                                               |
-| Doc fetch script            | `scripts/fetch-docs.mjs`                                                                               |
-| Behavior specs              | `openspec/specs/<capability>/spec.md`                                                                  |
-| System architecture map     | Root `ARCHITECTURE.md` (update on OpenSpec sync/archive)                                               |
-| Agent guidance              | `.ai/src/` only                                                                                        |
+| Kind                          | Location                                                                                               |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------ |
+| MCP tool registration         | `src/server.ts`                                                                                        |
+| Host bridge / wrap protocol   | `src/host/`                                                                                            |
+| Inventory tool                | `src/inventory/` — `list-<name>.ts`, `list-<name>-script.ts`, types in `types.ts`, parse in `parse.js` |
+| Shared ExtendScript helpers   | `src/inventory/shared-script.ts` when two+ inventory scripts need the same helper                      |
+| Docs corpus/search            | `src/docs/`                                                                                            |
+| Unit / AE tests               | `tests/*.test.ts` / `tests/*.ae.test.ts`                                                               |
+| Doc fetch script              | `scripts/fetch-docs.mjs`                                                                               |
+| Behavior specs                | `openspec/specs/<capability>/spec.md`                                                                  |
+| System architecture map       | Root `ARCHITECTURE.md` (update on OpenSpec sync/archive)                                               |
+| Architecture Decision Records | `docs/adr/NNNN-slug.md` (see `docs-adr` rule)                                                          |
+| Agent guidance                | `.ai/src/` only                                                                                        |
 
 ## Extract vs edit in place
 
