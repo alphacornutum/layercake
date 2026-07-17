@@ -267,7 +267,7 @@ Pass `--adopt` to pull the existing contents of `~/.<tool>-<name>/` into the ove
 ## Other commands
 
 - `agentsync list` shows configured tools and status; `agentsync enable` / `disable <tool>` toggle them.
-- `agentsync check` verifies generated output matches source and exits non-zero on drift (use it in CI).
+- `agentsync check` verifies generated output matches source and exits non-zero on drift (use it in CI). In Cursor, always run it with Shell `required_permissions: ["all"]` (unrestricted). A sandboxed run fails every time with `Failed to prepare temporary workspace for check` / `.cursor/: Operation not permitted` — do not retry in the sandbox.
 - **Keep outputs fresh automatically** (so you never forget to sync): add `eval "$(agentsync shell-init zsh)"` to `~/.zshrc` to auto-sync the nearest project whenever you `cd` into it (silent no-op when nothing changed; eval'ing keeps it current across upgrades); `agentsync setup-hooks [--pre-commit]` syncs on `git pull` / `checkout`; `agentsync sync --if-stale` syncs only when source changed since the last sync. See the README "Automation" section.
 - `agentsync doctor` validates the setup and surfaces drift, config warnings, and cross-project advisories.
 - `agentsync generate [context]` prints a prompt you paste into any AI to draft a project-specific `.ai/src/`.
@@ -277,6 +277,7 @@ Pass `--adopt` to pull the existing contents of `~/.<tool>-<name>/` into the ove
 
 ## Gotchas
 
+- **Cursor sandbox:** `agentsync check` extracts a temp workspace that writes under `.cursor/`. Always invoke it via Shell with `required_permissions: ["all"]`. Sandboxed runs fail with `Failed to prepare temporary workspace for check` — that is a permissions issue, not drift; re-run unrestricted immediately.
 - Always edit files in `.ai/src/`, never in generated directories (`.claude/`, `.cursor/`, etc.). A file you add by hand to a generated dir is preserved with a warning (not silently deleted) — but it is never managed; move it into `.ai/src/`, or run `agentsync sync --force` to prune it. If you edited a generated file while iterating, `agentsync adopt <path>` promotes that edit back into the matching source file — or `agentsync adopt --all` to promote every drifted file at once (refused targets and same-source conflicts are skipped and listed).
 - Run `agentsync sync` after every change to distribute updates.
 - Tool-specific frontmatter fields (like `context: fork`) are passed through as-is — agentsync doesn't validate them.

@@ -4,18 +4,19 @@ Your agent discovers these tools automatically through MCP. Prefer inventory too
 
 ## Tools
 
-| Tool              | Purpose                                                                              |
-| ----------------- | ------------------------------------------------------------------------------------ |
-| `ae_host_status`  | Resolved host config and availability                                                |
-| `ae_open_project` | Open an absolute `.aep` or `.aet` path in After Effects                              |
-| `ae_list_comps`   | Read-only JSON inventory of compositions and their layers                            |
-| `ae_list_sources` | Read-only JSON inventory of footage, solids, and placeholders                        |
-| `ae_list_folders` | Read-only nested JSON tree of the Project panel folder hierarchy                     |
-| `ae_get_layer`    | Read-only deep dump of one layer property tree (`overview` / `extended` / `full`)    |
-| `ae_get_source`   | Read-only deep dump of one footage item and interpret settings (`overview` / `full`) |
-| `ae_eval_script`  | Execute ExtendScript inside After Effects (`script`, optional `timeoutMs`)           |
-| `ae_docs_search`  | Search the local After Effects Scripting Guide (hits include `ae://docs/...` URIs)   |
-| `ae_docs_get`     | Fetch a documentation section by URI or relative path                                |
+| Tool                 | Purpose                                                                              |
+| -------------------- | ------------------------------------------------------------------------------------ |
+| `ae_host_status`     | Resolved host config and availability                                                |
+| `ae_open_project`    | Open an absolute `.aep` or `.aet` path in After Effects                              |
+| `ae_project_summary` | Read-only project passport: counts, third-party effects, missing footage/fonts       |
+| `ae_list_comps`      | Read-only JSON inventory of compositions and their layers                            |
+| `ae_list_sources`    | Read-only JSON inventory of footage, solids, and placeholders                        |
+| `ae_list_folders`    | Read-only nested JSON tree of the Project panel folder hierarchy                     |
+| `ae_get_layer`       | Read-only deep dump of one layer property tree (`overview` / `extended` / `full`)    |
+| `ae_get_source`      | Read-only deep dump of one footage item and interpret settings (`overview` / `full`) |
+| `ae_eval_script`     | Execute ExtendScript inside After Effects (`script`, optional `timeoutMs`)           |
+| `ae_docs_search`     | Search the local After Effects Scripting Guide (hits include `ae://docs/...` URIs)   |
+| `ae_docs_get`        | Fetch a documentation section by URI or relative path                                |
 
 **Resources:** scripting guide under `ae://docs/{path}` (list + read); product skill under `skill://` (below).
 
@@ -35,7 +36,7 @@ For follow-up work, prefer IDs over names or indexes. Names can be duplicated; i
 
 ## Agent skill: `drive-after-effects`
 
-LayerCake ships the [Agent Skill](https://agentskills.io/) `drive-after-effects`: host check → open project (absolute path) → inventory → docs → id-based `ae_eval_script`.
+LayerCake ships the [Agent Skill](https://agentskills.io/) `drive-after-effects`: host check → open project (absolute path) → optional `ae_project_summary` for health/portability → inventory → docs → id-based `ae_eval_script`.
 
 ### Filesystem install
 

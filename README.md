@@ -99,7 +99,7 @@ Open After Effects and ask: _Use LayerCake to check the After Effects host statu
 
 ## Tools and skill
 
-Inventory tools (`ae_list_*`, `ae_get_*`), docs tools (`ae_docs_*`), and `ae_eval_script` are registered automatically. Prefer IDs over names for follow-up work.
+Inventory tools (`ae_project_summary`, `ae_list_*`, `ae_get_*`), docs tools (`ae_docs_*`), and `ae_eval_script` are registered automatically. Prefer IDs over names for follow-up work. Use `ae_project_summary` after open when you need a quick passport (third-party effects, missing footage/fonts, counts).
 
 The **`drive-after-effects`** skill ships in `skills/` (copy or symlink into your agent’s skills folder) and as MCP resources `skill://drive-after-effects/SKILL.md` and `skill://index.json`.
 

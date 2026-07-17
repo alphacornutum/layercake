@@ -15,6 +15,7 @@ import { getSource } from "./inventory/get-source.js";
 import { InspectSizeError } from "./inventory/inspect-limit.js";
 import { listComps } from "./inventory/list-comps.js";
 import { listFolders } from "./inventory/list-folders.js";
+import { listProjectSummary } from "./inventory/list-project-summary.js";
 import { listSources } from "./inventory/list-sources.js";
 import {
   PRODUCT_SKILL_ENTRY_URI,
@@ -218,6 +219,31 @@ export function createServer(
       try {
         const inventory = await listFolders(host, config.scriptTimeoutMs);
         return textResult(JSON.stringify(inventory, null, 2));
+      } catch (err) {
+        if (err instanceof ConfigError) {
+          return textResult(errorText(err), true);
+        }
+        return textResult(errorText(err), true);
+      }
+    },
+  );
+
+  server.registerTool(
+    "ae_project_summary",
+    {
+      title: "Summarize open project",
+      description:
+        "Read-only project passport as JSON — call after open when you need orientation or health/portability context. " +
+        "Returns identity (name, path, AE version), counts (comps/footage/folders/layers), cheap settings (bitsPerChannel, timeDisplayType), " +
+        "effect dependencies unique by matchName with origin (firstParty|thirdParty via Scripting Guide allowlist), available (installed in app.effects), " +
+        "hasThirdPartyEffects, missing footage rollup, and missing/substituted fonts (soft-fails if Fonts API unavailable). " +
+        "Does not replace ae_list_comps / ae_list_sources for structure or media detail.",
+      inputSchema: z.object({}),
+    },
+    async () => {
+      try {
+        const summary = await listProjectSummary(host, config.scriptTimeoutMs);
+        return textResult(JSON.stringify(summary, null, 2));
       } catch (err) {
         if (err instanceof ConfigError) {
           return textResult(errorText(err), true);

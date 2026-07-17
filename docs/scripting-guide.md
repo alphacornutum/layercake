@@ -8,11 +8,11 @@ LayerCake can search and read After Effects scripting documentation offline via 
 npm run docs:fetch
 ```
 
-This downloads markdown from [`docsforadobe/after-effects-scripting-guide`](https://github.com/docsforadobe/after-effects-scripting-guide) into `vendor/after-effects-scripting-guide/` (originally based on Adobe’s After Effects Scripting Guide).
+This downloads markdown from [`docsforadobe/after-effects-scripting-guide`](https://github.com/docsforadobe/after-effects-scripting-guide) into `vendor/after-effects-scripting-guide/` (originally based on Adobe’s After Effects Scripting Guide). It also regenerates the first-party effect matchName allowlist used by `ae_project_summary` (`npm run docs:allowlist` alone refreshes that file when the corpus is already present).
 
 Override the corpus directory with `AE_DOCS_PATH` if needed.
 
-Do not hand-edit guide pages under `vendor/`; regenerate with `docs:fetch`. Keep `vendor/after-effects-scripting-guide/ATTRIBUTION.md`.
+Do not hand-edit guide pages under `vendor/`; regenerate with `docs:fetch`. Keep `vendor/after-effects-scripting-guide/ATTRIBUTION.md`. Do not hand-edit `src/inventory/first-party-effect-match-names.ts`; regenerate with `docs:allowlist` / `docs:fetch`.
 
 ## Attribution and licensing
 

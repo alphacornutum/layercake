@@ -10,7 +10,14 @@ Get the current work release-ready end-to-end$ARGUMENTS.
 
 - Finish any incomplete OpenSpec/docs/agent work needed for a coherent release.
 - If you edited `.ai/src/`, run `agentsync sync` first.
-- Run full QA and fix failures you introduce:
+- make sure docs are up to date:
+
+```bash
+npm run docs:fetch
+npm run docs:allowlist
+```
+
+- Run full QA and fix failures you introduce. In Cursor, run this whole block with Shell `required_permissions: ["all"]` — `agentsync check` always fails in the sandbox (`Failed to prepare temporary workspace for check`); do not attempt a sandboxed first try.
 
 ```bash
 agentsync check
@@ -19,6 +26,7 @@ npm run typecheck
 npm run lint
 npm run fmt:check
 npm test
+npm run test:ae
 npm run build
 ```
 

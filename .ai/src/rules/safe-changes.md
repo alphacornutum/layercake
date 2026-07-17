@@ -26,4 +26,4 @@ alwaysApply: true
 
 - Leave `.env` untracked; change templates via `.env.example`.
 - Regenerate guide markdown with `npm run docs:fetch`; preserve `vendor/.../ATTRIBUTION.md`.
-- Edit `.ai/src/` then `agentsync sync` — leave generated `.cursor/` / `.claude/` outputs alone. Full QA includes `agentsync check`.
+- Edit `.ai/src/` then `agentsync sync` — leave generated `.cursor/` / `.claude/` outputs alone. Full QA includes `agentsync check` (in Cursor: Shell `required_permissions: ["all"]`; sandboxed check always fails preparing a temp workspace).

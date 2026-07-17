@@ -26,7 +26,7 @@ Optimize for **agent-usable, predictable host control**: stable AE ids as handle
 1. **Orient** — Read `ARCHITECTURE.md`, `README.md`, and the relevant `openspec/specs/*` before inventing APIs or modules.
 2. **Plan** — For behavior changes, prefer an OpenSpec change (`openspec-propose` / apply skills) when the public MCP contract or host protocol shifts.
 3. **Implement** — Match existing module boundaries; keep diffs surgical.
-4. **Verify** — Full QA always includes AgentSync: `agentsync check` (run `agentsync sync` first if `.ai/src/` changed), then `npm audit --audit-level=high && npm run typecheck && npm run lint && npm run fmt:check && npm test && npm run build`. Use `npm run test:ae` only when host env is configured.
+4. **Verify** — Full QA always includes AgentSync: `agentsync check` (run `agentsync sync` first if `.ai/src/` changed), then `npm audit --audit-level=high && npm run typecheck && npm run lint && npm run fmt:check && npm test && npm run build`. Use `npm run test:ae` only when host env is configured. In Cursor, run `agentsync check` (and full QA that includes it) with Shell `required_permissions: ["all"]` — sandboxed check fails with `Failed to prepare temporary workspace for check`.
 5. **Document** — Keep operator docs accurate: root `README.md` (showcase/quickstart) plus linked `docs/` pages (`setup`, `mcp-tools`, `troubleshooting`, `scripting-guide`). Keep `ARCHITECTURE.md` accurate after OpenSpec sync/archive when the system shape changed. For surprising or hard-to-reverse design trade-offs, add or update an ADR under `docs/adr/` (do not leave broken ADR links).
 
 When inspecting a live project, prefer `ae_list_*` / `ae_docs_*` MCP tools over guessing ExtendScript APIs from memory.
@@ -45,7 +45,7 @@ npm run typecheck
 npm run lint / lint:fix
 npm run fmt / fmt:check
 agentsync sync # after editing .ai/src/
-agentsync check # full QA: generated agent outputs match .ai/src/
+agentsync check # full QA: generated agent outputs match .ai/src/ (Cursor: Shell required_permissions ["all"])
 ```
 
 ## Principles
@@ -57,7 +57,7 @@ agentsync check # full QA: generated agent outputs match .ai/src/
 - Keep `README.md` and linked `docs/` (especially `docs/mcp-tools.md`, `docs/troubleshooting.md`) aligned when env vars or the public MCP tool surface change.
 - Keep `ARCHITECTURE.md` aligned when layers, tools, host protocol, or capability ownership change.
 - Record durable design trade-offs in `docs/adr/` (OpenSpec = behavior contracts; ADRs = why we chose a path).
-- Edit agent guidance only under `.ai/src/`, then run `agentsync sync`. Full QA includes `agentsync check`.
+- Edit agent guidance only under `.ai/src/`, then run `agentsync sync`. Full QA includes `agentsync check` (Cursor Shell: `required_permissions: ["all"]`).
 
 ## Boundaries
 

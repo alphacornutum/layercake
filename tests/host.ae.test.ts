@@ -10,6 +10,7 @@ import { getLayer } from "../src/inventory/get-layer.js";
 import { getSource } from "../src/inventory/get-source.js";
 import { listComps } from "../src/inventory/list-comps.js";
 import { listFolders } from "../src/inventory/list-folders.js";
+import { listProjectSummary } from "../src/inventory/list-project-summary.js";
 import { listSources } from "../src/inventory/list-sources.js";
 import type {
   CompInventory,
@@ -140,6 +141,34 @@ describe.skipIf(!hasHost || !hasFixture)("After Effects project + ExtendScript",
       }
     };
     for (const child of inventory.root.children) walk(child);
+  });
+
+  it("summarizes project via ae_project_summary path", async () => {
+    const host = createAeHost(config);
+    await host.openProject(fixtureAep);
+    const summary = await listProjectSummary(host, config.scriptTimeoutMs);
+
+    expect(typeof summary.projectName).toBe("string");
+    expect(summary.projectName.length).toBeGreaterThan(0);
+    expect(summary.projectPath === null || typeof summary.projectPath === "string").toBe(true);
+    expect(typeof summary.aeVersion).toBe("string");
+    expect(summary.numComps).toBeGreaterThanOrEqual(1);
+    expect(summary.numFootage).toBeGreaterThanOrEqual(1);
+    expect(summary.numLayers).toBeGreaterThanOrEqual(1);
+    expect([8, 16, 32]).toContain(summary.bitsPerChannel);
+    expect(typeof summary.timeDisplayType).toBe("string");
+    expect(typeof summary.hasThirdPartyEffects).toBe("boolean");
+    expect(Array.isArray(summary.effects)).toBe(true);
+
+    const boxBlur = summary.effects.find((e) => e.matchName === "ADBE Box Blur2");
+    expect(boxBlur).toBeDefined();
+    expect(boxBlur?.origin).toBe("firstParty");
+    expect(boxBlur?.available).toBe(true);
+    expect(boxBlur!.instanceCount).toBeGreaterThanOrEqual(1);
+
+    expect(summary.missingFootageCount).toBe(summary.missingFootage.length);
+    expect(typeof summary.fontsApiAvailable).toBe("boolean");
+    expect(Array.isArray(summary.missingOrSubstitutedFonts)).toBe(true);
   });
 
   it("ae_get_layer: animated expression + keyframes (overview vs extended)", async () => {
