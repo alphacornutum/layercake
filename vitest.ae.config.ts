@@ -15,5 +15,8 @@ export default defineConfig({
     environment: "node",
     testTimeout: 120_000,
     hookTimeout: 120_000,
+    // Single shared AE GUI session — never run host files in parallel.
+    fileParallelism: false,
+    maxWorkers: 1,
   },
 });

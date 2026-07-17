@@ -75,6 +75,7 @@ Expected: the After Effects host bridge is **macOS and Windows only**. Documenta
 | `AE_SCRIPT_TIMEOUT_MS` | ExtendScript timeout in ms (default `60000`)                                                       |
 | `AE_INSPECT_MAX_BYTES` | Max UTF-8 bytes for `ae_get_layer` / `ae_get_source` success JSON (default `524288`)               |
 | `AE_DOCS_PATH`         | Override scripting-guide directory (default `vendor/after-effects-scripting-guide/docs`)           |
+| `AE_ARTIFACT_DIR`      | Absolute dir for backups / artifacts (default: OS temp `layercake-artifacts-<pid>`)                |
 
 See [`.env.example`](../.env.example).
 

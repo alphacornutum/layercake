@@ -7,14 +7,17 @@ import {
 } from "../src/inventory/effect-origin.js";
 import { LIST_COMPS_SCRIPT } from "../src/inventory/list-comps-script.js";
 import { LIST_FOLDERS_SCRIPT } from "../src/inventory/list-folders-script.js";
+import { LIST_PROJECT_CONTEXT_SCRIPT } from "../src/inventory/list-project-context-script.js";
 import { LIST_PROJECT_SUMMARY_SCRIPT } from "../src/inventory/list-project-summary-script.js";
 import { LIST_SOURCES_SCRIPT } from "../src/inventory/list-sources-script.js";
 import {
   parseCompInventory,
   parseFolderInventory,
+  parseProjectContext,
   parseProjectSummary,
   parseSourceInventory,
 } from "../src/inventory/parse.js";
+import { buildFingerprint } from "../src/inventory/fingerprint.js";
 import { SHARED_INVENTORY_HELPERS } from "../src/inventory/shared-script.js";
 import type { CompInventory, FolderInventory, SourceInventory } from "../src/inventory/types.js";
 
@@ -598,5 +601,76 @@ describe("LIST_PROJECT_SUMMARY_SCRIPT", () => {
     expect(LIST_PROJECT_SUMMARY_SCRIPT).toContain("bitsPerChannel");
     expect(LIST_PROJECT_SUMMARY_SCRIPT).toContain("timeDisplayType");
     expect(LIST_PROJECT_SUMMARY_SCRIPT).toContain("JSON.stringify");
+  });
+});
+
+describe("buildFingerprint", () => {
+  it("builds rev|dirty|path composite", () => {
+    expect(buildFingerprint(12, true, "/tmp/Demo.aep")).toBe("rev:12|dirty:1|path:/tmp/Demo.aep");
+    expect(buildFingerprint(0, false, null)).toBe("rev:0|dirty:0|path:unsaved");
+  });
+});
+
+describe("parseProjectContext", () => {
+  it("parses lean payload and attaches fingerprint", () => {
+    const parsed = parseProjectContext(
+      JSON.stringify({
+        projectName: "Demo.aep",
+        projectPath: "/Projects/Demo.aep",
+        dirty: false,
+        revision: 7,
+        aeVersion: "25.0",
+      }),
+    );
+    expect(parsed).toEqual({
+      projectName: "Demo.aep",
+      projectPath: "/Projects/Demo.aep",
+      dirty: false,
+      revision: 7,
+      fingerprint: "rev:7|dirty:0|path:/Projects/Demo.aep",
+      aeVersion: "25.0",
+    });
+    expect(parsed.warning).toBeUndefined();
+  });
+
+  it("adds dirty warning when unsaved", () => {
+    const parsed = parseProjectContext(
+      JSON.stringify({
+        projectName: "Untitled",
+        projectPath: null,
+        dirty: true,
+        revision: 3,
+        aeVersion: "25.0",
+      }),
+    );
+    expect(parsed.dirty).toBe(true);
+    expect(parsed.fingerprint).toBe("rev:3|dirty:1|path:unsaved");
+    expect(parsed.warning).toMatch(/unsaved changes/i);
+  });
+
+  it("rejects malformed context JSON", () => {
+    expect(() => parseProjectContext("not-json")).toThrow(/not valid JSON/);
+    expect(() =>
+      parseProjectContext(
+        JSON.stringify({
+          projectName: "x",
+          projectPath: null,
+          dirty: "yes",
+          revision: 1,
+          aeVersion: "25.0",
+        }),
+      ),
+    ).toThrow(/dirty/);
+  });
+});
+
+describe("LIST_PROJECT_CONTEXT_SCRIPT", () => {
+  it("reads revision, dirty, file, and version without health walks", () => {
+    expect(LIST_PROJECT_CONTEXT_SCRIPT).toContain("app.project.revision");
+    expect(LIST_PROJECT_CONTEXT_SCRIPT).toContain("app.project.dirty");
+    expect(LIST_PROJECT_CONTEXT_SCRIPT).toContain("app.version");
+    expect(LIST_PROJECT_CONTEXT_SCRIPT).toContain("projectNameOf");
+    expect(LIST_PROJECT_CONTEXT_SCRIPT).not.toContain("app.effects");
+    expect(LIST_PROJECT_CONTEXT_SCRIPT).not.toContain("missingOrSubstitutedFonts");
   });
 });

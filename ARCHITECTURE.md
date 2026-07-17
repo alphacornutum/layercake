@@ -1,6 +1,6 @@
 # Architecture
 
-Living map of **LayerCake**: a stdio MCP server that drives a local Adobe After Effects install on macOS or Windows, inventories open projects, evaluates ExtendScript, and searches a vendored Scripting Guide.
+Living map of **LayerCake**: a stdio MCP server that drives a local Adobe After Effects install on macOS or Windows, inventories open projects, applies guarded typed patches, evaluates ExtendScript, and searches a vendored Scripting Guide.
 
 Keep this file accurate. Update it when OpenSpec specs sync into `openspec/specs/` or when a change archives — see [Maintenance](#maintenance).
 
@@ -12,44 +12,50 @@ flowchart LR
   Server --> Config[src/config.ts]
   Server --> Host[src/host AeHost]
   Server --> Inventory[src/inventory]
+  Server --> Patch[src/patch]
   Server --> Docs[src/docs]
   Server --> Skills[src/skills]
   Inventory -->|evalScript| Host
+  Patch -->|evalScript| Host
   Host -->|darwin: osascript DoScriptFile| AE[After Effects]
   Host -->|win32: AfterFX.exe -r| AE
   Docs --> Corpus[vendor/.../docs]
   Skills --> SkillTree[skills/drive-after-effects]
 ```
 
-Thin MCP tools compose over a single host bridge. Inventory and inspect tools use fixed ExtendScript serializers; one-off or mutating work goes through `ae_eval_script`.
+Thin MCP tools compose over a single host bridge. Inventory, context, patch, save, and close use fixed ExtendScript serializers over `AeHost.evalScript`; one-off work still goes through `ae_eval_script`.
 
 ## Layers
 
 | Module           | Role                                                                                                         |
 | ---------------- | ------------------------------------------------------------------------------------------------------------ |
 | `src/index.ts`   | Wire config, host, docs corpus, product skill, stdio transport — orchestration only                          |
-| `src/config.ts`  | Env loading and platform-aware `ConfigError` / `assertHostConfigured`; no AE I/O                             |
-| `src/server.ts`  | Register MCP tools/resources; call host/inventory/docs/skills; return `textResult` / `isError`               |
-| `src/host/`      | `AeHost` interface, `createAeHost` factory, macOS AppleScript + Windows CLI bridges, wrap/parse (`OK`/`ERR`) |
-| `src/inventory/` | Read-only project inventories and deep inspect: `*-script.ts` + TS parse/filter/types                        |
+| `src/config.ts`  | Env loading (`AE_*`, including `AE_ARTIFACT_DIR`) and platform-aware `ConfigError` / `assertHostConfigured`  |
+| `src/server.ts`  | Register MCP tools/resources; call host/inventory/patch/docs/skills; return `textResult` / `isError`         |
+| `src/host/`      | `AeHost` interface, factory, macOS/Windows bridges, wrap/parse (`OK`/`ERR`), session open/close guards       |
+| `src/inventory/` | Read-only inventories, inspect, and lean `ae_project_context` (fingerprint)                                  |
+| `src/patch/`     | Typed apply-only patch schemas/scripts, broad-gate, `ae_save_project` helpers                                |
 | `src/docs/`      | Local corpus load/search; URIs use `ae://docs/...`                                                           |
 | `src/skills/`    | Load packaged Agent Skill from `skills/`; URIs use `skill://...` (SEP-2640)                                  |
 
 ### Dependency direction
 
-- `server` → `host` / `inventory` / `docs` / `skills` / `config`
+- `server` → `host` / `inventory` / `patch` / `docs` / `skills` / `config`
 - `inventory` → `host` (via `AeHost.evalScript`) and local parse/filter — not the reverse
+- `patch` → `host` / `inventory` (context + fingerprint) — not the reverse
 - ExtendScript bodies live in `*-script.ts` (or shared helpers); TypeScript owns filtering, validation, and MCP shaping
-- New host capabilities land on `AeHost` + platform implementations (`macos.ts` / `windows.ts`); tools stay thin wrappers
+- Context / close / save / patch compose over `evalScript`; do not grow `AeHost` for those. Open gains a pre-open session guard, then delegates to `host.openProject`.
 
 ## Runtime flow
 
 1. **Boot** — `loadConfig()` → `createAeHost(config)` (darwin / win32 / unavailable) → optional `loadDocsCorpus` / `loadProductSkill` → `createServer` → stdio.
-2. **Host ops** — `ae_host_status` / `ae_open_project` call `AeHost` directly (macOS: AppleScript `open`; Windows: ExtendScript `app.open` via `-r`).
-3. **Eval** — `ae_eval_script` validates source, wraps with JSON polyfill + result-file protocol, runs via AppleScript `DoScriptFile` (macOS) or `AfterFX.exe -r` (Windows), parses `OK`/`ERR`.
-4. **Inventory / inspect** — tool builds or selects an ExtendScript string → `host.evalScript` → parse JSON → optional filter → MCP text result (inspect tools also enforce `AE_INSPECT_MAX_BYTES`).
-5. **Docs** — `ae_docs_search` / `ae_docs_get` and `ae://docs/...` resources read the vendored corpus (no AE).
-6. **Product skill** — when `skills/drive-after-effects` loads, serve `skill://…` resources + `skill://index.json`, set server `instructions`, and advertise `io.modelcontextprotocol/skills`.
+2. **Session** — `ae_open_project` guards via context (same-path no-op; refuse different open project) then `AeHost.openProject`. `ae_close_project` closes via eval (`DO_NOT_SAVE_CHANGES` / `SAVE_CHANGES` only).
+3. **Bind** — `ae_project_context` returns path / dirty / revision / fingerprint for frequent polling.
+4. **Eval** — `ae_eval_script` validates source, wraps with JSON polyfill + result-file protocol, runs via AppleScript `DoScriptFile` (macOS) or `AfterFX.exe -r` (Windows), parses `OK`/`ERR`.
+5. **Inventory / inspect** — tool builds or selects an ExtendScript string → `host.evalScript` → parse JSON → optional filter → MCP text result (inspect tools also enforce `AE_INSPECT_MAX_BYTES`).
+6. **Patch / save** — `ae_patch_project` validates ops, guards path+fingerprint, applies in one undo group (no implicit save). `ae_save_project` persists via `save_copy` or `create_backup` under `AE_ARTIFACT_DIR` / caller path.
+7. **Docs** — `ae_docs_search` / `ae_docs_get` and `ae://docs/...` resources read the vendored corpus (no AE).
+8. **Product skill** — when `skills/drive-after-effects` loads, serve `skill://…` resources + `skill://index.json`, set server `instructions`, and advertise `io.modelcontextprotocol/skills`.
 
 ## Capability map
 
@@ -58,7 +64,11 @@ Specs under `openspec/specs/<capability>/spec.md` are the behavior contracts. Co
 | Capability                | MCP surface                                                                    | Primary code                                                                                      |
 | ------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
 | `product-identity`        | npm/bin/MCP name `layercake`; product **LayerCake**                            | `package.json`, `src/server.ts`, `README.md`, `docs/`                                             |
-| `ae-host`                 | `ae_host_status`, `ae_open_project`                                            | `src/host/`, `src/config.ts`                                                                      |
+| `ae-host`                 | `ae_host_status`, `ae_open_project`; `AE_ARTIFACT_DIR`                         | `src/host/`, `src/config.ts`                                                                      |
+| `ae-project-session`      | `ae_close_project`; open refuse / same-path no-op                              | `src/host/session.ts`                                                                             |
+| `ae-project-context`      | `ae_project_context`                                                           | `src/inventory/list-project-context*.ts`, `fingerprint.ts`                                        |
+| `ae-project-patch`        | `ae_patch_project`                                                             | `src/patch/` (`schema`, `apply*`, `broad-gate`)                                                   |
+| `ae-project-save`         | `ae_save_project`                                                              | `src/patch/save.ts`                                                                               |
 | `extendscript-execution`  | `ae_eval_script`                                                               | `src/host/script-wrapper.ts`, `macos.ts`, `windows.ts`                                            |
 | `ae-comp-layer-inventory` | `ae_list_comps`                                                                | `src/inventory/list-comps*.ts`                                                                    |
 | `ae-project-sources`      | `ae_list_sources`                                                              | `src/inventory/list-sources*.ts`                                                                  |
@@ -76,11 +86,13 @@ Product skill files live at top-level `skills/` (shipped with the npm package). 
 ## Design constraints
 
 - **Stable ids as handles** — `Item.id` (comps, footage, folders) and `Layer.id` (timeline) are distinct namespaces; join via `layer.source.id`.
-- **Compact list, deep on demand** — `ae_list_*` stay small; property trees and interpret detail live in `ae_get_*` or `ae_eval_script`.
+- **Compact list, deep on demand** — `ae_list_*` stay small; property trees and interpret detail live in `ae_get_*` or `ae_eval_script`. Context is the cheap bind poll; summary is the heavier health passport.
+- **Guarded session** — open/close are session transitions; patch/save verify path+fingerprint and never open. Fingerprint = `rev:{n}\|dirty:{0\|1}\|path:{absolute\|unsaved}` (see [ADR 0002](docs/adr/0002-guarded-session-revision-fingerprint.md)). Assume 1:1 agent↔AE (no mutex).
+- **Typed patch first** — prefer `ae_patch_project` for routine edits; `ae_eval_script` remains the escape hatch (bypasses guards).
+- **Explicit save** — patch/context/inventory/eval must not persist; use `ae_save_project` (`save_copy` / `create_backup` only in v1).
 - **ES3 ExtendScript** — no modern JS in AE script bodies; `JSON` comes from the injected polyfill.
 - **Contracts** — public `ae_*` names/schemas/JSON shapes, `AeHost`, and the eval result-file protocol change through OpenSpec when possible (prefer additive).
 - **macOS + Windows host** — `darwin` uses AppleScript; `win32` uses `AfterFX.exe -r`; other platforms report host unavailable without attempting unsupported automation.
-- **No dedicated mutation tools** — inventory/inspect/docs plus catchall `ae_eval_script`; mutations go through eval until write tools are deliberately added.
 - **Agent guidance** — end-user product skill lives under `skills/`; contributor AgentSync guidance is edited under `.ai/src/` only, then `agentsync sync`.
 
 ## Related docs

@@ -15,6 +15,7 @@ import type {
   LayerInspectLayer,
   LayerInspectResult,
   LayerType,
+  ProjectContext,
   ProjectSummary,
   ProjectSummaryMissingFootage,
   SourceInspectDetail,
@@ -23,6 +24,7 @@ import type {
   SourceRefType,
 } from "./types.js";
 import { classifyEffectOrigin } from "./effect-origin.js";
+import { buildFingerprint } from "./fingerprint.js";
 
 const LAYER_TYPES = new Set<LayerType>([
   "av",
@@ -617,4 +619,40 @@ export function parseProjectSummary(json: string): ProjectSummary {
       assertString(name, `missingOrSubstitutedFonts[${i}]`),
     ),
   };
+}
+
+const DIRTY_WARNING =
+  "Project has unsaved changes; live state may differ from the last saved file on disk.";
+
+/** Parse lean host JSON from the project-context ExtendScript and attach fingerprint. */
+export function parseProjectContext(json: string): ProjectContext {
+  let data: unknown;
+  try {
+    data = JSON.parse(json);
+  } catch {
+    throw new Error("Invalid context: result is not valid JSON");
+  }
+  if (!isRecord(data)) {
+    throw new Error("Invalid context: root must be an object");
+  }
+
+  const projectPath = parseNullableString(data.projectPath, "projectPath");
+  const dirty = assertBoolean(data.dirty, "dirty");
+  const revision = assertNumber(data.revision, "revision");
+  if (!Number.isInteger(revision)) {
+    throw new Error("Invalid context: revision must be an integer");
+  }
+
+  const context: ProjectContext = {
+    projectName: assertString(data.projectName ?? "", "projectName"),
+    projectPath,
+    dirty,
+    revision,
+    fingerprint: buildFingerprint(revision, dirty, projectPath),
+    aeVersion: assertString(data.aeVersion, "aeVersion"),
+  };
+  if (dirty) {
+    context.warning = DIRTY_WARNING;
+  }
+  return context;
 }

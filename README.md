@@ -5,7 +5,7 @@
 
 **Let AI agents inspect and control Adobe After Effects.**
 
-LayerCake is a local [MCP](https://modelcontextprotocol.io/) server that connects an agent to a **local** Adobe After Effects install. Agents can open projects, inspect comps and layers, explore footage and folders, search the Scripting Guide offline, and run ExtendScript inside AE.
+LayerCake is a local [MCP](https://modelcontextprotocol.io/) server that connects an agent to a **local** Adobe After Effects install. Agents can open projects, bind a cheap project context fingerprint, inspect comps and layers, apply typed patches (for example text font normalization), save copies/backups, search the Scripting Guide offline, and run ExtendScript inside AE.
 
 Use it to explore an unfamiliar project, investigate timing and expressions, or make controlled changes without digging through every composition by hand.
 
@@ -30,13 +30,15 @@ Once connected, try prompts like:
 ## What LayerCake can do
 
 - Check whether After Effects is available
-- Open `.aep` / `.aet` projects
+- Open / close `.aep` / `.aet` projects with session guards (refuses opening over another project)
+- Bind `ae_project_context` (path, dirty, revision fingerprint) and summarize project health
 - List compositions, layers, footage, solids, placeholders, and folders
+- Apply typed patches (`ae_patch_project`, starting with `set_text_style`) and explicit saves (`save_copy` / `create_backup`)
 - Inspect a layer’s property tree or a footage item’s interpretation
 - Search the After Effects Scripting Guide locally
 - Run ExtendScript inside After Effects and return structured results
 
-Dedicated tools for mutations (rename layer, create comp, …) are **not** included yet. Changes go through `ae_eval_script`.
+Broader typed ops (rename, create, …) grow over time; `ae_eval_script` remains the escape hatch.
 
 ## Requirements
 

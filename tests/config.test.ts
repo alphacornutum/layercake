@@ -19,6 +19,7 @@ describe("loadConfig", () => {
     expect(cfg.scriptTimeoutMs).toBe(60_000);
     expect(cfg.inspectMaxBytes).toBe(524_288);
     expect(cfg.docsPath).toContain("vendor/after-effects-scripting-guide/docs");
+    expect(cfg.artifactDir).toContain(`layercake-artifacts-${process.pid}`);
   });
 
   it("resolves absolute and relative paths", () => {
@@ -29,6 +30,7 @@ describe("loadConfig", () => {
         AE_DOCS_PATH: "/custom/docs",
         AE_SCRIPT_TIMEOUT_MS: "12000",
         AE_INSPECT_MAX_BYTES: "1048576",
+        AE_ARTIFACT_DIR: "/var/layercake-artifacts",
       },
       "/repo",
     );
@@ -37,6 +39,7 @@ describe("loadConfig", () => {
     expect(cfg.docsPath).toBe("/custom/docs");
     expect(cfg.scriptTimeoutMs).toBe(12_000);
     expect(cfg.inspectMaxBytes).toBe(1_048_576);
+    expect(cfg.artifactDir).toBe("/var/layercake-artifacts");
   });
 
   it("derives app name from .app path when AE_APP_NAME unset", () => {
