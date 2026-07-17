@@ -20,6 +20,6 @@ Focus on:
 3. **Id namespaces** — Layer.id vs Item.id; join keys documented in tool descriptions.
 4. **ExtendScript** — ES3 constraints; reliance on injected JSON polyfill; modal/dialog risk.
 5. **Tests** — unit coverage for parse/filter/wrapper; AE tests still correctly `skipIf`-gated.
-6. **Docs** — README / `.env.example` / OpenSpec specs updated when behavior changed.
+6. **Docs** — `README.md` / linked `docs/*` (especially `mcp-tools`, `setup`, `troubleshooting`) / `.env.example` / OpenSpec specs updated when behavior changed.
 
 Output: findings first (severity-ordered), then open questions. Prefer concrete file references. Do not rewrite unrelated code.

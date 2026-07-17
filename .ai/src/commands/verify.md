@@ -1,19 +1,23 @@
 ---
 description: >-
-  Run audit, typecheck, lint, fmt:check, and unit tests; optionally AE host tests
+  Full QA: agentsync check, audit, typecheck, lint, fmt:check, unit tests, and build; optionally AE host tests
 argument-hint: "[ae]"
 ---
 
-Run the LayerCake verification suite and fix failures you introduce.
+Run the LayerCake full verification suite and fix failures you introduce.
+
+Full QA **always** includes AgentSync. If you edited `.ai/src/`, run `agentsync sync` before `agentsync check`.
 
 1. Run:
 
 ```bash
+agentsync check
 npm audit --audit-level=high
 npm run typecheck
 npm run lint
 npm run fmt:check
 npm test
+npm run build
 ```
 
 2. If `$ARGUMENTS` contains `ae` (or the user asked for host tests), also run:

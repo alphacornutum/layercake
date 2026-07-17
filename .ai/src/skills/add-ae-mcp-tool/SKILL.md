@@ -38,11 +38,12 @@ Follow the inventory pattern already used for comps, sources, and folders.
 6. **Tests + docs**
    - Unit: script contains shared helpers / key probes; parse + filter fixtures in `tests/inventory.test.ts`.
    - Host: extend `tests/host.ae.test.ts` behind `skipIf` gates.
-   - Update `README.md` tool table and any id-join guidance.
+   - Update `docs/mcp-tools.md` tool table and any id-join guidance; keep `README.md` tool/skill pointers accurate if the surface changed.
 
 7. **Verify**
    ```bash
-   npm run typecheck && npm run lint && npm test
+   agentsync check
+   npm run typecheck && npm run lint && npm test && npm run build
    # optional: npm run test:ae
    ```
 
