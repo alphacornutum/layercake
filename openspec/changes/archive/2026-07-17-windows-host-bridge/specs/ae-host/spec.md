@@ -1,0 +1,55 @@
+## MODIFIED Requirements
+
+### Requirement: Configurable After Effects host
+
+The MCP server MUST accept configuration that identifies the local After Effects installation in a platform-appropriate way, and MUST resolve that configuration before performing host operations.
+
+On macOS (`darwin`), configuration MUST accept an AppleScript application name (`AE_APP_NAME`) and/or an application/executable path (`AE_EXECUTABLE`) from which the app name can be derived. On Windows (`win32`), configuration MUST require an executable path (`AE_EXECUTABLE`) to the After Effects CLI binary (typically `AfterFX.exe`); an application display name MUST NOT be required for host operations.
+
+#### Scenario: Host configured via environment on macOS
+
+- **WHEN** the server is started on macOS with a valid `AE_EXECUTABLE` and/or `AE_APP_NAME`
+- **THEN** host status reporting MUST show the resolved executable and/or application name without error
+
+#### Scenario: Host configured via executable on Windows
+
+- **WHEN** the server is started on Windows with a valid `AE_EXECUTABLE` pointing at the After Effects binary
+- **THEN** host status reporting MUST show the resolved executable and MUST report the host as available for configuration purposes without requiring `AE_APP_NAME`
+
+#### Scenario: Missing host configuration
+
+- **WHEN** a host operation is requested and no usable After Effects host configuration is available for the current platform
+- **THEN** the server MUST return a clear error instructing the user to set the platform-appropriate variables (`AE_APP_NAME` and/or `AE_EXECUTABLE` on macOS; `AE_EXECUTABLE` on Windows)
+
+## ADDED Requirements
+
+### Requirement: Platform-specific host bridge
+
+The server MUST implement After Effects host operations on macOS via the AppleScript bridge and on Windows via the After Effects command-line script runner. On any other platform, host status MUST report the host as unavailable with a message that the bridge is only implemented on macOS and Windows, and host operations MUST fail with a clear error.
+
+#### Scenario: Windows host status when configured
+
+- **WHEN** the server runs on Windows with a valid `AE_EXECUTABLE`
+- **THEN** `ae_host_status` MUST report `platform` as `win32` (or the Node Windows platform string) and MUST NOT claim the host is unavailable solely because the platform is not macOS
+
+#### Scenario: Unsupported platform
+
+- **WHEN** the server runs on a platform that is neither macOS nor Windows
+- **THEN** host status MUST report `available: false` with a message that the After Effects host bridge is only implemented on macOS and Windows
+
+### Requirement: Platform-native project open transport
+
+Opening a project MUST preserve the same agent-facing success/error contract on supported platforms while using a platform-native transport: macOS MUST open via AppleScript application `open`; Windows MUST open by evaluating ExtendScript that calls `app.open` on the absolute project path through the Windows script-file runner.
+
+#### Scenario: Open valid project on Windows
+
+- **WHEN** the caller provides an absolute path to an existing `.aep` file on Windows and the host session is available
+- **THEN** After Effects MUST open that project and the operation MUST report success
+
+## REMOVED Requirements
+
+### Requirement: macOS-only host bridge
+
+**Reason**: Replaced by the platform-specific host bridge (macOS AppleScript + Windows CLI). Public product scope now documents both platforms.
+
+**Migration**: Use `Platform-specific host bridge` for availability and unsupported-platform errors; update operator docs via `product-identity`.

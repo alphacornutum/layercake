@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "hooks": {
+    "afterFileEdit": [
+      {
+        "command": "scripts/cursor-hooks/update-graph-incremental.sh",
+        "matcher": "Write|TabWrite",
+        "timeout": 45,
+        "failClosed": false
+      }
+    ],
+    "stop": [
+      {
+        "command": "scripts/cursor-hooks/update-graph-full.sh",
+        "timeout": 240,
+        "failClosed": false
+      }
+    ]
+  }
+}

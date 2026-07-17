@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "code-review-graph": {
+      "command": "uvx",
+      "args": ["--with", "sentence-transformers", "code-review-graph", "serve"],
+      "type": "stdio"
+    },
+    "layercake": {
+      "command": "npx",
+      "args": ["tsx", "src/index.ts"],
+      "cwd": ".",
+      "env": {
+        "AE_APP_NAME": "Adobe After Effects 2026",
+        "AE_EXECUTABLE": "/Applications/Adobe After Effects 2026/Adobe After Effects 2026.app"
+      }
+    }
+  }
+}

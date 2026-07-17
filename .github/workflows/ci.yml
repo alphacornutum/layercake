@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  agentsync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install AgentSync
+        run: curl -fsSL https://raw.githubusercontent.com/yelmuratoff/agent/main/install.sh | bash
+
+      - name: Check sync-manifest is up to date
+        run: |
+          export AGENTSYNC_HOME="$HOME/.agentsync"
+          export PATH="$AGENTSYNC_HOME/bin:$HOME/.local/bin:$PATH"
+          agentsync sync
+          git diff --exit-code -- .ai/.sync-manifest
+
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [20, 22]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Audit dependencies
+        run: npm audit --audit-level=high
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Format check
+        run: npm run fmt:check
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build
+        run: npm run build

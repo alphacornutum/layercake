@@ -1,0 +1,536 @@
+import type {
+  CompInventory,
+  FolderInventory,
+  FolderTreeLeaf,
+  FolderTreeNode,
+  FootageKind,
+  InspectKeyframe,
+  InspectLookupErrorPayload,
+  InspectPropertyNode,
+  InventoryComposition,
+  InventoryLayer,
+  InventorySource,
+  InventorySourceRef,
+  LayerInspectDetail,
+  LayerInspectLayer,
+  LayerInspectResult,
+  LayerType,
+  SourceInspectDetail,
+  SourceInspectResult,
+  SourceInventory,
+  SourceRefType,
+} from "./types.js";
+
+const LAYER_TYPES = new Set<LayerType>([
+  "av",
+  "text",
+  "shape",
+  "camera",
+  "light",
+  "null",
+  "adjustment",
+  "guide",
+  "other",
+]);
+
+const FOOTAGE_KINDS = new Set<FootageKind>(["file", "solid", "placeholder"]);
+const SOURCE_REF_TYPES = new Set<SourceRefType>(["footage", "comp"]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function assertNumber(value: unknown, field: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error(`Invalid inventory: ${field} must be a finite number`);
+  }
+  return value;
+}
+
+function assertString(value: unknown, field: string): string {
+  if (typeof value !== "string") {
+    throw new Error(`Invalid inventory: ${field} must be a string`);
+  }
+  return value;
+}
+
+function assertBoolean(value: unknown, field: string): boolean {
+  if (typeof value !== "boolean") {
+    throw new Error(`Invalid inventory: ${field} must be a boolean`);
+  }
+  return value;
+}
+
+function assertFootageKind(value: unknown, field: string): FootageKind {
+  const kind = assertString(value, field) as FootageKind;
+  if (!FOOTAGE_KINDS.has(kind)) {
+    throw new Error(`Invalid inventory: ${field} is not a known footageKind`);
+  }
+  return kind;
+}
+
+function parseNullableString(value: unknown, field: string): string | null {
+  if (value === null) return null;
+  return assertString(value, field);
+}
+
+function parseSolidColor(value: unknown, field: string): [number, number, number] | null {
+  if (value === null) return null;
+  if (!Array.isArray(value) || value.length !== 3) {
+    throw new Error(`Invalid inventory: ${field} must be null or an [R,G,B] array`);
+  }
+  return [
+    assertNumber(value[0], `${field}[0]`),
+    assertNumber(value[1], `${field}[1]`),
+    assertNumber(value[2], `${field}[2]`),
+  ];
+}
+
+function parseSourceRef(raw: unknown, path: string): InventorySourceRef {
+  if (!isRecord(raw)) {
+    throw new Error(`Invalid inventory: ${path} must be an object`);
+  }
+  const type = assertString(raw.type, `${path}.type`) as SourceRefType;
+  if (!SOURCE_REF_TYPES.has(type)) {
+    throw new Error(`Invalid inventory: ${path}.type is not a known source type`);
+  }
+  const ref: InventorySourceRef = {
+    id: assertNumber(raw.id, `${path}.id`),
+    name: assertString(raw.name, `${path}.name`),
+    type,
+    parentFolderId: assertNumber(raw.parentFolderId, `${path}.parentFolderId`),
+    folderPath: assertString(raw.folderPath, `${path}.folderPath`),
+  };
+  if (type === "footage") {
+    ref.footageKind = assertFootageKind(raw.footageKind, `${path}.footageKind`);
+  }
+  return ref;
+}
+
+function parseLayer(raw: unknown, path: string): InventoryLayer {
+  if (!isRecord(raw)) {
+    throw new Error(`Invalid inventory: ${path} must be an object`);
+  }
+  const type = assertString(raw.type, `${path}.type`) as LayerType;
+  if (!LAYER_TYPES.has(type)) {
+    throw new Error(`Invalid inventory: ${path}.type is not a known layer type`);
+  }
+  const layer: InventoryLayer = {
+    id: assertNumber(raw.id, `${path}.id`),
+    index: assertNumber(raw.index, `${path}.index`),
+    name: assertString(raw.name, `${path}.name`),
+    type,
+    inPoint: assertNumber(raw.inPoint, `${path}.inPoint`),
+    outPoint: assertNumber(raw.outPoint, `${path}.outPoint`),
+    duration: assertNumber(raw.duration, `${path}.duration`),
+    stretch: assertNumber(raw.stretch, `${path}.stretch`),
+    motionBlur: assertBoolean(raw.motionBlur, `${path}.motionBlur`),
+    label: assertNumber(raw.label, `${path}.label`),
+    hasEffects: assertBoolean(raw.hasEffects, `${path}.hasEffects`),
+  };
+  if (raw.source !== undefined) {
+    layer.source = parseSourceRef(raw.source, `${path}.source`);
+  }
+  return layer;
+}
+
+function parseComposition(raw: unknown, path: string): InventoryComposition {
+  if (!isRecord(raw)) {
+    throw new Error(`Invalid inventory: ${path} must be an object`);
+  }
+  if (!Array.isArray(raw.layers)) {
+    throw new Error(`Invalid inventory: ${path}.layers must be an array`);
+  }
+  return {
+    id: assertNumber(raw.id, `${path}.id`),
+    name: assertString(raw.name, `${path}.name`),
+    duration: assertNumber(raw.duration, `${path}.duration`),
+    frameRate: assertNumber(raw.frameRate, `${path}.frameRate`),
+    numLayers: assertNumber(raw.numLayers, `${path}.numLayers`),
+    layers: raw.layers.map((layer, i) => parseLayer(layer, `${path}.layers[${i}]`)),
+  };
+}
+
+/** Parse and validate the JSON payload returned by the inventory ExtendScript. */
+export function parseCompInventory(raw: string): CompInventory {
+  let data: unknown;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    throw new Error(`Invalid inventory: result is not valid JSON`);
+  }
+  if (!isRecord(data)) {
+    throw new Error("Invalid inventory: root must be an object");
+  }
+  if (!Array.isArray(data.compositions)) {
+    throw new Error("Invalid inventory: compositions must be an array");
+  }
+
+  const missingRaw = isRecord(data.missing) ? data.missing : { compIds: [], compNames: [] };
+  const missingIds = Array.isArray(missingRaw.compIds) ? missingRaw.compIds : [];
+  const missingNames = Array.isArray(missingRaw.compNames) ? missingRaw.compNames : [];
+
+  return {
+    projectName: assertString(data.projectName ?? "", "projectName"),
+    compositions: data.compositions.map((comp, i) => parseComposition(comp, `compositions[${i}]`)),
+    missing: {
+      compIds: missingIds.map((id, i) => assertNumber(id, `missing.compIds[${i}]`)),
+      compNames: missingNames.map((name, i) => assertString(name, `missing.compNames[${i}]`)),
+    },
+  };
+}
+
+function parseSource(raw: unknown, path: string): InventorySource {
+  if (!isRecord(raw)) {
+    throw new Error(`Invalid inventory: ${path} must be an object`);
+  }
+  if (!Array.isArray(raw.usedInCompIds)) {
+    throw new Error(`Invalid inventory: ${path}.usedInCompIds must be an array`);
+  }
+  return {
+    id: assertNumber(raw.id, `${path}.id`),
+    name: assertString(raw.name, `${path}.name`),
+    label: assertNumber(raw.label, `${path}.label`),
+    comment: assertString(raw.comment, `${path}.comment`),
+    footageKind: assertFootageKind(raw.footageKind, `${path}.footageKind`),
+    width: assertNumber(raw.width, `${path}.width`),
+    height: assertNumber(raw.height, `${path}.height`),
+    pixelAspect: assertNumber(raw.pixelAspect, `${path}.pixelAspect`),
+    frameRate: assertNumber(raw.frameRate, `${path}.frameRate`),
+    duration: assertNumber(raw.duration, `${path}.duration`),
+    hasVideo: assertBoolean(raw.hasVideo, `${path}.hasVideo`),
+    hasAudio: assertBoolean(raw.hasAudio, `${path}.hasAudio`),
+    footageMissing: assertBoolean(raw.footageMissing, `${path}.footageMissing`),
+    isStill: assertBoolean(raw.isStill, `${path}.isStill`),
+    useProxy: assertBoolean(raw.useProxy, `${path}.useProxy`),
+    file: parseNullableString(raw.file, `${path}.file`),
+    missingFootagePath: parseNullableString(raw.missingFootagePath, `${path}.missingFootagePath`),
+    solidColor: parseSolidColor(raw.solidColor, `${path}.solidColor`),
+    parentFolderId: assertNumber(raw.parentFolderId, `${path}.parentFolderId`),
+    folderPath: assertString(raw.folderPath, `${path}.folderPath`),
+    usedInCompIds: raw.usedInCompIds.map((id, i) =>
+      assertNumber(id, `${path}.usedInCompIds[${i}]`),
+    ),
+  };
+}
+
+/** Parse and validate the JSON payload returned by the sources ExtendScript. */
+export function parseSourceInventory(raw: string): SourceInventory {
+  let data: unknown;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    throw new Error(`Invalid inventory: result is not valid JSON`);
+  }
+  if (!isRecord(data)) {
+    throw new Error("Invalid inventory: root must be an object");
+  }
+  if (!Array.isArray(data.sources)) {
+    throw new Error("Invalid inventory: sources must be an array");
+  }
+  return {
+    projectName: assertString(data.projectName ?? "", "projectName"),
+    sources: data.sources.map((source, i) => parseSource(source, `sources[${i}]`)),
+  };
+}
+
+function parseFolderLeaf(raw: Record<string, unknown>, path: string): FolderTreeLeaf {
+  const type = assertString(raw.type, `${path}.type`);
+  if (type === "comp") {
+    return {
+      id: assertNumber(raw.id, `${path}.id`),
+      name: assertString(raw.name, `${path}.name`),
+      type: "comp",
+    };
+  }
+  if (type === "footage") {
+    return {
+      id: assertNumber(raw.id, `${path}.id`),
+      name: assertString(raw.name, `${path}.name`),
+      type: "footage",
+      footageKind: assertFootageKind(raw.footageKind, `${path}.footageKind`),
+    };
+  }
+  throw new Error(`Invalid inventory: ${path}.type must be folder, footage, or comp`);
+}
+
+function parseFolderNode(raw: unknown, path: string): FolderTreeNode {
+  if (!isRecord(raw)) {
+    throw new Error(`Invalid inventory: ${path} must be an object`);
+  }
+  const type = assertString(raw.type, `${path}.type`);
+  if (type !== "folder") {
+    throw new Error(`Invalid inventory: ${path}.type must be "folder"`);
+  }
+  if (!Array.isArray(raw.children)) {
+    throw new Error(`Invalid inventory: ${path}.children must be an array`);
+  }
+  return {
+    id: assertNumber(raw.id, `${path}.id`),
+    name: assertString(raw.name, `${path}.name`),
+    type: "folder",
+    children: raw.children.map((child, i) => {
+      const childPath = `${path}.children[${i}]`;
+      if (!isRecord(child)) {
+        throw new Error(`Invalid inventory: ${childPath} must be an object`);
+      }
+      const childType = assertString(child.type, `${childPath}.type`);
+      if (childType === "folder") {
+        return parseFolderNode(child, childPath);
+      }
+      return parseFolderLeaf(child, childPath);
+    }),
+  };
+}
+
+/** Parse and validate the JSON payload returned by the folders ExtendScript. */
+export function parseFolderInventory(raw: string): FolderInventory {
+  let data: unknown;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    throw new Error(`Invalid inventory: result is not valid JSON`);
+  }
+  if (!isRecord(data)) {
+    throw new Error("Invalid inventory: root must be an object");
+  }
+  return {
+    projectName: assertString(data.projectName ?? "", "projectName"),
+    root: parseFolderNode(data.root, "root"),
+  };
+}
+
+const LAYER_DETAILS = new Set<LayerInspectDetail>(["overview", "extended", "full"]);
+const SOURCE_DETAILS = new Set<SourceInspectDetail>(["overview", "full"]);
+
+/** Rewrite AFX_INSPECT:* ExtendScript errors into readable messages with candidates. */
+export function formatInspectScriptError(error: string): string {
+  const prefix = "AFX_INSPECT:";
+  if (!error.startsWith(prefix)) {
+    return error;
+  }
+  try {
+    const payload = JSON.parse(error.slice(prefix.length)) as InspectLookupErrorPayload;
+    if (!payload || typeof payload.message !== "string") {
+      return error;
+    }
+    if (payload.candidates && payload.candidates.length > 0) {
+      return `${payload.message}: ${JSON.stringify(payload.candidates)}`;
+    }
+    return payload.message;
+  } catch {
+    return error;
+  }
+}
+
+function parseInspectPropertyNode(raw: unknown, path: string): InspectPropertyNode {
+  if (!isRecord(raw)) {
+    throw new Error(`Invalid inspect: ${path} must be an object`);
+  }
+  const isGroup = assertBoolean(raw.isGroup, `${path}.isGroup`);
+  const node: InspectPropertyNode = {
+    name: assertString(raw.name, `${path}.name`),
+    matchName: assertString(raw.matchName, `${path}.matchName`),
+    propertyIndex: assertNumber(raw.propertyIndex, `${path}.propertyIndex`),
+    isGroup,
+  };
+  if (raw.enabled !== undefined) {
+    node.enabled = assertBoolean(raw.enabled, `${path}.enabled`);
+  }
+  if (raw.active !== undefined) {
+    node.active = assertBoolean(raw.active, `${path}.active`);
+  }
+  if (isGroup) {
+    if (!Array.isArray(raw.properties)) {
+      throw new Error(`Invalid inspect: ${path}.properties must be an array`);
+    }
+    node.properties = raw.properties.map((child, i) =>
+      parseInspectPropertyNode(child, `${path}.properties[${i}]`),
+    );
+    return node;
+  }
+  if (raw.propertyValueType !== undefined) {
+    node.propertyValueType = assertString(raw.propertyValueType, `${path}.propertyValueType`);
+  }
+  if (raw.numKeys !== undefined) {
+    node.numKeys = assertNumber(raw.numKeys, `${path}.numKeys`);
+  }
+  if (raw.hasExpression !== undefined) {
+    node.hasExpression = assertBoolean(raw.hasExpression, `${path}.hasExpression`);
+  }
+  if (raw.expressionEnabled !== undefined) {
+    node.expressionEnabled = assertBoolean(raw.expressionEnabled, `${path}.expressionEnabled`);
+  }
+  if (raw.expression !== undefined) {
+    node.expression = assertString(raw.expression, `${path}.expression`);
+  }
+  if (raw.value !== undefined) {
+    node.value = raw.value;
+  }
+  if (raw.keyframes !== undefined) {
+    if (!Array.isArray(raw.keyframes)) {
+      throw new Error(`Invalid inspect: ${path}.keyframes must be an array`);
+    }
+    node.keyframes = raw.keyframes.map((key, i) =>
+      parseInspectKeyframe(key, `${path}.keyframes[${i}]`),
+    );
+  }
+  return node;
+}
+
+function parseInspectKeyframe(raw: unknown, path: string): InspectKeyframe {
+  if (!isRecord(raw)) {
+    throw new Error(`Invalid inspect: ${path} must be an object`);
+  }
+  const key: InspectKeyframe = {
+    time: assertNumber(raw.time, `${path}.time`),
+    value: raw.value,
+  };
+  if (raw.inInterpolationType !== undefined) {
+    key.inInterpolationType = assertString(raw.inInterpolationType, `${path}.inInterpolationType`);
+  }
+  if (raw.outInterpolationType !== undefined) {
+    key.outInterpolationType = assertString(
+      raw.outInterpolationType,
+      `${path}.outInterpolationType`,
+    );
+  }
+  if (raw.inEase !== undefined) {
+    key.inEase = raw.inEase as InspectKeyframe["inEase"];
+  }
+  if (raw.outEase !== undefined) {
+    key.outEase = raw.outEase as InspectKeyframe["outEase"];
+  }
+  if (raw.inSpatialTangent !== undefined) {
+    key.inSpatialTangent = raw.inSpatialTangent as number[];
+  }
+  if (raw.outSpatialTangent !== undefined) {
+    key.outSpatialTangent = raw.outSpatialTangent as number[];
+  }
+  return key;
+}
+
+function parseLayerInspectLayer(raw: unknown, path: string): LayerInspectLayer {
+  if (!isRecord(raw)) {
+    throw new Error(`Invalid inspect: ${path} must be an object`);
+  }
+  if (!Array.isArray(raw.properties)) {
+    throw new Error(`Invalid inspect: ${path}.properties must be an array`);
+  }
+  const type = assertString(raw.type, `${path}.type`) as LayerType;
+  if (!LAYER_TYPES.has(type)) {
+    throw new Error(`Invalid inspect: ${path}.type is not a known layer type`);
+  }
+  const layer: LayerInspectLayer = {
+    id: assertNumber(raw.id, `${path}.id`),
+    index: assertNumber(raw.index, `${path}.index`),
+    name: assertString(raw.name, `${path}.name`),
+    type,
+    inPoint: assertNumber(raw.inPoint, `${path}.inPoint`),
+    outPoint: assertNumber(raw.outPoint, `${path}.outPoint`),
+    duration: assertNumber(raw.duration, `${path}.duration`),
+    stretch: assertNumber(raw.stretch, `${path}.stretch`),
+    startTime: assertNumber(raw.startTime, `${path}.startTime`),
+    motionBlur: assertBoolean(raw.motionBlur, `${path}.motionBlur`),
+    label: assertNumber(raw.label, `${path}.label`),
+    hasEffects: assertBoolean(raw.hasEffects, `${path}.hasEffects`),
+    properties: raw.properties.map((prop, i) =>
+      parseInspectPropertyNode(prop, `${path}.properties[${i}]`),
+    ),
+  };
+  if (raw.enabled !== undefined) layer.enabled = assertBoolean(raw.enabled, `${path}.enabled`);
+  if (raw.solo !== undefined) layer.solo = assertBoolean(raw.solo, `${path}.solo`);
+  if (raw.shy !== undefined) layer.shy = assertBoolean(raw.shy, `${path}.shy`);
+  if (raw.locked !== undefined) layer.locked = assertBoolean(raw.locked, `${path}.locked`);
+  if (raw.source !== undefined) {
+    layer.source = parseSourceRef(raw.source, `${path}.source`);
+  }
+  return layer;
+}
+
+/** Parse and validate the JSON payload returned by ae_get_layer. */
+export function parseLayerInspect(raw: string): LayerInspectResult {
+  let data: unknown;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    throw new Error("Invalid inspect: result is not valid JSON");
+  }
+  if (!isRecord(data)) {
+    throw new Error("Invalid inspect: root must be an object");
+  }
+  if (!isRecord(data.comp)) {
+    throw new Error("Invalid inspect: comp must be an object");
+  }
+  const detail = assertString(data.detail, "detail") as LayerInspectDetail;
+  if (!LAYER_DETAILS.has(detail)) {
+    throw new Error('Invalid inspect: detail must be "overview", "extended", or "full"');
+  }
+  let matchNames: string[] | null = null;
+  if (data.matchNames !== null && data.matchNames !== undefined) {
+    if (!Array.isArray(data.matchNames)) {
+      throw new Error("Invalid inspect: matchNames must be an array or null");
+    }
+    matchNames = data.matchNames.map((name, i) => assertString(name, `matchNames[${i}]`));
+  }
+  return {
+    projectName: assertString(data.projectName ?? "", "projectName"),
+    detail,
+    atTime: assertNumber(data.atTime, "atTime"),
+    preExpression: assertBoolean(data.preExpression, "preExpression"),
+    matchNames,
+    comp: {
+      id: assertNumber(data.comp.id, "comp.id"),
+      name: assertString(data.comp.name, "comp.name"),
+      duration: assertNumber(data.comp.duration, "comp.duration"),
+      frameRate: assertNumber(data.comp.frameRate, "comp.frameRate"),
+      time: assertNumber(data.comp.time, "comp.time"),
+    },
+    layer: parseLayerInspectLayer(data.layer, "layer"),
+  };
+}
+
+/** Parse and validate the JSON payload returned by ae_get_source. */
+export function parseSourceInspect(raw: string): SourceInspectResult {
+  let data: unknown;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    throw new Error("Invalid inspect: result is not valid JSON");
+  }
+  if (!isRecord(data)) {
+    throw new Error("Invalid inspect: root must be an object");
+  }
+  const detail = assertString(data.detail, "detail") as SourceInspectDetail;
+  if (!SOURCE_DETAILS.has(detail)) {
+    throw new Error('Invalid inspect: detail must be "overview" or "full"');
+  }
+  if (!isRecord(data.source)) {
+    throw new Error("Invalid inspect: source must be an object");
+  }
+  const base = parseSource(data.source, "source");
+  const source: SourceInspectResult["source"] = { ...base };
+  if (data.source.interpret !== undefined) {
+    if (!isRecord(data.source.interpret)) {
+      throw new Error("Invalid inspect: source.interpret must be an object");
+    }
+    source.interpret = data.source.interpret as SourceInspectResult["source"]["interpret"];
+  }
+  if (data.source.mainSource !== undefined) {
+    if (!isRecord(data.source.mainSource)) {
+      throw new Error("Invalid inspect: source.mainSource must be an object");
+    }
+    source.mainSource = data.source.mainSource as SourceInspectResult["source"]["mainSource"];
+  }
+  if (data.source.proxySource !== undefined) {
+    source.proxySource =
+      data.source.proxySource === null
+        ? null
+        : (data.source.proxySource as SourceInspectResult["source"]["proxySource"]);
+  }
+  return {
+    projectName: assertString(data.projectName ?? "", "projectName"),
+    detail,
+    source,
+  };
+}
