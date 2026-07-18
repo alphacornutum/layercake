@@ -17,22 +17,42 @@ export type TextStyleTargetResult = {
   message?: string;
 };
 
-/** Project-panel target evidence (`create_folder` / `move_project_item` / `delete_project_item`). */
-export type PanelTargetResult = {
+export type PanelFolderPlacement = {
+  parentFolderId?: number;
+  parentFolderName?: string;
+};
+
+type PanelItemTargetBase = {
   itemId: number;
   itemName?: string;
   itemType?: string;
   status: PatchOpStatus;
-  before?: { parentFolderId?: number; parentFolderName?: string };
-  after?: { parentFolderId?: number; parentFolderName?: string };
-  /** Present on successful `create_folder` targets. */
-  created?: { id: number; name: string; parentFolderId: number };
-  /** Present on `delete_project_item` before removal. */
-  nestedItemCount?: number;
-  usedInCompIds?: number[];
-  usedInCompCount?: number;
   message?: string;
 };
+
+/** `create_folder` target evidence. */
+export type CreateFolderTargetResult = PanelItemTargetBase & {
+  created?: { id: number; name: string; parentFolderId: number };
+  after?: PanelFolderPlacement;
+};
+
+/** `move_project_item` target evidence. */
+export type MoveProjectItemTargetResult = PanelItemTargetBase & {
+  before?: PanelFolderPlacement;
+  after?: PanelFolderPlacement;
+};
+
+/** `delete_project_item` target evidence (impact captured before remove). */
+export type DeleteProjectItemTargetResult = PanelItemTargetBase & {
+  nestedItemCount: number;
+  usedInCompIds: number[];
+  usedInCompCount: number;
+};
+
+export type PanelTargetResult =
+  | CreateFolderTargetResult
+  | MoveProjectItemTargetResult
+  | DeleteProjectItemTargetResult;
 
 export type PatchTargetResult = TextStyleTargetResult | PanelTargetResult;
 

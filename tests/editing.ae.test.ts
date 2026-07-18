@@ -15,7 +15,11 @@ import { listProjectContext } from "../src/inventory/list-project-context.js";
 import { listSources } from "../src/inventory/list-sources.js";
 import { applyProjectPatch } from "../src/patch/apply.js";
 import { saveProject } from "../src/patch/save.js";
-import type { PanelTargetResult } from "../src/patch/types.js";
+import type {
+  CreateFolderTargetResult,
+  DeleteProjectItemTargetResult,
+  MoveProjectItemTargetResult,
+} from "../src/patch/types.js";
 
 /**
  * hello-world.aep includes a text layer in composition `main` ("Hello World").
@@ -235,7 +239,7 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
     expect(create.revision).toBeGreaterThan(before.revision);
     expect(create.fingerprint).not.toBe(before.fingerprint);
 
-    const createdTarget = create.results[0]?.targets[0] as PanelTargetResult | undefined;
+    const createdTarget = create.results[0]?.targets[0] as CreateFolderTargetResult | undefined;
     expect(createdTarget?.status).toBe("changed");
     expect(createdTarget?.created?.parentFolderId).toBe(rootId);
     const folderId = createdTarget?.created?.id ?? createdTarget?.itemId;
@@ -263,7 +267,7 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
     expect(move.ok).toBe(true);
     if (!move.ok) return;
     for (const t of move.results[0]?.targets ?? []) {
-      const panel = t as PanelTargetResult;
+      const panel = t as MoveProjectItemTargetResult;
       expect(panel.status).toBe("changed");
       expect(panel.after?.parentFolderId).toBe(folderId);
       expect(panel.before?.parentFolderId).not.toBe(folderId);
@@ -339,7 +343,7 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
     );
     expect(del.ok).toBe(true);
     if (!del.ok) return;
-    const delTarget = del.results[0]?.targets[0] as PanelTargetResult | undefined;
+    const delTarget = del.results[0]?.targets[0] as DeleteProjectItemTargetResult | undefined;
     expect(delTarget?.status).toBe("changed");
     expect(delTarget?.itemType).toBe("folder");
     expect(delTarget?.nestedItemCount).toBeGreaterThanOrEqual(1);
@@ -363,6 +367,41 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
     );
     expect(rootRefuse.ok).toBe(false);
     if (!rootRefuse.ok) expect(rootRefuse.code).toBe("validation");
+
+    // AVItem delete with non-empty usedInCompIds (footage used by main).
+    const sourcesAfter = await listSources(host, config.scriptTimeoutMs);
+    const usedFootage = sourcesAfter.sources.find(
+      (s) => s.name === "1x1.png" || s.file?.includes("1x1"),
+    );
+    expect(usedFootage).toBeTruthy();
+    const afterRootRefuse = await listProjectContext(host, config.scriptTimeoutMs);
+    const delFootage = await applyProjectPatch(
+      host,
+      {
+        project: {
+          path: afterRootRefuse.projectPath!,
+          fingerprint: afterRootRefuse.fingerprint,
+        },
+        operations: [
+          {
+            op: "delete_project_item",
+            selector: { kind: "items", itemIds: [usedFootage!.id] },
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(delFootage.ok).toBe(true);
+    if (!delFootage.ok) return;
+    const footageTarget = delFootage.results[0]?.targets[0] as
+      | DeleteProjectItemTargetResult
+      | undefined;
+    expect(footageTarget?.status).toBe("changed");
+    expect(footageTarget?.usedInCompIds?.length).toBeGreaterThanOrEqual(1);
+    expect(footageTarget?.usedInCompCount).toBe(footageTarget?.usedInCompIds?.length);
+    for (const compId of footageTarget?.usedInCompIds ?? []) {
+      expect(typeof compId).toBe("number");
+    }
 
     // Still on the same work-copy path — no implicit save/relocate.
     const finalCtx = await listProjectContext(host, config.scriptTimeoutMs);

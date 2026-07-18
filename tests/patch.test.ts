@@ -147,10 +147,14 @@ describe("buildPatchApplyScript", () => {
     expect(script).toContain("delete_project_item");
     expect(script).toContain("addFolder");
     expect(script).toContain("wouldCreateFolderCycle");
+    expect(script).toContain("Cycle checks run at apply time");
+    expect(script).toContain("anyChanged: !!created");
+    expect(script).toContain("function resolveOp");
+    expect(script).toContain("function applyPlan");
+    expect(script).toContain("function rootRefusalAmong");
     expect(script).toContain("countNestedDescendants");
     expect(script).toContain("collectUsedInCompIds");
-    expect(script).toContain("Refusing to delete the project root folder");
-    expect(script).toContain("Refusing to move the project root folder");
+    expect(script).toContain('Refusing to " + actionVerb + " the project root folder');
     expect(script).toContain("nestedItemCount");
     expect(script).toContain("usedInCompIds");
     expect(script).toContain("rootFolder.id === itemId");

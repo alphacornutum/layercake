@@ -339,8 +339,10 @@ function applyCreateFolder(plan, opResult) {
     itemType: "folder",
     status: "failed"
   };
+  // Track addFolder success so mid-step failures still set anyChanged and trigger undo.
+  var created = null;
   try {
-    var created = app.project.items.addFolder(name);
+    created = app.project.items.addFolder(name);
     if (created.parentFolder.id !== parent.id) {
       created.parentFolder = parent;
     }
@@ -361,12 +363,19 @@ function applyCreateFolder(plan, opResult) {
     return { anyChanged: true, anyFailed: false, applyError: null };
   } catch (ce) {
     targetResult.message = String(ce);
+    if (created) {
+      try {
+        targetResult.itemId = created.id;
+        targetResult.itemName = String(created.name || name);
+      } catch (ne) {}
+    }
     opResult.targets.push(targetResult);
-    return { anyChanged: false, anyFailed: true, applyError: String(ce) };
+    return { anyChanged: !!created, anyFailed: true, applyError: String(ce) };
   }
 }
 
 function applyMoveProjectItem(plan, opResult) {
+  // Root refuse is validated in resolveOp; cycle checks stay here (tree may change mid-batch).
   var destination = plan.destinationFolder;
   var anyChanged = false;
   var anyFailed = false;
@@ -382,15 +391,6 @@ function applyMoveProjectItem(plan, opResult) {
       status: "failed",
       before: { parentFolderId: before.id, parentFolderName: before.name }
     };
-
-    if (isRootFolder(item)) {
-      targetResult.status = "failed";
-      targetResult.message = "Refusing to move the project root folder";
-      anyFailed = true;
-      opResult.targets.push(targetResult);
-      applyError = targetResult.message;
-      break;
-    }
 
     if (item instanceof FolderItem && wouldCreateFolderCycle(item, destination)) {
       targetResult.status = "failed";
@@ -433,6 +433,7 @@ function applyMoveProjectItem(plan, opResult) {
 }
 
 function applyDeleteProjectItem(plan, opResult) {
+  // Root refuse is validated in resolveOp before the undo group.
   var anyChanged = false;
   var anyFailed = false;
   var applyError = null;
@@ -448,14 +449,6 @@ function applyDeleteProjectItem(plan, opResult) {
       usedInCompIds: [],
       usedInCompCount: 0
     };
-
-    if (isRootFolder(item)) {
-      targetResult.message = "Refusing to delete the project root folder";
-      anyFailed = true;
-      opResult.targets.push(targetResult);
-      applyError = targetResult.message;
-      break;
-    }
 
     if (item instanceof FolderItem) {
       targetResult.nestedItemCount = countNestedDescendants(item);
@@ -480,6 +473,90 @@ function applyDeleteProjectItem(plan, opResult) {
   }
 
   return { anyChanged: anyChanged, anyFailed: anyFailed, applyError: applyError };
+}
+
+function rootRefusalAmong(targets, actionVerb) {
+  for (var ri = 0; ri < targets.length; ri++) {
+    if (isRootFolder(targets[ri].item)) {
+      return "Refusing to " + actionVerb + " the project root folder";
+    }
+  }
+  return null;
+}
+
+function resolveOp(op) {
+  if (op.op === "set_text_style") {
+    var resolvedText = resolveTextSelector(op.selector);
+    if (resolvedText.error) return { error: resolvedText.error };
+    return {
+      plan: { op: op, kind: "set_text_style", targets: resolvedText.targets },
+      targetCount: resolvedText.targets.length
+    };
+  }
+  if (op.op === "create_folder") {
+    var parentFolder = folderById(op.parentFolderId);
+    if (!parentFolder) {
+      return { error: "Parent folder not found or not a FolderItem: " + op.parentFolderId };
+    }
+    return {
+      plan: {
+        op: op,
+        kind: "create_folder",
+        targets: [{ parentFolder: parentFolder }],
+        parentFolder: parentFolder
+      },
+      targetCount: 1
+    };
+  }
+  if (op.op === "move_project_item") {
+    var destFolder = folderById(op.destinationFolderId);
+    if (!destFolder) {
+      return {
+        error: "Destination folder not found or not a FolderItem: " + op.destinationFolderId
+      };
+    }
+    var resolvedMove = resolveItemsSelector(op.selector);
+    if (resolvedMove.error) return { error: resolvedMove.error };
+    // Cycle checks run at apply time so earlier ops in this batch can reshape the tree.
+    var moveRootErr = rootRefusalAmong(resolvedMove.targets, "move");
+    if (moveRootErr) return { error: moveRootErr };
+    return {
+      plan: {
+        op: op,
+        kind: "move_project_item",
+        targets: resolvedMove.targets,
+        destinationFolder: destFolder
+      },
+      targetCount: resolvedMove.targets.length
+    };
+  }
+  if (op.op === "delete_project_item") {
+    var resolvedDelete = resolveItemsSelector(op.selector);
+    if (resolvedDelete.error) return { error: resolvedDelete.error };
+    var deleteRootErr = rootRefusalAmong(resolvedDelete.targets, "delete");
+    if (deleteRootErr) return { error: deleteRootErr };
+    return {
+      plan: {
+        op: op,
+        kind: "delete_project_item",
+        targets: resolvedDelete.targets
+      },
+      targetCount: resolvedDelete.targets.length
+    };
+  }
+  return { error: "Unsupported operation: " + op.op };
+}
+
+function applyPlan(plan, opResult) {
+  if (plan.kind === "set_text_style") return applySetTextStyle(plan, opResult);
+  if (plan.kind === "create_folder") return applyCreateFolder(plan, opResult);
+  if (plan.kind === "move_project_item") return applyMoveProjectItem(plan, opResult);
+  if (plan.kind === "delete_project_item") return applyDeleteProjectItem(plan, opResult);
+  return {
+    anyChanged: false,
+    anyFailed: true,
+    applyError: "Unsupported operation kind: " + plan.kind
+  };
 }
 
 if (!app.project) {
@@ -518,117 +595,17 @@ var resolvedPlans = [];
 var totalTargets = 0;
 
 for (var oi = 0; oi < ops.length; oi++) {
-  var op = ops[oi];
-  if (op.op === "set_text_style") {
-    var resolvedText = resolveTextSelector(op.selector);
-    if (resolvedText.error) {
-      return JSON.stringify({
-        ok: false,
-        error: resolvedText.error,
-        code: "validation",
-        context: ctx
-      });
-    }
-    totalTargets += resolvedText.targets.length;
-    resolvedPlans.push({ op: op, kind: "set_text_style", targets: resolvedText.targets });
-  } else if (op.op === "create_folder") {
-    var parentFolder = folderById(op.parentFolderId);
-    if (!parentFolder) {
-      return JSON.stringify({
-        ok: false,
-        error: "Parent folder not found or not a FolderItem: " + op.parentFolderId,
-        code: "validation",
-        context: ctx
-      });
-    }
-    totalTargets += 1;
-    resolvedPlans.push({
-      op: op,
-      kind: "create_folder",
-      targets: [{ parentFolder: parentFolder }],
-      parentFolder: parentFolder
-    });
-  } else if (op.op === "move_project_item") {
-    var destFolder = folderById(op.destinationFolderId);
-    if (!destFolder) {
-      return JSON.stringify({
-        ok: false,
-        error: "Destination folder not found or not a FolderItem: " + op.destinationFolderId,
-        code: "validation",
-        context: ctx
-      });
-    }
-    var resolvedMove = resolveItemsSelector(op.selector);
-    if (resolvedMove.error) {
-      return JSON.stringify({
-        ok: false,
-        error: resolvedMove.error,
-        code: "validation",
-        context: ctx
-      });
-    }
-    for (var mi = 0; mi < resolvedMove.targets.length; mi++) {
-      var moveItem = resolvedMove.targets[mi].item;
-      if (isRootFolder(moveItem)) {
-        return JSON.stringify({
-          ok: false,
-          error: "Refusing to move the project root folder",
-          code: "validation",
-          context: ctx
-        });
-      }
-      if (moveItem instanceof FolderItem && wouldCreateFolderCycle(moveItem, destFolder)) {
-        return JSON.stringify({
-          ok: false,
-          error:
-            "Refusing folder move that would create a cycle (destination is the folder or a descendant): itemId=" +
-            moveItem.id,
-          code: "validation",
-          context: ctx
-        });
-      }
-    }
-    totalTargets += resolvedMove.targets.length;
-    resolvedPlans.push({
-      op: op,
-      kind: "move_project_item",
-      targets: resolvedMove.targets,
-      destinationFolder: destFolder
-    });
-  } else if (op.op === "delete_project_item") {
-    var resolvedDelete = resolveItemsSelector(op.selector);
-    if (resolvedDelete.error) {
-      return JSON.stringify({
-        ok: false,
-        error: resolvedDelete.error,
-        code: "validation",
-        context: ctx
-      });
-    }
-    for (var di = 0; di < resolvedDelete.targets.length; di++) {
-      if (isRootFolder(resolvedDelete.targets[di].item)) {
-        return JSON.stringify({
-          ok: false,
-          error: "Refusing to delete the project root folder",
-          code: "validation",
-          context: ctx
-        });
-      }
-    }
-    totalTargets += resolvedDelete.targets.length;
-    resolvedPlans.push({
-      op: op,
-      kind: "delete_project_item",
-      targets: resolvedDelete.targets
-    });
-  } else {
+  var resolved = resolveOp(ops[oi]);
+  if (resolved.error) {
     return JSON.stringify({
       ok: false,
-      error: "Unsupported operation: " + op.op,
+      error: resolved.error,
       code: "validation",
       context: ctx
     });
   }
+  totalTargets += resolved.targetCount;
+  resolvedPlans.push(resolved.plan);
 }
 
 if (totalTargets > MAX_TARGETS && !allowBroad) {
@@ -656,23 +633,7 @@ try {
       status: "already_satisfied",
       targets: []
     };
-    var outcome;
-
-    if (plan.kind === "set_text_style") {
-      outcome = applySetTextStyle(plan, opResult);
-    } else if (plan.kind === "create_folder") {
-      outcome = applyCreateFolder(plan, opResult);
-    } else if (plan.kind === "move_project_item") {
-      outcome = applyMoveProjectItem(plan, opResult);
-    } else if (plan.kind === "delete_project_item") {
-      outcome = applyDeleteProjectItem(plan, opResult);
-    } else {
-      outcome = {
-        anyChanged: false,
-        anyFailed: true,
-        applyError: "Unsupported operation kind: " + plan.kind
-      };
-    }
+    var outcome = applyPlan(plan, opResult);
 
     if (outcome.anyChanged) mutated = true;
     if (outcome.applyError) applyError = outcome.applyError;

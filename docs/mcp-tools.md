@@ -54,7 +54,7 @@ For follow-up work, prefer IDs over names or indexes. Names can be duplicated; i
 | `move_project_item`   | Move items by `selector.kind: "items"` + `itemIds` into `destinationFolderId`            |
 | `delete_project_item` | Delete items via AE `Item.remove()`; refuses the project root; reports impact evidence   |
 
-Patch mutates **authored / pre-expression** project state: fonts and panel structure. Panel ops select by stable `Item.id` only and do **not** read or write `Property.expression`. Deleting an item that owns layers removes those properties with the item; deleting in-use footage may leave expression strings intact while later evaluation fails / sources go missing.
+Patch mutates **authored / pre-expression** project state: fonts and panel structure. Panel ops select by stable `Item.id` only and do **not** read or write `Property.expression`. “Pre-expression” here means authored structure / `TextDocument` fonts — panel ops do not use `valueAtTime(..., preExpression)`. Deleting an item that owns layers removes those properties with the item; deleting in-use footage may leave expression strings intact while later evaluation fails / sources go missing.
 
 Delete follows After Effects defaults: folders recursively remove contents; in-use footage/comps may be removed. Evidence includes `nestedItemCount` (folders) and the full `usedInCompIds` list (+ count) for AVItems. Disk media files are never deleted. On success, agents MAY reuse the returned `fingerprint` / `dirty` / `revision` for the next `ae_save_project` or patch without an immediate `ae_project_context` re-poll when no other mutator (human UI, `ae_eval_script`, another tool) intervened.
 

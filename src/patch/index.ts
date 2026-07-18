@@ -18,6 +18,10 @@ export {
 } from "./schema.js";
 export { saveProject, type SaveProjectInput, type SaveProjectResult } from "./save.js";
 export type {
+  CreateFolderTargetResult,
+  DeleteProjectItemTargetResult,
+  MoveProjectItemTargetResult,
+  PanelFolderPlacement,
   PanelTargetResult,
   PatchApplyResult,
   PatchOpStatus,
