@@ -17,12 +17,13 @@ import { saveProject } from "../src/patch/save.js";
 /**
  * hello-world.aep includes a text layer in composition `main` ("Hello World").
  * Mutating e2e work runs against a temp copy so the committed fixture stays clean.
+ * Sibling `1x1.png` must travel with every relocated .aep — relative file footage
+ * resolves next to the project (see fixtures/README.md).
  */
 
-const committedFixtureAep = resolve(
-  dirname(fileURLToPath(import.meta.url)),
-  "../fixtures/hello-world.aep",
-);
+const fixturesDir = resolve(dirname(fileURLToPath(import.meta.url)), "../fixtures");
+const committedFixtureAep = join(fixturesDir, "hello-world.aep");
+const committedFixturePng = join(fixturesDir, "1x1.png");
 const config = loadConfig();
 const hostPlatformSupported = process.platform === "darwin" || process.platform === "win32";
 
@@ -36,8 +37,16 @@ function isHostConfigured(): boolean {
   }
 }
 
+/** Copy .aep + linked fixture media into destDir; return absolute path to the .aep. */
+function materializeFixtureTree(destDir: string, aepBasename: string): string {
+  const destAep = join(destDir, aepBasename);
+  copyFileSync(committedFixtureAep, destAep);
+  copyFileSync(committedFixturePng, join(destDir, "1x1.png"));
+  return destAep;
+}
+
 const hasHost = isHostConfigured();
-const hasFixture = existsSync(committedFixtureAep);
+const hasFixture = existsSync(committedFixtureAep) && existsSync(committedFixturePng);
 
 let workDir = "";
 let workAep = "";
@@ -55,9 +64,18 @@ async function closeDiscard(host: AeHost): Promise<void> {
 async function openWorkCopy(host: AeHost, resetFromCommitted: boolean): Promise<void> {
   await closeDiscard(host);
   if (resetFromCommitted) {
-    copyFileSync(committedFixtureAep, workAep);
+    materializeFixtureTree(workDir, "hello-world-work.aep");
   }
   await host.openProject(workAep);
+  // AE often marks a project dirty on open (footage resolve, fonts, etc.).
+  // create_backup requires a clean on-disk file — persist the temp work copy only.
+  const saved = await host.evalScript(
+    "if (!app.project) throw new Error('no project'); app.project.save(); return app.project.dirty ? 1 : 0;",
+    config.scriptTimeoutMs,
+  );
+  if (!saved.ok) {
+    throw new Error(`Failed to save work copy after open: ${saved.error}`);
+  }
 }
 
 describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () => {
@@ -65,8 +83,7 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
 
   beforeAll(async () => {
     workDir = mkdtempSync(join(tmpdir(), "lc-ae-edit-work-"));
-    workAep = join(workDir, "hello-world-work.aep");
-    copyFileSync(committedFixtureAep, workAep);
+    workAep = materializeFixtureTree(workDir, "hello-world-work.aep");
     await host.ensureSession();
     for (let attempt = 1; attempt <= 3; attempt++) {
       const warm = await host.evalScript(
@@ -158,6 +175,8 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
       }
 
       const dest = join(artifactDir, "hello-world-copy.aep");
+      // Save As relocates the active project; keep relative footage resolvable.
+      copyFileSync(committedFixturePng, join(artifactDir, "1x1.png"));
       const saved = await saveProject(
         host,
         {
@@ -241,10 +260,8 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
     const projectCtx = await listProjectContext(host, config.scriptTimeoutMs);
 
     const otherDir = mkdtempSync(join(tmpdir(), "lc-ae-other-"));
-    const otherAep = join(otherDir, "other.aep");
+    const otherAep = materializeFixtureTree(otherDir, "other.aep");
     try {
-      copyFileSync(committedFixtureAep, otherAep);
-
       await expect(
         openProjectGuarded(host, otherAep, config.scriptTimeoutMs),
       ).rejects.toBeInstanceOf(SessionError);

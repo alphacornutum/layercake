@@ -168,7 +168,8 @@ export async function saveProject(
     mkdirSync(parent, { recursive: true });
   }
 
-  // create_backup: filesystem copy only (keeps session on the original path).
+  // create_backup: filesystem copy of the .aep only (keeps session on the
+  // original path). Not Collect Files — linked footage/media is not bundled.
   // Dirty projects are refused — AE has no Save-a-Copy, and writing back to the
   // active path would be an implicit save_current (out of scope).
   if (input.mode === "create_backup") {
