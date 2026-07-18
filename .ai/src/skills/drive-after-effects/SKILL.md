@@ -27,7 +27,7 @@ LayerCake assumes a **1:1 agent ↔ After Effects** session. There is no app-lev
 4. **Project summary (when needed)** — Call `ae_project_summary` for heavier health/portability orientation (third-party effects, missing footage/fonts). Prefer this before deep inventory when those concerns matter; skip for trivial single-layer edits. Do **not** use summary for fingerprint polling — that is `ae_project_context`.
 5. **Inventory as needed** — Prefer `ae_list_comps`, `ae_list_sources`, and/or `ae_list_folders` before writing custom scripts.
 6. **Docs when unsure** — `ae_docs_search` → `ae_docs_get` (or `ae://docs/...`) before inventing DOM APIs.
-7. **Optional backup** — Before risky or broad patches, `ae_save_project` with `mode: "create_backup"` and the current fingerprint (requires a clean, saved project; dirty projects must use `save_copy` instead).
+7. **Optional backup** — Before risky or broad patches, `ae_save_project` with `mode: "create_backup"` and the current fingerprint (requires a clean, saved project; dirty projects must use `save_copy` instead). `create_backup` copies the `.aep` only — it does **not** collect linked footage (not Collect Files).
 8. **Typed patch** — Prefer `ae_patch_project` (apply-only) over raw eval for routine fixes such as `set_text_style` font normalization. Pass `project.path` + `project.fingerprint` guards. Re-bind context after apply.
 9. **Persist** — `ae_save_project` with `mode: "save_copy"` (and an absolute destination) when you want changes on disk. Patch never saves implicitly.
 10. **Eval escape hatch** — `ae_eval_script` bypasses typed safety and fingerprint guards. Use only for one-offs the patch vocabulary cannot express. Look up targets by id:
@@ -62,5 +62,6 @@ function layerById(comp, layerId) {
 - `Layer.id` and `Item.id` are different spaces; join footage via `layer.source.id`.
 - Layer `index` changes when layers reorder; prefer `id` (AE 22+).
 - Modal dialogs and missing fonts/footage prompts block until timeout — dismiss UI or increase `AE_SCRIPT_TIMEOUT_MS`.
+- `create_backup` is a project-file copy, not Collect Files — linked media stays at its stored paths; opening the backup from another folder can miss relative footage.
 - Timeline fold/twirl state is not available via scripting.
 - Host control requires macOS or Windows + a local After Effects install.

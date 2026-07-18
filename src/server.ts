@@ -200,8 +200,11 @@ export function createServer(
     {
       title: "Save project copy or backup",
       description:
-        "Explicit persistence for the open project. Modes: save_copy (absolute destination) and " +
-        "create_backup (timestamped under AE_ARTIFACT_DIR or caller path). " +
+        "Explicit persistence for the open project. Modes: save_copy (absolute destination; AE Save As, " +
+        "active path switches) and create_backup (filesystem copy of the .aep only under AE_ARTIFACT_DIR " +
+        "or caller path; session stays on the original path; requires a clean saved project). " +
+        "create_backup does not collect linked footage/media — not Collect Files; opening the backup " +
+        "elsewhere may miss relative file footage. " +
         "Requires expectedFingerprint. Refuses overwrite unless allowOverwrite. " +
         "Does not support in-place save_current. Patch/context/inventory never save implicitly.",
       inputSchema: z.object({
