@@ -4,23 +4,23 @@ Your agent discovers these tools automatically through MCP. Prefer inventory too
 
 ## Tools
 
-| Tool                 | Purpose                                                                                        |
-| -------------------- | ---------------------------------------------------------------------------------------------- |
-| `ae_host_status`     | Resolved host config and availability                                                          |
-| `ae_open_project`    | Open an absolute `.aep` / `.aet` path (refuses if another project is open at a different path) |
-| `ae_close_project`   | Close with explicit `discard` or `save` policy (never prompts); optional fingerprint guard     |
-| `ae_project_context` | Cheap bind token: path, dirty, revision, fingerprint (poll before/after mutate)                |
-| `ae_project_summary` | Heavier passport: counts, third-party effects, missing footage/fonts                           |
-| `ae_list_comps`      | Read-only JSON inventory of compositions and their layers                                      |
-| `ae_list_sources`    | Read-only JSON inventory of footage, solids, and placeholders                                  |
-| `ae_list_folders`    | Read-only nested JSON tree of the Project panel folder hierarchy                               |
-| `ae_get_layer`       | Read-only deep dump of one layer property tree (`overview` / `extended` / `full`)              |
-| `ae_get_source`      | Read-only deep dump of one footage item and interpret settings (`overview` / `full`)           |
-| `ae_patch_project`   | Apply-only typed mutations (`set_text_style`); path+fingerprint guards; no implicit save       |
-| `ae_save_project`    | Explicit persist: `save_copy` or `create_backup` (no in-place `save_current`)                  |
-| `ae_eval_script`     | Execute ExtendScript inside After Effects (`script`, optional `timeoutMs`)                     |
-| `ae_docs_search`     | Search the local After Effects Scripting Guide (hits include `ae://docs/...` URIs)             |
-| `ae_docs_get`        | Fetch a documentation section by URI or relative path                                          |
+| Tool                 | Purpose                                                                                                            |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `ae_host_status`     | Resolved host config and availability                                                                              |
+| `ae_open_project`    | Open an absolute `.aep` / `.aet` path (refuses if another project is open at a different path)                     |
+| `ae_close_project`   | Close with explicit `discard` or `save` policy (never prompts); optional fingerprint guard                         |
+| `ae_project_context` | Cheap bind token: path, dirty, revision, fingerprint (poll before/after mutate)                                    |
+| `ae_project_summary` | Heavier passport: counts, third-party effects, missing footage/fonts                                               |
+| `ae_list_comps`      | Read-only JSON inventory of compositions and their layers                                                          |
+| `ae_list_sources`    | Read-only JSON inventory of footage, solids, and placeholders                                                      |
+| `ae_list_folders`    | Read-only nested JSON tree of the Project panel folder hierarchy                                                   |
+| `ae_get_layer`       | Read-only deep dump of one layer property tree (`overview` / `extended` / `full`)                                  |
+| `ae_get_source`      | Read-only deep dump of one footage item and interpret settings (`overview` / `full`)                               |
+| `ae_patch_project`   | Apply-only typed mutations (`set_text_style`, panel create/move/delete); path+fingerprint guards; no implicit save |
+| `ae_save_project`    | Explicit persist: `save_copy` or `create_backup` (no in-place `save_current`)                                      |
+| `ae_eval_script`     | Execute ExtendScript inside After Effects (`script`, optional `timeoutMs`)                                         |
+| `ae_docs_search`     | Search the local After Effects Scripting Guide (hits include `ae://docs/...` URIs)                                 |
+| `ae_docs_get`        | Fetch a documentation section by URI or relative path                                                              |
 
 **Resources:** scripting guide under `ae://docs/{path}` (list + read); product skill under `skill://` (below).
 
@@ -45,9 +45,22 @@ After Effects uses separate ID namespaces for timeline layers and Project panel 
 
 For follow-up work, prefer IDs over names or indexes. Names can be duplicated; indexes can change.
 
+### `ae_patch_project` ops
+
+| Op                    | Purpose                                                                                  |
+| --------------------- | ---------------------------------------------------------------------------------------- |
+| `set_text_style`      | Set authored TextDocument/CharacterRange font strings (exact string; no synonym mapping) |
+| `create_folder`       | Create a `FolderItem` under `parentFolderId` (real inventory root id, never a magic `0`) |
+| `move_project_item`   | Move items by `selector.kind: "items"` + `itemIds` into `destinationFolderId`            |
+| `delete_project_item` | Delete items via AE `Item.remove()`; refuses the project root; reports impact evidence   |
+
+Patch mutates **authored / pre-expression** project state: fonts and panel structure. Panel ops select by stable `Item.id` only and do **not** read or write `Property.expression`. Deleting an item that owns layers removes those properties with the item; deleting in-use footage may leave expression strings intact while later evaluation fails / sources go missing.
+
+Delete follows After Effects defaults: folders recursively remove contents; in-use footage/comps may be removed. Evidence includes `nestedItemCount` (folders) and the full `usedInCompIds` list (+ count) for AVItems. Disk media files are never deleted. On success, agents MAY reuse the returned `fingerprint` / `dirty` / `revision` for the next `ae_save_project` or patch without an immediate `ae_project_context` re-poll when no other mutator (human UI, `ae_eval_script`, another tool) intervened.
+
 ## Agent skill: `drive-after-effects`
 
-LayerCake ships the [Agent Skill](https://agentskills.io/) `drive-after-effects`: host check → open → `ae_project_context` bind → optional `ae_project_summary` → inventory → optional `create_backup` → `ae_patch_project` → re-bind → `save_copy`. Prefer typed patch over raw `ae_eval_script` for routine fixes.
+LayerCake ships the [Agent Skill](https://agentskills.io/) `drive-after-effects`: host check → open → `ae_project_context` bind → optional `ae_project_summary` → inventory → optional `create_backup` → `ae_patch_project` → use returned fingerprint (or re-bind if another mutator may have run) → `save_copy`. Prefer typed patch over raw `ae_eval_script` for routine text-style and Project panel create/move/delete.
 
 Assumes a **1:1 agent ↔ After Effects** session (no mutex). See [ADR 0002](adr/0002-guarded-session-revision-fingerprint.md).
 

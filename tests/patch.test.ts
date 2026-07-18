@@ -24,6 +24,43 @@ describe("patchProjectInputSchema", () => {
     expect(parsed.allowBroadTargetSet).toBe(false);
   });
 
+  it("accepts panel ops create_folder / move_project_item / delete_project_item", () => {
+    const parsed = patchProjectInputSchema.parse({
+      project: { path: "/tmp/Demo.aep", fingerprint: "rev:1|dirty:0|path:/tmp/Demo.aep" },
+      operations: [
+        { op: "create_folder", name: "Bundle", parentFolderId: 12 },
+        {
+          op: "move_project_item",
+          selector: { kind: "items", itemIds: [1, 576] },
+          destinationFolderId: 12,
+        },
+        {
+          op: "delete_project_item",
+          selector: { kind: "items", itemIds: [99] },
+        },
+      ],
+    });
+    expect(parsed.operations.map((o) => o.op)).toEqual([
+      "create_folder",
+      "move_project_item",
+      "delete_project_item",
+    ]);
+  });
+
+  it("rejects empty itemIds on move/delete", () => {
+    const move = patchProjectInputSchema.safeParse({
+      project: { path: "/tmp/Demo.aep", fingerprint: "rev:1|dirty:0|path:/tmp/Demo.aep" },
+      operations: [
+        {
+          op: "move_project_item",
+          selector: { kind: "items", itemIds: [] },
+          destinationFolderId: 1,
+        },
+      ],
+    });
+    expect(move.success).toBe(false);
+  });
+
   it("rejects unknown ops and rename", () => {
     const result = patchProjectInputSchema.safeParse({
       project: { path: "/tmp/Demo.aep", fingerprint: "rev:1|dirty:0|path:/tmp/Demo.aep" },
@@ -81,9 +118,42 @@ describe("buildPatchApplyScript", () => {
     expect(script).toContain("already_satisfied");
     expect(script).toContain("characterRange");
     expect(script).toContain("Source Text");
-    expect(script).toContain("resolveSelector");
+    expect(script).toContain("resolveTextSelector");
     expect(script).not.toContain("planToken");
     expect(script).not.toContain("replaceFont");
+  });
+
+  it("includes panel op paths, cycle detection, and root refuse", () => {
+    const script = buildPatchApplyScript(
+      JSON.stringify({
+        project: { path: "/tmp/Demo.aep", fingerprint: "rev:1|dirty:0|path:/tmp/Demo.aep" },
+        operations: [
+          { op: "create_folder", name: "Bundle", parentFolderId: 12 },
+          {
+            op: "move_project_item",
+            selector: { kind: "items", itemIds: [1] },
+            destinationFolderId: 12,
+          },
+          {
+            op: "delete_project_item",
+            selector: { kind: "items", itemIds: [99] },
+          },
+        ],
+        allowBroadTargetSet: false,
+      }),
+    );
+    expect(script).toContain("create_folder");
+    expect(script).toContain("move_project_item");
+    expect(script).toContain("delete_project_item");
+    expect(script).toContain("addFolder");
+    expect(script).toContain("wouldCreateFolderCycle");
+    expect(script).toContain("countNestedDescendants");
+    expect(script).toContain("collectUsedInCompIds");
+    expect(script).toContain("Refusing to delete the project root folder");
+    expect(script).toContain("Refusing to move the project root folder");
+    expect(script).toContain("nestedItemCount");
+    expect(script).toContain("usedInCompIds");
+    expect(script).toContain("rootFolder.id === itemId");
   });
 });
 
@@ -138,6 +208,81 @@ describe("parsePatchApplyResult", () => {
     ).toMatchObject({
       ok: false,
       rollback: { attempted: true, completed: true },
+    });
+  });
+
+  it("shapes panel op evidence (create / move / delete impact)", () => {
+    const parsed = parsePatchApplyResult(
+      JSON.stringify({
+        ok: true,
+        results: [
+          {
+            index: 0,
+            op: "create_folder",
+            status: "changed",
+            targets: [
+              {
+                itemId: 40,
+                itemName: "Bundle",
+                itemType: "folder",
+                status: "changed",
+                created: { id: 40, name: "Bundle", parentFolderId: 12 },
+                after: { parentFolderId: 12, parentFolderName: "Root" },
+              },
+            ],
+          },
+          {
+            index: 1,
+            op: "move_project_item",
+            status: "changed",
+            targets: [
+              {
+                itemId: 1,
+                itemName: "main",
+                itemType: "comp",
+                status: "changed",
+                before: { parentFolderId: 12, parentFolderName: "Root" },
+                after: { parentFolderId: 40, parentFolderName: "Bundle" },
+              },
+            ],
+          },
+          {
+            index: 2,
+            op: "delete_project_item",
+            status: "changed",
+            targets: [
+              {
+                itemId: 40,
+                itemName: "Bundle",
+                itemType: "folder",
+                status: "changed",
+                nestedItemCount: 1,
+                usedInCompIds: [],
+                usedInCompCount: 0,
+              },
+            ],
+          },
+        ],
+        fingerprint: "rev:5|dirty:1|path:/tmp/Demo.aep",
+        dirty: true,
+        revision: 5,
+      }),
+    );
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.fingerprint).toContain("rev:5");
+    expect(parsed.results[0]?.targets[0]).toMatchObject({
+      itemId: 40,
+      created: { id: 40, name: "Bundle", parentFolderId: 12 },
+    });
+    expect(parsed.results[1]?.targets[0]).toMatchObject({
+      before: { parentFolderId: 12 },
+      after: { parentFolderId: 40 },
+    });
+    expect(parsed.results[2]?.targets[0]).toMatchObject({
+      nestedItemCount: 1,
+      usedInCompIds: [],
+      usedInCompCount: 0,
     });
   });
 });
