@@ -177,8 +177,14 @@ export function createServer(
       description:
         "Apply-only typed mutations against the open project (no preview/plan tokens, no implicit save). " +
         "Requires project.path + project.fingerprint guards from ae_project_context. " +
-        "Initial op: set_text_style (exact font string via TextDocument/CharacterRange). " +
-        "Prefer this over ae_eval_script for routine text-style fixes. " +
+        "Ops: set_text_style (exact authored font via TextDocument/CharacterRange); " +
+        "create_folder / move_project_item / delete_project_item (Project panel Item.id handles only — " +
+        "use real rootFolder.id from ae_list_folders, never a magic 0). " +
+        "Mutates authored / pre-expression project state; panel ops do not read or write Property.expression. " +
+        "Delete follows AE Item.remove defaults (folders recursively remove contents; in-use items may be deleted); " +
+        "refuses deleting the project root; evidence includes nestedItemCount and full usedInCompIds. " +
+        "On success, reuse returned fingerprint for the next save/patch when no other mutator intervened. " +
+        "Prefer this over ae_eval_script for routine text-style and panel placement work. " +
         "Call ae_save_project create_backup before risky broad patches; persist with save_copy after.",
       inputSchema: patchProjectInputSchema,
     },

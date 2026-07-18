@@ -53,7 +53,7 @@ Thin MCP tools compose over a single host bridge. Inventory, context, patch, sav
 3. **Bind** — `ae_project_context` returns path / dirty / revision / fingerprint for frequent polling.
 4. **Eval** — `ae_eval_script` validates source, wraps with JSON polyfill + result-file protocol, runs via AppleScript `DoScriptFile` (macOS) or `AfterFX.exe -r` (Windows), parses `OK`/`ERR`.
 5. **Inventory / inspect** — tool builds or selects an ExtendScript string → `host.evalScript` → parse JSON → optional filter → MCP text result (inspect tools also enforce `AE_INSPECT_MAX_BYTES`).
-6. **Patch / save** — `ae_patch_project` validates ops, guards path+fingerprint, applies in one undo group (no implicit save). `ae_save_project` persists via `save_copy` (AE Save As) or `create_backup` (filesystem copy of the `.aep` only — not Collect Files) under `AE_ARTIFACT_DIR` / caller path.
+6. **Patch / save** — `ae_patch_project` validates typed ops (`set_text_style`, `create_folder`, `move_project_item`, `delete_project_item`), guards path+fingerprint, applies in one undo group (no implicit save). `ae_save_project` persists via `save_copy` (AE Save As) or `create_backup` (filesystem copy of the `.aep` only — not Collect Files) under `AE_ARTIFACT_DIR` / caller path.
 7. **Docs** — `ae_docs_search` / `ae_docs_get` and `ae://docs/...` resources read the vendored corpus (no AE).
 8. **Product skill** — when `skills/drive-after-effects` loads, serve `skill://…` resources + `skill://index.json`, set server `instructions`, and advertise `io.modelcontextprotocol/skills`.
 
@@ -88,7 +88,7 @@ Product skill files live at top-level `skills/` (shipped with the npm package). 
 - **Stable ids as handles** — `Item.id` (comps, footage, folders) and `Layer.id` (timeline) are distinct namespaces; join via `layer.source.id`.
 - **Compact list, deep on demand** — `ae_list_*` stay small; property trees and interpret detail live in `ae_get_*` or `ae_eval_script`. Context is the cheap bind poll; summary is the heavier health passport.
 - **Guarded session** — open/close are session transitions; patch/save verify path+fingerprint and never open. Fingerprint = `rev:{n}\|dirty:{0\|1}\|path:{absolute\|unsaved}` (see [ADR 0002](docs/adr/0002-guarded-session-revision-fingerprint.md)). Assume 1:1 agent↔AE (no mutex).
-- **Typed patch first** — prefer `ae_patch_project` for routine edits; `ae_eval_script` remains the escape hatch (bypasses guards).
+- **Typed patch first** — prefer `ae_patch_project` for routine text-style and Project panel create/move/delete; `ae_eval_script` remains the escape hatch (bypasses guards).
 - **Explicit save** — patch/context/inventory/eval must not persist; use `ae_save_project` (`save_copy` / `create_backup` only in v1). `create_backup` copies the project file only and does not collect linked footage.
 - **ES3 ExtendScript** — no modern JS in AE script bodies; `JSON` comes from the injected polyfill.
 - **Contracts** — public `ae_*` names/schemas/JSON shapes, `AeHost`, and the eval result-file protocol change through OpenSpec when possible (prefer additive).

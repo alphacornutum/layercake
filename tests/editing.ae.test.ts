@@ -10,9 +10,16 @@ import { createAeHost } from "../src/host/create-host.js";
 import { closeProject, openProjectGuarded, SessionError } from "../src/host/session.js";
 import type { AeHost } from "../src/host/types.js";
 import { listComps } from "../src/inventory/list-comps.js";
+import { listFolders } from "../src/inventory/list-folders.js";
 import { listProjectContext } from "../src/inventory/list-project-context.js";
+import { listSources } from "../src/inventory/list-sources.js";
 import { applyProjectPatch } from "../src/patch/apply.js";
 import { saveProject } from "../src/patch/save.js";
+import type {
+  CreateFolderTargetResult,
+  DeleteProjectItemTargetResult,
+  MoveProjectItemTargetResult,
+} from "../src/patch/types.js";
 
 /**
  * hello-world.aep includes a text layer in composition `main` ("Hello World").
@@ -194,6 +201,212 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
       await closeDiscard(host);
       rmSync(artifactDir, { recursive: true, force: true });
     }
+  });
+
+  it("panel ops: create folder → move items → delete with impact; no implicit save", async (ctx) => {
+    if (!aeReady) {
+      ctx.skip();
+      return;
+    }
+    await openWorkCopy(host, true);
+    const before = await listProjectContext(host, config.scriptTimeoutMs);
+    expect(before.projectPath).toBeTruthy();
+
+    const folders = await listFolders(host, config.scriptTimeoutMs);
+    const rootId = folders.root.id;
+    expect(typeof rootId).toBe("number");
+
+    const comps = await listComps(host, {}, config.scriptTimeoutMs);
+    const main = comps.compositions.find((c) => c.name === "main");
+    expect(main).toBeTruthy();
+
+    const sources = await listSources(host, config.scriptTimeoutMs);
+    const footage = sources.sources.find((s) => s.name === "1x1.png" || s.file?.includes("1x1"));
+    // Prefer a real footage id when present; otherwise move the main comp only.
+    const moveIds = footage ? [main!.id, footage.id] : [main!.id];
+
+    const create = await applyProjectPatch(
+      host,
+      {
+        project: { path: before.projectPath!, fingerprint: before.fingerprint },
+        operations: [{ op: "create_folder", name: "LC_PanelProbe", parentFolderId: rootId }],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(create.ok).toBe(true);
+    if (!create.ok) return;
+    expect(create.dirty).toBe(true);
+    expect(create.revision).toBeGreaterThan(before.revision);
+    expect(create.fingerprint).not.toBe(before.fingerprint);
+
+    const createdTarget = create.results[0]?.targets[0] as CreateFolderTargetResult | undefined;
+    expect(createdTarget?.status).toBe("changed");
+    expect(createdTarget?.created?.parentFolderId).toBe(rootId);
+    const folderId = createdTarget?.created?.id ?? createdTarget?.itemId;
+    expect(typeof folderId).toBe("number");
+
+    // Patch must not persist — path stays the work copy.
+    const midCtx = await listProjectContext(host, config.scriptTimeoutMs);
+    expect(midCtx.projectPath).toBe(before.projectPath);
+    expect(midCtx.fingerprint).toBe(create.fingerprint);
+
+    const move = await applyProjectPatch(
+      host,
+      {
+        project: { path: midCtx.projectPath!, fingerprint: midCtx.fingerprint },
+        operations: [
+          {
+            op: "move_project_item",
+            selector: { kind: "items", itemIds: moveIds },
+            destinationFolderId: folderId!,
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(move.ok).toBe(true);
+    if (!move.ok) return;
+    for (const t of move.results[0]?.targets ?? []) {
+      const panel = t as MoveProjectItemTargetResult;
+      expect(panel.status).toBe("changed");
+      expect(panel.after?.parentFolderId).toBe(folderId);
+      expect(panel.before?.parentFolderId).not.toBe(folderId);
+    }
+
+    const afterMove = await listProjectContext(host, config.scriptTimeoutMs);
+    expect(afterMove.fingerprint).toBe(move.fingerprint);
+
+    // Idempotent move
+    const moveAgain = await applyProjectPatch(
+      host,
+      {
+        project: { path: afterMove.projectPath!, fingerprint: afterMove.fingerprint },
+        operations: [
+          {
+            op: "move_project_item",
+            selector: { kind: "items", itemIds: [moveIds[0]!] },
+            destinationFolderId: folderId!,
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(moveAgain.ok).toBe(true);
+    if (!moveAgain.ok) return;
+    expect(moveAgain.results[0]?.targets[0]?.status).toBe("already_satisfied");
+
+    // Move items back to root so folder delete nested count is predictable, then
+    // create a nested leaf folder and delete the parent (AE recursive remove).
+    const bind = await listProjectContext(host, config.scriptTimeoutMs);
+    const restore = await applyProjectPatch(
+      host,
+      {
+        project: { path: bind.projectPath!, fingerprint: bind.fingerprint },
+        operations: [
+          {
+            op: "move_project_item",
+            selector: { kind: "items", itemIds: moveIds },
+            destinationFolderId: rootId,
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(restore.ok).toBe(true);
+    if (!restore.ok) return;
+
+    const afterRestore = await listProjectContext(host, config.scriptTimeoutMs);
+    const nestedCreate = await applyProjectPatch(
+      host,
+      {
+        project: { path: afterRestore.projectPath!, fingerprint: afterRestore.fingerprint },
+        operations: [{ op: "create_folder", name: "LC_NestedLeaf", parentFolderId: folderId! }],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(nestedCreate.ok).toBe(true);
+    if (!nestedCreate.ok) return;
+
+    const afterNested = await listProjectContext(host, config.scriptTimeoutMs);
+    const del = await applyProjectPatch(
+      host,
+      {
+        project: { path: afterNested.projectPath!, fingerprint: afterNested.fingerprint },
+        operations: [
+          {
+            op: "delete_project_item",
+            selector: { kind: "items", itemIds: [folderId!] },
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(del.ok).toBe(true);
+    if (!del.ok) return;
+    const delTarget = del.results[0]?.targets[0] as DeleteProjectItemTargetResult | undefined;
+    expect(delTarget?.status).toBe("changed");
+    expect(delTarget?.itemType).toBe("folder");
+    expect(delTarget?.nestedItemCount).toBeGreaterThanOrEqual(1);
+    expect(Array.isArray(delTarget?.usedInCompIds)).toBe(true);
+    expect(delTarget?.usedInCompCount).toBe(delTarget?.usedInCompIds?.length);
+
+    // Root delete refused
+    const afterDel = await listProjectContext(host, config.scriptTimeoutMs);
+    const rootRefuse = await applyProjectPatch(
+      host,
+      {
+        project: { path: afterDel.projectPath!, fingerprint: afterDel.fingerprint },
+        operations: [
+          {
+            op: "delete_project_item",
+            selector: { kind: "items", itemIds: [rootId] },
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(rootRefuse.ok).toBe(false);
+    if (!rootRefuse.ok) expect(rootRefuse.code).toBe("validation");
+
+    // AVItem delete with non-empty usedInCompIds (footage used by main).
+    const sourcesAfter = await listSources(host, config.scriptTimeoutMs);
+    const usedFootage = sourcesAfter.sources.find(
+      (s) => s.name === "1x1.png" || s.file?.includes("1x1"),
+    );
+    expect(usedFootage).toBeTruthy();
+    const afterRootRefuse = await listProjectContext(host, config.scriptTimeoutMs);
+    const delFootage = await applyProjectPatch(
+      host,
+      {
+        project: {
+          path: afterRootRefuse.projectPath!,
+          fingerprint: afterRootRefuse.fingerprint,
+        },
+        operations: [
+          {
+            op: "delete_project_item",
+            selector: { kind: "items", itemIds: [usedFootage!.id] },
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(delFootage.ok).toBe(true);
+    if (!delFootage.ok) return;
+    const footageTarget = delFootage.results[0]?.targets[0] as
+      | DeleteProjectItemTargetResult
+      | undefined;
+    expect(footageTarget?.status).toBe("changed");
+    expect(footageTarget?.usedInCompIds?.length).toBeGreaterThanOrEqual(1);
+    expect(footageTarget?.usedInCompCount).toBe(footageTarget?.usedInCompIds?.length);
+    for (const compId of footageTarget?.usedInCompIds ?? []) {
+      expect(typeof compId).toBe("number");
+    }
+
+    // Still on the same work-copy path — no implicit save/relocate.
+    const finalCtx = await listProjectContext(host, config.scriptTimeoutMs);
+    expect(finalCtx.projectPath).toBe(before.projectPath);
+    expect(finalCtx.fingerprint).not.toBe(before.fingerprint);
   });
 
   it("repeat patch reports already_satisfied", async (ctx) => {

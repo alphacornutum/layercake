@@ -5,6 +5,7 @@ export type PatchOpStatus =
   | "unsupported"
   | "failed";
 
+/** Text-style target evidence (`set_text_style`). */
 export type TextStyleTargetResult = {
   compId: number;
   layerId: number;
@@ -16,11 +17,50 @@ export type TextStyleTargetResult = {
   message?: string;
 };
 
+export type PanelFolderPlacement = {
+  parentFolderId?: number;
+  parentFolderName?: string;
+};
+
+type PanelItemTargetBase = {
+  itemId: number;
+  itemName?: string;
+  itemType?: string;
+  status: PatchOpStatus;
+  message?: string;
+};
+
+/** `create_folder` target evidence. */
+export type CreateFolderTargetResult = PanelItemTargetBase & {
+  created?: { id: number; name: string; parentFolderId: number };
+  after?: PanelFolderPlacement;
+};
+
+/** `move_project_item` target evidence. */
+export type MoveProjectItemTargetResult = PanelItemTargetBase & {
+  before?: PanelFolderPlacement;
+  after?: PanelFolderPlacement;
+};
+
+/** `delete_project_item` target evidence (impact captured before remove). */
+export type DeleteProjectItemTargetResult = PanelItemTargetBase & {
+  nestedItemCount: number;
+  usedInCompIds: number[];
+  usedInCompCount: number;
+};
+
+export type PanelTargetResult =
+  | CreateFolderTargetResult
+  | MoveProjectItemTargetResult
+  | DeleteProjectItemTargetResult;
+
+export type PatchTargetResult = TextStyleTargetResult | PanelTargetResult;
+
 export type PatchOperationResult = {
   index: number;
   op: string;
   status: PatchOpStatus;
-  targets: TextStyleTargetResult[];
+  targets: PatchTargetResult[];
   message?: string;
 };
 
