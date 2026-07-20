@@ -93,7 +93,7 @@ Product skill files live at top-level `skills/` (shipped with the npm package). 
 - **Explicit save** — patch/context/inventory/eval must not persist; compose optional copy-first + patch + `ae_save_project` (`save_copy` / `create_backup` only in v1). `create_backup` copies the project file only and does not collect linked footage.
 - **ES3 ExtendScript** — no modern JS in AE script bodies; `JSON` comes from the injected polyfill.
 - **Contracts** — public `ae_*` names/schemas/JSON shapes, `AeHost`, and the eval result-file protocol change through OpenSpec when possible (prefer additive).
-- **macOS + Windows host** — `darwin` uses AppleScript; `win32` uses `AfterFX.exe -r`; other platforms report host unavailable without attempting unsupported automation.
+- **macOS + Windows host** — `darwin` uses AppleScript and soft-attaches without `activate` when AE is already running (`launch` on cold start); `win32` uses `AfterFX.exe -r`; other platforms report host unavailable without attempting unsupported automation.
 - **Agent guidance** — end-user product skill lives under `skills/`; contributor AgentSync guidance is edited under `.ai/src/` only, then `agentsync sync`.
 
 ## Related docs

@@ -70,7 +70,7 @@ Read-only inbound references for one `itemId` (`Item.id`): `used_in_comp`, `laye
 | `set_layer_index`          | Reorder one layer to a 1-based `index`                                                                                              |
 | `create_solid`             | Always create a new Solid FootageItem (name, dims, pixelAspect, color; optional folder)                                             |
 | `replace_layer_source`     | Replace AVLayer source; evidence reports `layerIdPreserved` / `newLayerId`                                                          |
-| `set_layer_timing`         | Set start/in/out via **integer frames** (+ optional stretch); seconds-only refused                                                  |
+| `set_layer_timing`         | Set start/in/out via **integer frames** (+ optional stretch); does **not** move keyframes; see source-slip notes below              |
 | `set_layer_switches`       | Set timeline/layer switch booleans (`enabled`, `audioEnabled`, `timeRemapEnabled`, …); omit=preserve; full switch snapshot evidence |
 | `set_comp_settings`        | Set composition settings via nested `target` + partial `settings` bag (dims/rate/frames/work area/renderer/switches); see below     |
 | `set_property_expression`  | Set/clear expression on one PropertyBase — exactly one of `matchNames` \| nexrender `propertyPath`                                  |
@@ -112,6 +112,26 @@ Desired `layerName` is opaque (braces / `{message_10}` preserved). AE allows dup
 ```
 
 Supply only the switches to change (`enabled`, `audioEnabled`, `solo`, `shy`, `locked`, `guideLayer`, `adjustmentLayer`, `threeDLayer`, `collapseTransformation`, `frameBlending`, `motionBlur`, `timeRemapEnabled`). Omitted switches and non-switch state are preserved. Evidence `before`/`after` is a full readable switch snapshot; post-condition success depends only on supplied keys. Use this op (not `set_layer_timing`) for `timeRemapEnabled`.
+
+#### `set_layer_timing` — source slip vs drag
+
+`set_layer_timing` writes `startFrame` / `inFrame` / `outFrame` / optional `stretch` only. It does **not** move, copy, or delete keyframes — key times stay composition-absolute. That matches **source slip** (same parent in/out window, different nested source range). It does **not** match UI “drag the layer bar” (move keys with the layer); use `ae_eval_script` for drag-with-keys until a dedicated typed op exists.
+
+For source slip, supply the new `startFrame` **and** the unchanged `inFrame` / `outFrame` in one op. Setting `startFrame` alone can let After Effects nudge the trim. Assumes time remapping is off (`timeRemapEnabled` stays on `set_layer_switches`).
+
+#### `set_layer_timing` source-slip example
+
+```json
+{
+  "op": "set_layer_timing",
+  "target": { "compName": "main", "layerName": "Nested" },
+  "startFrame": 0,
+  "inFrame": 30,
+  "outFrame": 120
+}
+```
+
+Here the parent window stays frames 30–120 while `startFrame` is adjusted so the nested source aligns as intended (plan integer frames from `ae_list_comps`).
 
 #### `set_comp_settings` example
 
