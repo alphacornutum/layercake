@@ -149,6 +149,23 @@ function hasExpressionText(prop) {
   }
 }
 
+/** Transform leaf matchNames that commonly carry Cover/Contain expressions. */
+function isTransformSampleMatchName(matchName) {
+  return (
+    matchName === "ADBE Anchor Point" ||
+    matchName === "ADBE Position" ||
+    matchName === "ADBE Position_0" ||
+    matchName === "ADBE Position_1" ||
+    matchName === "ADBE Position_2" ||
+    matchName === "ADBE Scale" ||
+    matchName === "ADBE Rotate Z" ||
+    matchName === "ADBE Rotate X" ||
+    matchName === "ADBE Rotate Y" ||
+    matchName === "ADBE Orientation" ||
+    matchName === "ADBE Opacity"
+  );
+}
+
 function walkProperty(prop, detail, atTime, preExpression, matchSet, inMatch) {
   var matchName = "";
   try {
@@ -220,6 +237,14 @@ function walkProperty(prop, detail, atTime, preExpression, matchSet, inMatch) {
     }
     if (prop.numKeys > 0) {
       node.keyframes = serializeKeyframes(prop, detail);
+    }
+    // Dual authored/evaluated samples for Transform props when keys or expressions apply.
+    if (
+      isTransformSampleMatchName(matchName) &&
+      (node.hasExpression || prop.numKeys > 0)
+    ) {
+      node.authoredValue = samplePropertyValue(prop, atTime, true);
+      node.evaluatedValue = samplePropertyValue(prop, atTime, false);
     }
   }
   return node;

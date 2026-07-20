@@ -1,4 +1,7 @@
+import { SHARED_ITEM_REFS_HELPERS } from "../inventory/item-refs-script.js";
 import { SHARED_COMP_LAYER_RESOLVE_HELPERS } from "../inventory/resolve-script.js";
+import { SHARED_INVENTORY_HELPERS } from "../inventory/shared-script.js";
+import { CONTROL_PLANE_APPLY_HELPERS } from "./apply-control-plane-script.js";
 import { PATCH_MAX_TARGETS, PATCH_UNDO_GROUP_NAME } from "./constants.js";
 
 /**
@@ -22,7 +25,13 @@ function resolveFail(code, message, candidates) {
   throw new Error("AFX_RESOLVE:" + JSON.stringify(payload));
 }
 
+${SHARED_INVENTORY_HELPERS}
+
+${SHARED_ITEM_REFS_HELPERS}
+
 ${SHARED_COMP_LAYER_RESOLVE_HELPERS}
+
+${CONTROL_PLANE_APPLY_HELPERS}
 
 function formatResolveError(err) {
   var msg = String(err);
@@ -768,6 +777,130 @@ function resolveOp(op) {
       targetCount: resolvedDelete.targets.length
     };
   }
+  if (op.op === "rename_project_item") {
+    var renameItem = itemById(op.itemId);
+    if (!renameItem) return { error: "Project item not found: " + op.itemId };
+    return {
+      plan: { op: op, kind: "rename_project_item", item: renameItem, targets: [{ item: renameItem }] },
+      targetCount: 1
+    };
+  }
+  if (op.op === "set_layer_index") {
+    var indexPair;
+    try {
+      indexPair = resolveLayerTarget(op.target);
+    } catch (ire) {
+      return { error: formatResolveError(ire) };
+    }
+    return {
+      plan: { op: op, kind: "set_layer_index", targets: [indexPair] },
+      targetCount: 1
+    };
+  }
+  if (op.op === "create_solid") {
+    var solidParent = null;
+    if (op.parentFolderId !== undefined && op.parentFolderId !== null) {
+      solidParent = folderById(op.parentFolderId);
+      if (!solidParent) {
+        return { error: "Parent folder not found or not a FolderItem: " + op.parentFolderId };
+      }
+    } else {
+      solidParent = app.project.rootFolder;
+    }
+    return {
+      plan: {
+        op: op,
+        kind: "create_solid",
+        parentFolder: solidParent,
+        targets: [{ parentFolder: solidParent }]
+      },
+      targetCount: 1
+    };
+  }
+  if (op.op === "replace_layer_source") {
+    var replacePair;
+    try {
+      replacePair = resolveLayerTarget(op.target);
+    } catch (rre) {
+      return { error: formatResolveError(rre) };
+    }
+    var sourceItem = itemById(op.sourceItemId);
+    if (!sourceItem) return { error: "Source project item not found: " + op.sourceItemId };
+    if (!(sourceItem instanceof CompItem) && !(sourceItem instanceof FootageItem)) {
+      return { error: "sourceItemId must be a CompItem or FootageItem: " + op.sourceItemId };
+    }
+    return {
+      plan: {
+        op: op,
+        kind: "replace_layer_source",
+        targets: [replacePair],
+        sourceItem: sourceItem
+      },
+      targetCount: 1
+    };
+  }
+  if (op.op === "set_layer_timing") {
+    var timingPair;
+    try {
+      timingPair = resolveLayerTarget(op.target);
+    } catch (tre) {
+      return { error: formatResolveError(tre) };
+    }
+    return {
+      plan: { op: op, kind: "set_layer_timing", targets: [timingPair] },
+      targetCount: 1
+    };
+  }
+  if (op.op === "set_property_expression") {
+    var exprPair;
+    try {
+      exprPair = resolveLayerTarget(op.target);
+    } catch (ere) {
+      return { error: formatResolveError(ere) };
+    }
+    return {
+      plan: { op: op, kind: "set_property_expression", targets: [exprPair] },
+      targetCount: 1
+    };
+  }
+  if (op.op === "reset_layer_surface") {
+    var resetPair;
+    try {
+      resetPair = resolveLayerTarget(op.target);
+    } catch (rsre) {
+      return { error: formatResolveError(rsre) };
+    }
+    return {
+      plan: { op: op, kind: "reset_layer_surface", targets: [resetPair] },
+      targetCount: 1
+    };
+  }
+  if (op.op === "delete_layer") {
+    var delPair;
+    try {
+      delPair = resolveLayerTarget(op.target);
+    } catch (dlre) {
+      return { error: formatResolveError(dlre) };
+    }
+    return {
+      plan: { op: op, kind: "delete_layer", targets: [delPair] },
+      targetCount: 1
+    };
+  }
+  if (op.op === "safe_delete_project_item") {
+    var resolvedSafe = resolveItemsSelector(op.selector);
+    if (resolvedSafe.error) return { error: resolvedSafe.error };
+    var safeRootErr = rootRefusalAmong(resolvedSafe.targets, "delete");
+    if (safeRootErr) return { error: safeRootErr };
+    return {
+      plan: {
+        op: op,
+        kind: "safe_delete_project_item",
+        targets: resolvedSafe.targets
+      },
+      targetCount: resolvedSafe.targets.length
+    };
+  }
   return { error: "Unsupported operation: " + op.op };
 }
 
@@ -777,6 +910,15 @@ function applyPlan(plan, opResult) {
   if (plan.kind === "create_folder") return applyCreateFolder(plan, opResult);
   if (plan.kind === "move_project_item") return applyMoveProjectItem(plan, opResult);
   if (plan.kind === "delete_project_item") return applyDeleteProjectItem(plan, opResult);
+  if (plan.kind === "rename_project_item") return applyRenameProjectItem(plan, opResult);
+  if (plan.kind === "set_layer_index") return applySetLayerIndex(plan, opResult);
+  if (plan.kind === "create_solid") return applyCreateSolid(plan, opResult);
+  if (plan.kind === "replace_layer_source") return applyReplaceLayerSource(plan, opResult);
+  if (plan.kind === "set_layer_timing") return applySetLayerTiming(plan, opResult);
+  if (plan.kind === "set_property_expression") return applySetPropertyExpression(plan, opResult);
+  if (plan.kind === "reset_layer_surface") return applyResetLayerSurface(plan, opResult);
+  if (plan.kind === "delete_layer") return applyDeleteLayer(plan, opResult);
+  if (plan.kind === "safe_delete_project_item") return applySafeDeleteProjectItem(plan, opResult);
   return {
     anyChanged: false,
     anyFailed: true,

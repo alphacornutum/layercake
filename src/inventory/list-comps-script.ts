@@ -44,7 +44,18 @@ function motionBlurOf(layer) {
   }
 }
 
-function serializeLayer(layer) {
+function trackMatteTypeName(t) {
+  try {
+    if (t === TrackMatteType.ALPHA) return "ALPHA";
+    if (t === TrackMatteType.ALPHA_INVERTED) return "ALPHA_INVERTED";
+    if (t === TrackMatteType.LUMA) return "LUMA";
+    if (t === TrackMatteType.LUMA_INVERTED) return "LUMA_INVERTED";
+    if (t === TrackMatteType.NO_TRACK_MATTE) return "NO_TRACK_MATTE";
+  } catch (e) {}
+  return String(t);
+}
+
+function serializeLayer(layer, frameRate) {
   if (layer.id === undefined || layer.id === null) {
     throw new Error(
       "Layer.id is unavailable. After Effects 22 (2022) or newer is required for ae_list_comps."
@@ -52,6 +63,7 @@ function serializeLayer(layer) {
   }
   var inPoint = layer.inPoint;
   var outPoint = layer.outPoint;
+  var startTime = layer.startTime;
   var payload = {
     id: layer.id,
     index: layer.index,
@@ -61,10 +73,64 @@ function serializeLayer(layer) {
     outPoint: outPoint,
     duration: outPoint - inPoint,
     stretch: layer.stretch,
+    startTime: startTime,
+    startFrame: timeToFrame(startTime, frameRate),
+    inFrame: timeToFrame(inPoint, frameRate),
+    outFrame: timeToFrame(outPoint, frameRate),
+    durationFrames: timeToFrame(outPoint, frameRate) - timeToFrame(inPoint, frameRate),
     motionBlur: motionBlurOf(layer),
     label: layer.label,
-    hasEffects: hasEffects(layer)
+    hasEffects: hasEffects(layer),
+    enabled: true
   };
+  try {
+    payload.enabled = !!layer.enabled;
+  } catch (e) {}
+  try {
+    if (layer.hasVideo !== undefined) {
+      payload.hasVideo = !!layer.hasVideo;
+      payload.videoEnabled = !!layer.videoEnabled;
+    }
+  } catch (e) {}
+  try {
+    if (layer.hasAudio !== undefined) {
+      payload.hasAudio = !!layer.hasAudio;
+      payload.audioEnabled = !!layer.audioEnabled;
+    }
+  } catch (e) {}
+  try {
+    payload.guideLayer = !!layer.guideLayer;
+  } catch (e) {}
+  try {
+    payload.adjustmentLayer = !!layer.adjustmentLayer;
+  } catch (e) {}
+  try {
+    payload.threeDLayer = !!layer.threeDLayer;
+  } catch (e) {}
+  try {
+    payload.collapseTransformation = !!layer.collapseTransformation;
+  } catch (e) {}
+  try {
+    payload.frameBlending = !!layer.frameBlending;
+  } catch (e) {}
+  try {
+    payload.timeRemapEnabled = !!layer.timeRemapEnabled;
+  } catch (e) {}
+  try {
+    if (layer.parent && layer.parent.id !== undefined && layer.parent.id !== null) {
+      payload.parentLayerId = layer.parent.id;
+    }
+  } catch (e) {}
+  try {
+    if (layer.hasTrackMatte) {
+      payload.trackMatteType = trackMatteTypeName(layer.trackMatteType);
+      try {
+        if (layer.trackMatteLayer && layer.trackMatteLayer.id !== undefined) {
+          payload.trackMatteLayerId = layer.trackMatteLayer.id;
+        }
+      } catch (e2) {}
+    }
+  } catch (e) {}
   try {
     if (layer.source) {
       var sourceRef = serializeSourceRef(layer.source);
@@ -76,14 +142,15 @@ function serializeLayer(layer) {
 
 function serializeComp(comp) {
   var layers = [];
+  var frameRate = comp.frameRate;
   for (var li = 1; li <= comp.numLayers; li++) {
-    layers.push(serializeLayer(comp.layer(li)));
+    layers.push(serializeLayer(comp.layer(li), frameRate));
   }
   return {
     id: comp.id,
     name: comp.name,
     duration: comp.duration,
-    frameRate: comp.frameRate,
+    frameRate: frameRate,
     numLayers: comp.numLayers,
     layers: layers
   };

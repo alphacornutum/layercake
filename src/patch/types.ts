@@ -58,12 +58,116 @@ export type DeleteProjectItemTargetResult = PanelItemTargetBase & {
   usedInCompCount: number;
 };
 
+/** `rename_project_item` target evidence. */
+export type RenameProjectItemTargetResult = PanelItemTargetBase & {
+  before?: { name: string };
+  after?: { name: string };
+};
+
+/** `set_layer_index` target evidence. */
+export type SetLayerIndexTargetResult = LayerTargetBase & {
+  before?: { index: number };
+  after?: { index: number };
+};
+
+/** `create_solid` target evidence. */
+export type CreateSolidTargetResult = PanelItemTargetBase & {
+  created?: {
+    id: number;
+    name: string;
+    width: number;
+    height: number;
+    pixelAspect: number;
+    color: [number, number, number];
+    parentFolderId: number;
+  };
+};
+
+/** `replace_layer_source` target evidence. */
+export type ReplaceLayerSourceTargetResult = LayerTargetBase & {
+  layerIdPreserved?: boolean;
+  newLayerId?: number;
+  before?: { sourceItemId: number | null };
+  after?: { sourceItemId: number | null };
+};
+
+export type LayerTimingFrames = {
+  startFrame?: number;
+  inFrame?: number;
+  outFrame?: number;
+  stretch?: number;
+  timeRemapEnabled?: boolean;
+};
+
+/** `set_layer_timing` target evidence. */
+export type SetLayerTimingTargetResult = LayerTargetBase & {
+  before?: LayerTimingFrames;
+  after?: LayerTimingFrames;
+};
+
+/** `set_property_expression` target evidence. */
+export type SetPropertyExpressionTargetResult = LayerTargetBase & {
+  selector?: { matchNames?: string[]; propertyPath?: string };
+  resolvedMatchNames?: string[];
+  before?: { expression: string; expressionEnabled: boolean };
+  after?: { expression: string; expressionEnabled: boolean };
+};
+
+/** `reset_layer_surface` target evidence. */
+export type ResetLayerSurfaceTargetResult = LayerTargetBase & {
+  cleared?: {
+    keyframes?: boolean;
+    effects?: boolean;
+    masks?: boolean;
+    layerStyles?: boolean;
+    markers?: boolean;
+    trackMatte?: boolean;
+    parent?: boolean;
+    transforms?: boolean;
+    expressions?: boolean;
+  };
+  after?: {
+    effectCount?: number;
+    maskCount?: number;
+    markerCount?: number;
+    hasParent?: boolean;
+    hasTrackMatte?: boolean;
+  };
+};
+
+/** `delete_layer` target evidence. */
+export type DeleteLayerTargetResult = LayerTargetBase & {
+  deleted?: boolean;
+};
+
+/** `safe_delete_project_item` target evidence. */
+export type SafeDeleteProjectItemTargetResult = PanelItemTargetBase & {
+  preDeleteRefs?: {
+    refs: unknown[];
+    unknownRefsPossible: boolean;
+    incompleteReasons: string[];
+  };
+  newlyMissingFootageIds?: number[];
+};
+
 export type PanelTargetResult =
   | CreateFolderTargetResult
   | MoveProjectItemTargetResult
-  | DeleteProjectItemTargetResult;
+  | DeleteProjectItemTargetResult
+  | RenameProjectItemTargetResult
+  | CreateSolidTargetResult
+  | SafeDeleteProjectItemTargetResult;
 
-export type PatchTargetResult = TextStyleTargetResult | RenameLayerTargetResult | PanelTargetResult;
+export type PatchTargetResult =
+  | TextStyleTargetResult
+  | RenameLayerTargetResult
+  | PanelTargetResult
+  | SetLayerIndexTargetResult
+  | ReplaceLayerSourceTargetResult
+  | SetLayerTimingTargetResult
+  | SetPropertyExpressionTargetResult
+  | ResetLayerSurfaceTargetResult
+  | DeleteLayerTargetResult;
 
 export type PatchOperationResult = {
   index: number;

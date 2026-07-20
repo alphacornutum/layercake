@@ -13,13 +13,23 @@ import { LIST_SOURCES_SCRIPT } from "../src/inventory/list-sources-script.js";
 import {
   parseCompInventory,
   parseFolderInventory,
+  parseItemRefs,
   parseProjectContext,
   parseProjectSummary,
   parseSourceInventory,
 } from "../src/inventory/parse.js";
 import { buildFingerprint } from "../src/inventory/fingerprint.js";
+import {
+  buildGetItemRefsScript,
+  SHARED_ITEM_REFS_HELPERS,
+} from "../src/inventory/item-refs-script.js";
 import { SHARED_INVENTORY_HELPERS } from "../src/inventory/shared-script.js";
-import type { CompInventory, FolderInventory, SourceInventory } from "../src/inventory/types.js";
+import type {
+  CompInventory,
+  FolderInventory,
+  ItemRefsResult,
+  SourceInventory,
+} from "../src/inventory/types.js";
 
 const sample: CompInventory = {
   projectName: "Demo.aep",
@@ -29,7 +39,7 @@ const sample: CompInventory = {
       name: "Main",
       duration: 10,
       frameRate: 30,
-      numLayers: 3,
+      numLayers: 4,
       layers: [
         {
           id: 42,
@@ -40,9 +50,23 @@ const sample: CompInventory = {
           outPoint: 5,
           duration: 5,
           stretch: 100,
+          startTime: 0,
+          startFrame: 0,
+          inFrame: 0,
+          outFrame: 150,
+          durationFrames: 150,
           motionBlur: false,
           label: 3,
           hasEffects: true,
+          enabled: true,
+          hasVideo: true,
+          videoEnabled: true,
+          guideLayer: false,
+          adjustmentLayer: false,
+          threeDLayer: false,
+          collapseTransformation: false,
+          frameBlending: false,
+          timeRemapEnabled: false,
           source: {
             id: 55,
             name: "logo.png",
@@ -61,9 +85,17 @@ const sample: CompInventory = {
           outPoint: 4,
           duration: 4,
           stretch: 100,
+          startTime: 0,
+          startFrame: 0,
+          inFrame: 0,
+          outFrame: 120,
+          durationFrames: 120,
           motionBlur: false,
           label: 0,
           hasEffects: false,
+          enabled: true,
+          timeRemapEnabled: false,
+          parentLayerId: 42,
           source: {
             id: 202,
             name: "Precomp",
@@ -73,17 +105,54 @@ const sample: CompInventory = {
           },
         },
         {
-          id: 44,
+          id: 45,
           index: 3,
+          name: "Control Solid",
+          type: "av",
+          inPoint: 0,
+          outPoint: 10,
+          duration: 10,
+          stretch: 100,
+          startTime: 1,
+          startFrame: 30,
+          inFrame: 0,
+          outFrame: 300,
+          durationFrames: 300,
+          motionBlur: false,
+          label: 0,
+          hasEffects: false,
+          enabled: true,
+          guideLayer: true,
+          timeRemapEnabled: false,
+          trackMatteType: "ALPHA",
+          trackMatteLayerId: 42,
+          source: {
+            id: 56,
+            name: "Red Solid",
+            type: "footage",
+            footageKind: "solid",
+            parentFolderId: 1,
+            folderPath: "",
+          },
+        },
+        {
+          id: 44,
+          index: 4,
           name: "Camera 1",
           type: "camera",
           inPoint: 0,
           outPoint: 10,
           duration: 10,
           stretch: 100,
+          startTime: 0,
+          startFrame: 0,
+          inFrame: 0,
+          outFrame: 300,
+          durationFrames: 300,
           motionBlur: false,
           label: 0,
           hasEffects: false,
+          enabled: true,
         },
       ],
     },
@@ -279,7 +348,29 @@ describe("parseCompInventory", () => {
 
   it("omits source on layers without one", () => {
     const parsed = parseCompInventory(JSON.stringify(sample));
-    expect(parsed.compositions[0]!.layers[2]!).not.toHaveProperty("source");
+    expect(parsed.compositions[0]!.layers[3]!).not.toHaveProperty("source");
+  });
+
+  it("parses control-plane timing, switches, parent/matte, and solid footageKind", () => {
+    const parsed = parseCompInventory(JSON.stringify(sample));
+    const layers = parsed.compositions[0]!.layers;
+    expect(layers[0]).toMatchObject({
+      startTime: 0,
+      startFrame: 0,
+      inFrame: 0,
+      outFrame: 150,
+      durationFrames: 150,
+      enabled: true,
+      timeRemapEnabled: false,
+    });
+    expect(layers[1]!.parentLayerId).toBe(42);
+    expect(layers[2]).toMatchObject({
+      startFrame: 30,
+      guideLayer: true,
+      trackMatteType: "ALPHA",
+      trackMatteLayerId: 42,
+      source: { type: "footage", footageKind: "solid" },
+    });
   });
 
   it("rejects invalid JSON", () => {
@@ -335,13 +426,53 @@ describe("applyCompFilters", () => {
 });
 
 describe("SHARED_INVENTORY_HELPERS", () => {
-  it("exposes folder placement, footage kind, and serializeSourceRef", () => {
+  it("exposes folder placement, footage kind, serializeSourceRef, and time↔frame helpers", () => {
     expect(SHARED_INVENTORY_HELPERS).toContain("function folderPlacement");
     expect(SHARED_INVENTORY_HELPERS).toContain("function footageKindOf");
     expect(SHARED_INVENTORY_HELPERS).toContain("function serializeSourceRef");
     expect(SHARED_INVENTORY_HELPERS).toContain("FileSource");
     expect(SHARED_INVENTORY_HELPERS).toContain("SolidSource");
     expect(SHARED_INVENTORY_HELPERS).toContain("PlaceholderSource");
+    expect(SHARED_INVENTORY_HELPERS).toContain("function timeToFrame");
+    expect(SHARED_INVENTORY_HELPERS).toContain("function frameToTime");
+  });
+});
+
+describe("parseItemRefs", () => {
+  const sampleRefs: ItemRefsResult = {
+    item: { id: 56, name: "Red Solid", type: "footage" },
+    refs: [
+      { kind: "used_in_comp", compId: 101, compName: "Main" },
+      { kind: "layer_source", compId: 101, layerId: 45, layerName: "Control Solid" },
+      { kind: "parent_link", compId: 101, layerId: 43, parentLayerId: 45 },
+    ],
+    unknownRefsPossible: false,
+    incompleteReasons: [],
+  };
+
+  it("parses a valid refs payload", () => {
+    const parsed = parseItemRefs(JSON.stringify(sampleRefs));
+    expect(parsed.item.id).toBe(56);
+    expect(parsed.refs).toHaveLength(3);
+    expect(parsed.unknownRefsPossible).toBe(false);
+    expect(parsed).not.toHaveProperty("deletionCandidate");
+  });
+
+  it("rejects deletionCandidate policy bits", () => {
+    expect(() => parseItemRefs(JSON.stringify({ ...sampleRefs, deletionCandidate: true }))).toThrow(
+      /deletionCandidate/,
+    );
+  });
+});
+
+describe("item refs script", () => {
+  it("embeds shared helpers and collectItemRefs", () => {
+    expect(SHARED_ITEM_REFS_HELPERS).toContain("function collectItemRefs");
+    expect(SHARED_ITEM_REFS_HELPERS).toContain("unknownRefsPossible");
+    const script = buildGetItemRefsScript(56);
+    expect(script).toContain(SHARED_INVENTORY_HELPERS);
+    expect(script).toContain("collectItemRefs");
+    expect(script).toContain('"itemId":56');
   });
 });
 
@@ -354,6 +485,11 @@ describe("LIST_COMPS_SCRIPT", () => {
     expect(LIST_COMPS_SCRIPT).toContain("No After Effects project is open");
     expect(LIST_COMPS_SCRIPT).toContain("serializeSourceRef");
     expect(LIST_COMPS_SCRIPT).toContain("payload.source");
+    expect(LIST_COMPS_SCRIPT).toContain("timeToFrame");
+    expect(LIST_COMPS_SCRIPT).toContain("startFrame");
+    expect(LIST_COMPS_SCRIPT).toContain("parentLayerId");
+    expect(LIST_COMPS_SCRIPT).toContain("timeRemapEnabled");
+    expect(LIST_COMPS_SCRIPT).toContain("trackMatteLayerId");
   });
 });
 

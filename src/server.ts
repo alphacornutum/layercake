@@ -11,6 +11,7 @@ import { getDoc, searchDocs } from "./docs/search.js";
 import { closeProject, openProjectGuarded, SessionError } from "./host/session.js";
 import type { AeHost } from "./host/types.js";
 import { validateScriptSource } from "./host/script-wrapper.js";
+import { getItemRefs } from "./inventory/get-item-refs.js";
 import { getLayer } from "./inventory/get-layer.js";
 import { getSource } from "./inventory/get-source.js";
 import { InspectSizeError } from "./inventory/inspect-limit.js";
@@ -178,17 +179,15 @@ export function createServer(
       description:
         "Apply-only typed mutations against the open project (no preview/plan tokens, no implicit save). " +
         "Requires project.path + project.fingerprint guards from ae_project_context. " +
-        "Ops: set_text_style (exact authored font via TextDocument/CharacterRange; layer/comp selectors " +
-        "accept id or unique name like ae_get_layer — ambiguous names refuse with candidates); " +
-        "rename_layer (one layer per op via nested target id|name + desired layerName; opaque string); " +
-        "create_folder / move_project_item / delete_project_item (Project panel Item.id handles only — " +
-        "use real rootFolder.id from ae_list_folders, never a magic 0). " +
-        "Successful targets include post-condition-verified before/after evidence (re-read after write). " +
-        "Mutates authored / pre-expression project state; panel ops do not read or write Property.expression. " +
-        "Delete follows AE Item.remove defaults (folders recursively remove contents; in-use items may be deleted); " +
-        "refuses deleting the project root; evidence includes nestedItemCount and full usedInCompIds. " +
-        "On success, reuse returned fingerprint for the next save/patch when no other mutator intervened. " +
-        "Prefer this over ae_eval_script for routine text-style, layer rename, and panel placement work. " +
+        "Ops: set_text_style; rename_layer; rename_project_item; set_layer_index; create_solid (always-create); " +
+        "replace_layer_source; set_layer_timing (integer frames only); set_property_expression " +
+        "(exactly one of matchNames|propertyPath; prefer matchNames from ae_get_layer); " +
+        "reset_layer_surface; delete_layer; create_folder / move_project_item / delete_project_item " +
+        "(permissive AE remove); safe_delete_project_item (refuse in-use / unknownRefsPossible; empty folders only). " +
+        "Layer targets accept id or unique name like ae_get_layer — ambiguous names refuse with candidates. " +
+        "Panel item ops use Item.id (real rootFolder.id from ae_list_folders, never a magic 0). " +
+        "Successful targets include post-condition-verified before/after evidence. " +
+        "Prefer typed ops over ae_eval_script for these control-plane flows. " +
         "Call ae_save_project create_backup before risky broad patches; persist with save_copy after.",
       inputSchema: patchProjectInputSchema,
     },
@@ -300,7 +299,10 @@ export function createServer(
         "Read-only inventory of compositions and their layers as JSON — prefer this before ae_eval_script. " +
         "Omit filters to list all comps; optional compIds and/or compNames (union) narrow the result. " +
         "Each layer includes a stable id (AE Layer.id, persists across reorder/rename/save; AE 22+) — prefer id over ephemeral index for follow-up scripts. " +
-        "Layers with an AVLayer.source include a compact source object whose id is the source Item.id (join key to ae_list_sources / comps; distinct from Layer.id). " +
+        "Layers with an AVLayer.source include a compact source object whose id is the source Item.id (join key to ae_list_sources / comps; distinct from Layer.id); " +
+        'solids report source.footageKind "solid". ' +
+        "Control-plane fields: startTime + integer startFrame/inFrame/outFrame/durationFrames (nearest frame via containing-comp frameRate; seconds inPoint/outPoint/duration kept), " +
+        "enabled and applicable switches (video/audio, guide/adjustment/3D/collapse/frameBlending/timeRemap), optional parentLayerId and trackMatteType/trackMatteLayerId. " +
         "label is the timeline UI label color index (0=None, 1–16). " +
         "Timeline fold/twirl state is not available via scripting and is not reported. " +
         "Unmatched filter entries appear under missing.",
@@ -426,6 +428,34 @@ export function createServer(
   );
 
   server.registerTool(
+    "ae_get_item_refs",
+    {
+      title: "Inspect inbound item references",
+      description:
+        "Read-only inbound-reference facts for one project item (Item.id) — usedIn comps, layer sources, " +
+        "proxy/parent/matte links discovered by scan, plus best-effort expression mentions. " +
+        "Returns refs[] and unknownRefsPossible (true means the scan may be incomplete). " +
+        "Facts for cleanup planning only — no deletionCandidate policy bit. " +
+        "When unknownRefsPossible is true, agents and safe_delete_project_item MUST refuse deletion. " +
+        "Template reachability policy (main/config) is out of scope. Prefer this before safe_delete_project_item.",
+      inputSchema: z.object({
+        itemId: z.number().int().describe("Stable Project panel Item.id to inspect"),
+      }),
+    },
+    async ({ itemId }) => {
+      try {
+        const result = await getItemRefs(host, itemId, config.scriptTimeoutMs);
+        return textResult(JSON.stringify(result, null, 2));
+      } catch (err) {
+        if (err instanceof ConfigError) {
+          return textResult(errorText(err), true);
+        }
+        return textResult(errorText(err), true);
+      }
+    },
+  );
+
+  server.registerTool(
     "ae_get_layer",
     {
       title: "Inspect one composition layer",
@@ -434,7 +464,9 @@ export function createServer(
         "Provide exactly one of compId|compName and exactly one of layerId|layerName (case-sensitive exact names; ambiguous names fail with candidate id lists). " +
         'detail defaults to "overview": skeleton fields plus numKeys/hasExpression/expressionEnabled — no expression bodies, keyframe arrays, or sampled values. ' +
         'Use detail "extended" or "full" (and/or matchNames) to retrieve full expression text, sampled values at atTime (default composition CTI), and keyframe timelines. ' +
-        "preExpression defaults to true (authored/keyframed values); pass false for post-expression on-screen values. " +
+        "preExpression defaults to true (authored/keyframed values); pass false for post-expression on-screen values — the value field always follows that flag. " +
+        "On extended/full, Transform properties with keys or expressions also include authoredValue (pre-expression) and evaluatedValue (post-expression). " +
+        "Wrapper purity / normalization MUST use authoredValue (or value with preExpression true), not evaluatedValue alone. " +
         "Unsupported value types are flagged { unserializable: true, propertyValueType }. " +
         "Success JSON larger than AE_INSPECT_MAX_BYTES (default 512 KiB) is a hard error — narrow with leaner detail / matchNames. " +
         "Layer.id ≠ Item.id; join layer.source.id to ae_list_sources / comps.",
