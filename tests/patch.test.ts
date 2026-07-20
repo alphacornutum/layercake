@@ -263,6 +263,11 @@ describe("buildPatchApplyScript", () => {
     expect(script).toContain("characterRange");
     expect(script).toContain("Source Text");
     expect(script).toContain("resolveTextSelector");
+    expect(script).toContain("valueAtTime");
+    expect(script).toContain("valueAtTime(comp.time, true)");
+    expect(script).toContain("evaluatedFonts");
+    expect(script).toContain("readAuthoredTextDocument");
+    expect(script).toContain("readEvaluatedTextDocument");
     expect(script).not.toContain("planToken");
     expect(script).not.toContain("replaceFont");
   });
