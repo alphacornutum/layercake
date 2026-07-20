@@ -1,3 +1,4 @@
+import { SHARED_RESOLVE_HELPERS } from "../inventory/resolve-script.js";
 import { PATCH_MAX_TARGETS, PATCH_UNDO_GROUP_NAME } from "./constants.js";
 
 /**
@@ -14,6 +15,32 @@ var __payloadJson = "${escaped}";
 var payload = JSON.parse(__payloadJson);
 var MAX_TARGETS = ${maxTargets};
 var UNDO_NAME = ${JSON.stringify(undoName)};
+
+function resolveFail(code, message, candidates) {
+  var payload = { code: code, message: message };
+  if (candidates) payload.candidates = candidates;
+  throw new Error("AFX_RESOLVE:" + JSON.stringify(payload));
+}
+
+${SHARED_RESOLVE_HELPERS}
+
+function formatResolveError(err) {
+  var msg = String(err);
+  var prefix = "AFX_RESOLVE:";
+  var idx = msg.indexOf(prefix);
+  if (idx < 0) return msg;
+  try {
+    var raw = msg.substring(idx + prefix.length);
+    var parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed.message !== "string") return msg;
+    if (parsed.candidates && parsed.candidates.length > 0) {
+      return parsed.message + ": " + JSON.stringify(parsed.candidates);
+    }
+    return parsed.message;
+  } catch (e) {
+    return msg;
+  }
+}
 
 function projectPathOf() {
   try {
@@ -135,13 +162,6 @@ function collectUsedInCompIds(item) {
   return ids;
 }
 
-function layerById(comp, layerId) {
-  for (var i = 1; i <= comp.numLayers; i++) {
-    if (comp.layer(i).id === layerId) return comp.layer(i);
-  }
-  return null;
-}
-
 function collectTextLayersInComp(comp, out) {
   for (var i = 1; i <= comp.numLayers; i++) {
     var layer = comp.layer(i);
@@ -151,32 +171,62 @@ function collectTextLayersInComp(comp, out) {
   }
 }
 
+function resolveLayerTarget(ref) {
+  var compId = ref.compId !== undefined ? ref.compId : null;
+  var compName = ref.compName !== undefined ? ref.compName : null;
+  var layerId = ref.layerId !== undefined ? ref.layerId : null;
+  var layerName = ref.layerName !== undefined ? ref.layerName : null;
+  var comp = resolveComp(compId, compName);
+  var layer = resolveLayer(comp, layerId, layerName);
+  return { comp: comp, layer: layer };
+}
+
 function resolveTextSelector(selector) {
   var targets = [];
   var kind = selector.kind;
   if (kind === "layers") {
     for (var li = 0; li < selector.layers.length; li++) {
-      var ref = selector.layers[li];
-      var comp = itemById(ref.compId);
-      if (!(comp && comp instanceof CompItem)) {
-        return { error: "Composition not found: " + ref.compId, targets: [] };
+      var pair;
+      try {
+        pair = resolveLayerTarget(selector.layers[li]);
+      } catch (re) {
+        return { error: formatResolveError(re), targets: [] };
       }
-      var layer = layerById(comp, ref.layerId);
-      if (!layer) {
-        return { error: "Layer not found: compId=" + ref.compId + " layerId=" + ref.layerId, targets: [] };
+      if (!(pair.layer instanceof TextLayer)) {
+        return {
+          error: "Layer is not a text layer: layerId=" + pair.layer.id,
+          targets: []
+        };
       }
-      if (!(layer instanceof TextLayer)) {
-        return { error: "Layer is not a text layer: layerId=" + ref.layerId, targets: [] };
-      }
-      targets.push({ comp: comp, layer: layer });
+      targets.push(pair);
     }
   } else if (kind === "comps") {
-    for (var ci = 0; ci < selector.compIds.length; ci++) {
-      var c = itemById(selector.compIds[ci]);
-      if (!(c && c instanceof CompItem)) {
-        return { error: "Composition not found: " + selector.compIds[ci], targets: [] };
+    var seenCompIds = {};
+    var compIds = selector.compIds || [];
+    var compNames = selector.compNames || [];
+    for (var ci = 0; ci < compIds.length; ci++) {
+      var byId;
+      try {
+        byId = resolveComp(compIds[ci], null);
+      } catch (ce) {
+        return { error: formatResolveError(ce), targets: [] };
       }
-      collectTextLayersInComp(c, targets);
+      if (!seenCompIds[byId.id]) {
+        seenCompIds[byId.id] = true;
+        collectTextLayersInComp(byId, targets);
+      }
+    }
+    for (var cn = 0; cn < compNames.length; cn++) {
+      var byName;
+      try {
+        byName = resolveComp(null, compNames[cn]);
+      } catch (cne) {
+        return { error: formatResolveError(cne), targets: [] };
+      }
+      if (!seenCompIds[byName.id]) {
+        seenCompIds[byName.id] = true;
+        collectTextLayersInComp(byName, targets);
+      }
     }
   } else if (kind === "all_text_layers") {
     var items = app.project.items;
@@ -313,13 +363,34 @@ function applySetTextStyle(plan, opResult) {
       textProp.setValue(doc);
       anyChanged = true;
       var afterDoc = textProp.value;
-      var afterFonts = readFonts(afterDoc, allStyleRuns) || [font];
-      targetResult.after = { fonts: afterFonts };
-      targetResult.status = "changed";
-      opResult.targets.push(targetResult);
+      var afterFonts = readFonts(afterDoc, allStyleRuns);
+      if (afterFonts) {
+        targetResult.after = { fonts: afterFonts };
+      }
+      if (afterFonts && fontsAllMatch(afterFonts, font)) {
+        targetResult.status = "changed";
+        opResult.targets.push(targetResult);
+      } else {
+        targetResult.status = "failed";
+        targetResult.message =
+          afterFonts
+            ? "Post-condition failed: font did not match after write"
+            : "Post-condition failed: could not re-read fonts after write";
+        anyFailed = true;
+        opResult.targets.push(targetResult);
+        applyError = targetResult.message;
+        break;
+      }
     } catch (te) {
       targetResult.status = "failed";
       targetResult.message = String(te);
+      try {
+        var failProp = t.layer.property("Source Text");
+        if (failProp) {
+          var failFonts = readFonts(failProp.value, allStyleRuns);
+          if (failFonts) targetResult.after = { fonts: failFonts };
+        }
+      } catch (re) {}
       anyFailed = true;
       opResult.targets.push(targetResult);
       applyError = String(te);
@@ -328,6 +399,54 @@ function applySetTextStyle(plan, opResult) {
   }
 
   return { anyChanged: anyChanged, anyFailed: anyFailed, applyError: applyError };
+}
+
+function applyRenameLayer(plan, opResult) {
+  var desired = String(plan.op.layerName);
+  var t = plan.targets[0];
+  var targetResult = {
+    compId: t.comp.id,
+    layerId: t.layer.id,
+    compName: t.comp.name,
+    layerName: t.layer.name,
+    status: "failed"
+  };
+  var beforeName = String(t.layer.name);
+  targetResult.before = { name: beforeName };
+
+  if (beforeName === desired) {
+    targetResult.status = "already_satisfied";
+    targetResult.after = { name: beforeName };
+    opResult.targets.push(targetResult);
+    return { anyChanged: false, anyFailed: false, applyError: null };
+  }
+
+  try {
+    t.layer.name = desired;
+    var afterName = String(t.layer.name);
+    targetResult.after = { name: afterName };
+    if (afterName === desired) {
+      targetResult.status = "changed";
+      opResult.targets.push(targetResult);
+      return { anyChanged: true, anyFailed: false, applyError: null };
+    }
+    targetResult.status = "failed";
+    targetResult.message = "Post-condition failed: layer name did not match after write";
+    opResult.targets.push(targetResult);
+    return {
+      anyChanged: true,
+      anyFailed: true,
+      applyError: targetResult.message
+    };
+  } catch (re) {
+    targetResult.status = "failed";
+    targetResult.message = String(re);
+    try {
+      targetResult.after = { name: String(t.layer.name) };
+    } catch (ae) {}
+    opResult.targets.push(targetResult);
+    return { anyChanged: false, anyFailed: true, applyError: String(re) };
+  }
 }
 
 function applyCreateFolder(plan, opResult) {
@@ -348,8 +467,7 @@ function applyCreateFolder(plan, opResult) {
     }
     var parentInfo = parentFolderInfo(created);
     targetResult.itemId = created.id;
-    targetResult.itemName = created.name;
-    targetResult.status = "changed";
+    targetResult.itemName = String(created.name);
     targetResult.created = {
       id: created.id,
       name: String(created.name),
@@ -359,14 +477,35 @@ function applyCreateFolder(plan, opResult) {
       parentFolderId: parentInfo.id,
       parentFolderName: parentInfo.name
     };
+    if (
+      String(created.name) === name &&
+      parentInfo.id === parent.id
+    ) {
+      targetResult.status = "changed";
+      opResult.targets.push(targetResult);
+      return { anyChanged: true, anyFailed: false, applyError: null };
+    }
+    targetResult.status = "failed";
+    targetResult.message =
+      "Post-condition failed: created folder name/parent did not match request";
     opResult.targets.push(targetResult);
-    return { anyChanged: true, anyFailed: false, applyError: null };
+    return { anyChanged: true, anyFailed: true, applyError: targetResult.message };
   } catch (ce) {
     targetResult.message = String(ce);
     if (created) {
       try {
         targetResult.itemId = created.id;
         targetResult.itemName = String(created.name || name);
+        var failParent = parentFolderInfo(created);
+        targetResult.after = {
+          parentFolderId: failParent.id,
+          parentFolderName: failParent.name
+        };
+        targetResult.created = {
+          id: created.id,
+          name: String(created.name || name),
+          parentFolderId: failParent.id
+        };
       } catch (ne) {}
     }
     opResult.targets.push(targetResult);
@@ -414,14 +553,31 @@ function applyMoveProjectItem(plan, opResult) {
 
     try {
       item.parentFolder = destination;
+      anyChanged = true;
       var after = parentFolderInfo(item);
       targetResult.after = { parentFolderId: after.id, parentFolderName: after.name };
-      targetResult.status = "changed";
-      anyChanged = true;
-      opResult.targets.push(targetResult);
+      if (after.id === destination.id) {
+        targetResult.status = "changed";
+        opResult.targets.push(targetResult);
+      } else {
+        targetResult.status = "failed";
+        targetResult.message =
+          "Post-condition failed: parentFolderId did not match destination after move";
+        anyFailed = true;
+        opResult.targets.push(targetResult);
+        applyError = targetResult.message;
+        break;
+      }
     } catch (me) {
       targetResult.status = "failed";
       targetResult.message = String(me);
+      try {
+        var failAfter = parentFolderInfo(item);
+        targetResult.after = {
+          parentFolderId: failAfter.id,
+          parentFolderName: failAfter.name
+        };
+      } catch (rae) {}
       anyFailed = true;
       opResult.targets.push(targetResult);
       applyError = String(me);
@@ -440,8 +596,9 @@ function applyDeleteProjectItem(plan, opResult) {
 
   for (var ti = 0; ti < plan.targets.length; ti++) {
     var item = plan.targets[ti].item;
+    var itemId = item.id;
     var targetResult = {
-      itemId: item.id,
+      itemId: itemId,
       itemName: String(item.name || ""),
       itemType: itemTypeName(item),
       status: "failed",
@@ -459,9 +616,19 @@ function applyDeleteProjectItem(plan, opResult) {
 
     try {
       item.remove();
-      targetResult.status = "changed";
       anyChanged = true;
-      opResult.targets.push(targetResult);
+      var stillThere = itemById(itemId);
+      if (!stillThere) {
+        targetResult.status = "changed";
+        opResult.targets.push(targetResult);
+      } else {
+        targetResult.status = "failed";
+        targetResult.message = "Post-condition failed: item still present after remove";
+        anyFailed = true;
+        opResult.targets.push(targetResult);
+        applyError = targetResult.message;
+        break;
+      }
     } catch (de) {
       targetResult.status = "failed";
       targetResult.message = String(de);
@@ -491,6 +658,18 @@ function resolveOp(op) {
     return {
       plan: { op: op, kind: "set_text_style", targets: resolvedText.targets },
       targetCount: resolvedText.targets.length
+    };
+  }
+  if (op.op === "rename_layer") {
+    var pair;
+    try {
+      pair = resolveLayerTarget(op.target);
+    } catch (re) {
+      return { error: formatResolveError(re) };
+    }
+    return {
+      plan: { op: op, kind: "rename_layer", targets: [pair] },
+      targetCount: 1
     };
   }
   if (op.op === "create_folder") {
@@ -549,6 +728,7 @@ function resolveOp(op) {
 
 function applyPlan(plan, opResult) {
   if (plan.kind === "set_text_style") return applySetTextStyle(plan, opResult);
+  if (plan.kind === "rename_layer") return applyRenameLayer(plan, opResult);
   if (plan.kind === "create_folder") return applyCreateFolder(plan, opResult);
   if (plan.kind === "move_project_item") return applyMoveProjectItem(plan, opResult);
   if (plan.kind === "delete_project_item") return applyDeleteProjectItem(plan, opResult);

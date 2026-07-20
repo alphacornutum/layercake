@@ -1,19 +1,45 @@
 import { z } from "zod";
 
-const layerRefSchema = z.object({
-  compId: z.number().int().describe("Composition Item.id"),
-  layerId: z.number().int().describe("Layer.id within that composition"),
-});
+/** Exactly one of compId|compName and exactly one of layerId|layerName (inspect parity). */
+export const layerTargetSchema = z
+  .object({
+    compId: z.number().int().optional().describe("Composition Item.id"),
+    compName: z.string().optional().describe("Exact composition name (case-sensitive)"),
+    layerId: z.number().int().optional().describe("Layer.id within that composition"),
+    layerName: z
+      .string()
+      .optional()
+      .describe(
+        "Exact current layer name for lookup (case-sensitive; not the rename desired name)",
+      ),
+  })
+  .refine((v) => (v.compId !== undefined) !== (v.compName !== undefined), {
+    message: "Provide exactly one of compId or compName",
+  })
+  .refine((v) => (v.layerId !== undefined) !== (v.layerName !== undefined), {
+    message: "Provide exactly one of layerId or layerName",
+  });
 
-const textSelectorSchema = z.discriminatedUnion("kind", [
+const compsSelectorSchema = z
+  .object({
+    kind: z.literal("comps"),
+    compIds: z.array(z.number().int()).optional().describe("Composition Item.id values"),
+    compNames: z
+      .array(z.string())
+      .optional()
+      .describe("Exact composition names (case-sensitive; each must resolve uniquely)"),
+  })
+  .refine((v) => (v.compIds?.length ?? 0) > 0 || (v.compNames?.length ?? 0) > 0, {
+    message: "Provide at least one non-empty compIds or compNames list",
+  });
+
+// z.union (not discriminatedUnion): compsSelectorSchema is refined (ZodEffects).
+const textSelectorSchema = z.union([
   z.object({
     kind: z.literal("layers"),
-    layers: z.array(layerRefSchema).min(1),
+    layers: z.array(layerTargetSchema).min(1),
   }),
-  z.object({
-    kind: z.literal("comps"),
-    compIds: z.array(z.number().int()).min(1),
-  }),
+  compsSelectorSchema,
   z.object({
     kind: z.literal("all_text_layers"),
   }),
@@ -35,6 +61,17 @@ export const setTextStyleOpSchema = z.object({
   }),
   allStyleRuns: z.boolean().optional().default(true),
   preserveUnspecified: z.boolean().optional().default(true),
+});
+
+export const renameLayerOpSchema = z.object({
+  op: z.literal("rename_layer"),
+  target: layerTargetSchema.describe(
+    "Lookup identity: exactly one of compId|compName and exactly one of layerId|layerName",
+  ),
+  layerName: z
+    .string()
+    .min(1)
+    .describe("Desired new layer name (opaque; braces and counters preserved)"),
 });
 
 export const createFolderOpSchema = z.object({
@@ -62,6 +99,7 @@ export const deleteProjectItemOpSchema = z.object({
 
 export const patchOperationSchema = z.discriminatedUnion("op", [
   setTextStyleOpSchema,
+  renameLayerOpSchema,
   createFolderOpSchema,
   moveProjectItemOpSchema,
   deleteProjectItemOpSchema,
@@ -80,7 +118,9 @@ export const patchProjectInputSchema = z.object({
     .describe("Required when resolved targets exceed the built-in maximum"),
 });
 
+export type LayerTarget = z.infer<typeof layerTargetSchema>;
 export type SetTextStyleOp = z.infer<typeof setTextStyleOpSchema>;
+export type RenameLayerOp = z.infer<typeof renameLayerOpSchema>;
 export type CreateFolderOp = z.infer<typeof createFolderOpSchema>;
 export type MoveProjectItemOp = z.infer<typeof moveProjectItemOpSchema>;
 export type DeleteProjectItemOp = z.infer<typeof deleteProjectItemOpSchema>;

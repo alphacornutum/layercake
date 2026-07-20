@@ -4,23 +4,23 @@ Your agent discovers these tools automatically through MCP. Prefer inventory too
 
 ## Tools
 
-| Tool                 | Purpose                                                                                                            |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `ae_host_status`     | Resolved host config and availability                                                                              |
-| `ae_open_project`    | Open an absolute `.aep` / `.aet` path (refuses if another project is open at a different path)                     |
-| `ae_close_project`   | Close with explicit `discard` or `save` policy (never prompts); optional fingerprint guard                         |
-| `ae_project_context` | Cheap bind token: path, dirty, revision, fingerprint (poll before/after mutate)                                    |
-| `ae_project_summary` | Heavier passport: counts, third-party effects, missing footage/fonts                                               |
-| `ae_list_comps`      | Read-only JSON inventory of compositions and their layers                                                          |
-| `ae_list_sources`    | Read-only JSON inventory of footage, solids, and placeholders                                                      |
-| `ae_list_folders`    | Read-only nested JSON tree of the Project panel folder hierarchy                                                   |
-| `ae_get_layer`       | Read-only deep dump of one layer property tree (`overview` / `extended` / `full`)                                  |
-| `ae_get_source`      | Read-only deep dump of one footage item and interpret settings (`overview` / `full`)                               |
-| `ae_patch_project`   | Apply-only typed mutations (`set_text_style`, panel create/move/delete); path+fingerprint guards; no implicit save |
-| `ae_save_project`    | Explicit persist: `save_copy` or `create_backup` (no in-place `save_current`)                                      |
-| `ae_eval_script`     | Execute ExtendScript inside After Effects (`script`, optional `timeoutMs`)                                         |
-| `ae_docs_search`     | Search the local After Effects Scripting Guide (hits include `ae://docs/...` URIs)                                 |
-| `ae_docs_get`        | Fetch a documentation section by URI or relative path                                                              |
+| Tool                 | Purpose                                                                                                                                                   |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ae_host_status`     | Resolved host config and availability                                                                                                                     |
+| `ae_open_project`    | Open an absolute `.aep` / `.aet` path (refuses if another project is open at a different path)                                                            |
+| `ae_close_project`   | Close with explicit `discard` or `save` policy (never prompts); optional fingerprint guard                                                                |
+| `ae_project_context` | Cheap bind token: path, dirty, revision, fingerprint (poll before/after mutate)                                                                           |
+| `ae_project_summary` | Heavier passport: counts, third-party effects, missing footage/fonts                                                                                      |
+| `ae_list_comps`      | Read-only JSON inventory of compositions and their layers                                                                                                 |
+| `ae_list_sources`    | Read-only JSON inventory of footage, solids, and placeholders                                                                                             |
+| `ae_list_folders`    | Read-only nested JSON tree of the Project panel folder hierarchy                                                                                          |
+| `ae_get_layer`       | Read-only deep dump of one layer property tree (`overview` / `extended` / `full`)                                                                         |
+| `ae_get_source`      | Read-only deep dump of one footage item and interpret settings (`overview` / `full`)                                                                      |
+| `ae_patch_project`   | Apply-only typed mutations (`set_text_style`, `rename_layer`, panel create/move/delete); verified before/after; path+fingerprint guards; no implicit save |
+| `ae_save_project`    | Explicit persist: `save_copy` or `create_backup` (no in-place `save_current`)                                                                             |
+| `ae_eval_script`     | Execute ExtendScript inside After Effects (`script`, optional `timeoutMs`)                                                                                |
+| `ae_docs_search`     | Search the local After Effects Scripting Guide (hits include `ae://docs/...` URIs)                                                                        |
+| `ae_docs_get`        | Fetch a documentation section by URI or relative path                                                                                                     |
 
 **Resources:** scripting guide under `ae://docs/{path}` (list + read); product skill under `skill://` (below).
 
@@ -50,17 +50,51 @@ For follow-up work, prefer IDs over names or indexes. Names can be duplicated; i
 | Op                    | Purpose                                                                                  |
 | --------------------- | ---------------------------------------------------------------------------------------- |
 | `set_text_style`      | Set authored TextDocument/CharacterRange font strings (exact string; no synonym mapping) |
+| `rename_layer`        | Rename exactly one timeline layer per op (`target` id\|name + desired `layerName`)       |
 | `create_folder`       | Create a `FolderItem` under `parentFolderId` (real inventory root id, never a magic `0`) |
 | `move_project_item`   | Move items by `selector.kind: "items"` + `itemIds` into `destinationFolderId`            |
 | `delete_project_item` | Delete items via AE `Item.remove()`; refuses the project root; reports impact evidence   |
 
-Patch mutates **authored / pre-expression** project state: fonts and panel structure. Panel ops select by stable `Item.id` only and do **not** read or write `Property.expression`. “Pre-expression” here means authored structure / `TextDocument` fonts — panel ops do not use `valueAtTime(..., preExpression)`. Deleting an item that owns layers removes those properties with the item; deleting in-use footage may leave expression strings intact while later evaluation fails / sources go missing.
+Successful targets include **post-condition-verified** before/after evidence (apply re-reads live state after the write; `changed` only when it matches the request). See [ADR 0003](adr/0003-patch-targeting-and-post-conditions.md).
+
+#### Layer targeting (id or unique name)
+
+`rename_layer.target` and each `set_text_style` `selector.kind: "layers"` entry use the same shape as `ae_get_layer`: exactly one of `compId` \| `compName`, exactly one of `layerId` \| `layerName` (case-sensitive exact match). Ambiguous names refuse before mutation with candidate lists. Prefer ids when names may collide.
+
+`set_text_style` `selector.kind: "comps"` accepts `compIds` and/or `compNames` (union; at least one non-empty). Existing `{ compIds: [...] }` and `{ compId, layerId }` payloads remain valid. `all_text_layers` is unchanged. Panel item ops stay on `Item.id`.
+
+#### `rename_layer` example
+
+```json
+{
+  "op": "rename_layer",
+  "target": { "compName": "main", "layerName": "{BrandURL}" },
+  "layerName": "{brand_url}"
+}
+```
+
+Desired `layerName` is opaque (braces / `{message_10}` preserved). AE allows duplicate layer names — LayerCake does not enforce uniqueness. Multi-rename = multiple ops in one `operations` array.
+
+#### `set_text_style` name-based example
+
+```json
+{
+  "op": "set_text_style",
+  "selector": {
+    "kind": "layers",
+    "layers": [{ "compName": "main", "layerName": "Hello World" }]
+  },
+  "style": { "font": "ArialMT" }
+}
+```
+
+Patch mutates **authored / pre-expression** project state: fonts, layer names, and panel structure. Panel ops select by stable `Item.id` only and do **not** read or write `Property.expression`. “Pre-expression” here means authored structure / `TextDocument` fonts — panel ops do not use `valueAtTime(..., preExpression)`. Deleting an item that owns layers removes those properties with the item; deleting in-use footage may leave expression strings intact while later evaluation fails / sources go missing.
 
 Delete follows After Effects defaults: folders recursively remove contents; in-use footage/comps may be removed. Evidence includes `nestedItemCount` (folders) and the full `usedInCompIds` list (+ count) for AVItems. Disk media files are never deleted. On success, agents MAY reuse the returned `fingerprint` / `dirty` / `revision` for the next `ae_save_project` or patch without an immediate `ae_project_context` re-poll when no other mutator (human UI, `ae_eval_script`, another tool) intervened.
 
 ## Agent skill: `drive-after-effects`
 
-LayerCake ships the [Agent Skill](https://agentskills.io/) `drive-after-effects`: host check → open → `ae_project_context` bind → optional `ae_project_summary` → inventory → optional `create_backup` → `ae_patch_project` → use returned fingerprint (or re-bind if another mutator may have run) → `save_copy`. Prefer typed patch over raw `ae_eval_script` for routine text-style and Project panel create/move/delete.
+LayerCake ships the [Agent Skill](https://agentskills.io/) `drive-after-effects`: host check → open → `ae_project_context` bind → optional `ae_project_summary` → inventory → optional `create_backup` / copy-first `save_copy` → `ae_patch_project` → use returned fingerprint (or re-bind if another mutator may have run) → `save_copy`. Prefer typed patch over raw `ae_eval_script` for routine text-style, layer rename (`rename_layer`), and Project panel create/move/delete.
 
 Assumes a **1:1 agent ↔ After Effects** session (no mutex). See [ADR 0002](adr/0002-guarded-session-revision-fingerprint.md).
 

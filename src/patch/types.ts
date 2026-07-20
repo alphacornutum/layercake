@@ -17,6 +17,18 @@ export type TextStyleTargetResult = {
   message?: string;
 };
 
+/** `rename_layer` target evidence (verified before/after names). */
+export type RenameLayerTargetResult = {
+  compId: number;
+  layerId: number;
+  compName?: string;
+  layerName?: string;
+  status: PatchOpStatus;
+  before?: { name: string };
+  after?: { name: string };
+  message?: string;
+};
+
 export type PanelFolderPlacement = {
   parentFolderId?: number;
   parentFolderName?: string;
@@ -54,7 +66,7 @@ export type PanelTargetResult =
   | MoveProjectItemTargetResult
   | DeleteProjectItemTargetResult;
 
-export type PatchTargetResult = TextStyleTargetResult | PanelTargetResult;
+export type PatchTargetResult = TextStyleTargetResult | RenameLayerTargetResult | PanelTargetResult;
 
 export type PatchOperationResult = {
   index: number;

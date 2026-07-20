@@ -13,6 +13,8 @@ alwaysApply: true
 | Host bridge / wrap protocol   | `src/host/`                                                                                            |
 | Inventory tool                | `src/inventory/` — `list-<name>.ts`, `list-<name>-script.ts`, types in `types.ts`, parse in `parse.js` |
 | Shared ExtendScript helpers   | `src/inventory/shared-script.ts` when two+ inventory scripts need the same helper                      |
+| Shared id\|name resolve       | `src/inventory/resolve-script.ts` (inspect + patch; callers define `resolveFail`)                      |
+| Typed patch ops               | `src/patch/` (`schema.ts`, `apply-script.ts`, `types.ts`)                                              |
 | Docs corpus/search            | `src/docs/`                                                                                            |
 | Unit / AE tests               | `tests/*.test.ts` / `tests/*.ae.test.ts`                                                               |
 | Doc fetch script              | `scripts/fetch-docs.mjs`                                                                               |
@@ -31,3 +33,4 @@ alwaysApply: true
 
 - MCP tools: `ae_<verb>_<noun>` (`ae_list_comps`, `ae_eval_script`).
 - Keep public tool names stable; rename only with an intentional contract change.
+- New `ae_patch_project` ops: prefer semantic domain verbs (`rename_layer`, `move_project_item`) over bland `get`/`set` when a clear verb exists; use op-specific field names (`layerName`, `style.font`) — no shared `value` bag. Existing op names (`set_text_style`) stay.
