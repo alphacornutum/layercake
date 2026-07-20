@@ -121,7 +121,6 @@ export const setLayerTimingOpSchema = z
     inFrame: z.number().int().optional(),
     outFrame: z.number().int().optional(),
     stretch: z.number().optional().describe("Layer stretch percentage"),
-    timeRemapEnabled: z.boolean().optional(),
   })
   .strict()
   .refine(
@@ -129,13 +128,53 @@ export const setLayerTimingOpSchema = z
       v.startFrame !== undefined ||
       v.inFrame !== undefined ||
       v.outFrame !== undefined ||
-      v.stretch !== undefined ||
-      v.timeRemapEnabled !== undefined,
+      v.stretch !== undefined,
     {
       message:
-        "Provide at least one integer frame field (startFrame/inFrame/outFrame), stretch, or timeRemapEnabled — seconds-only timing is refused",
+        "Provide at least one integer frame field (startFrame/inFrame/outFrame) or stretch — seconds-only timing is refused; use set_layer_switches for timeRemapEnabled",
     },
   );
+
+const layerSwitchesBagSchema = z
+  .object({
+    enabled: z.boolean().optional().describe("Layer.enabled (eyeball / video switch)"),
+    audioEnabled: z.boolean().optional(),
+    solo: z.boolean().optional(),
+    shy: z.boolean().optional(),
+    locked: z.boolean().optional(),
+    guideLayer: z.boolean().optional(),
+    adjustmentLayer: z.boolean().optional(),
+    threeDLayer: z.boolean().optional(),
+    collapseTransformation: z.boolean().optional(),
+    frameBlending: z.boolean().optional(),
+    motionBlur: z.boolean().optional(),
+    timeRemapEnabled: z.boolean().optional(),
+  })
+  .strict()
+  .refine(
+    (v) =>
+      v.enabled !== undefined ||
+      v.audioEnabled !== undefined ||
+      v.solo !== undefined ||
+      v.shy !== undefined ||
+      v.locked !== undefined ||
+      v.guideLayer !== undefined ||
+      v.adjustmentLayer !== undefined ||
+      v.threeDLayer !== undefined ||
+      v.collapseTransformation !== undefined ||
+      v.frameBlending !== undefined ||
+      v.motionBlur !== undefined ||
+      v.timeRemapEnabled !== undefined,
+    { message: "Provide at least one switch key in switches" },
+  );
+
+export const setLayerSwitchesOpSchema = z.object({
+  op: z.literal("set_layer_switches"),
+  target: layerTargetSchema,
+  switches: layerSwitchesBagSchema.describe(
+    "Partial switch bag; omitted keys are preserved. Evidence returns a full readable snapshot.",
+  ),
+});
 
 export const setPropertyExpressionOpSchema = z
   .object({
@@ -193,6 +232,7 @@ export const patchOperationSchema = z.union([
   createSolidOpSchema,
   replaceLayerSourceOpSchema,
   setLayerTimingOpSchema,
+  setLayerSwitchesOpSchema,
   setPropertyExpressionOpSchema,
   resetLayerSurfaceOpSchema,
   deleteLayerOpSchema,
@@ -222,6 +262,7 @@ export type SetLayerIndexOp = z.infer<typeof setLayerIndexOpSchema>;
 export type CreateSolidOp = z.infer<typeof createSolidOpSchema>;
 export type ReplaceLayerSourceOp = z.infer<typeof replaceLayerSourceOpSchema>;
 export type SetLayerTimingOp = z.infer<typeof setLayerTimingOpSchema>;
+export type SetLayerSwitchesOp = z.infer<typeof setLayerSwitchesOpSchema>;
 export type SetPropertyExpressionOp = z.infer<typeof setPropertyExpressionOpSchema>;
 export type ResetLayerSurfaceOp = z.infer<typeof resetLayerSurfaceOpSchema>;
 export type DeleteLayerOp = z.infer<typeof deleteLayerOpSchema>;

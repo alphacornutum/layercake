@@ -23,6 +23,7 @@ import type {
   DeleteProjectItemTargetResult,
   MoveProjectItemTargetResult,
   ReplaceLayerSourceTargetResult,
+  SetLayerSwitchesTargetResult,
   TextStyleTargetResult,
 } from "../src/patch/types.js";
 
@@ -596,6 +597,57 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
 
     const after = await listProjectContext(host, config.scriptTimeoutMs);
     expect(after.projectPath).toBe(before.projectPath);
+  });
+
+  it("set_layer_switches toggles enabled with full switch evidence; no implicit save", async (ctx) => {
+    if (!aeReady) {
+      ctx.skip();
+      return;
+    }
+    await openWorkCopy(host, true);
+    const before = await listProjectContext(host, config.scriptTimeoutMs);
+    const { main, textLayer } = await mainTextLayer(host);
+    const desiredEnabled = textLayer.enabled === false;
+
+    const toggled = await applyProjectPatch(
+      host,
+      {
+        project: { path: before.projectPath!, fingerprint: before.fingerprint },
+        operations: [
+          {
+            op: "set_layer_switches",
+            target: { compId: main.id, layerId: textLayer.id },
+            switches: { enabled: desiredEnabled },
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(toggled.ok).toBe(true);
+    if (!toggled.ok) return;
+    const target = toggled.results[0]?.targets[0] as SetLayerSwitchesTargetResult;
+    expect(toggled.results[0]?.op).toBe("set_layer_switches");
+    expect(target.status).toBe("changed");
+    expect(target.before?.enabled).toBe(textLayer.enabled);
+    expect(target.after?.enabled).toBe(desiredEnabled);
+    expect(target.before).toMatchObject({
+      enabled: expect.any(Boolean),
+      solo: expect.any(Boolean),
+      shy: expect.any(Boolean),
+      locked: expect.any(Boolean),
+    });
+    expect(target.after).toMatchObject({
+      enabled: desiredEnabled,
+      solo: target.before?.solo,
+      shy: target.before?.shy,
+      locked: target.before?.locked,
+    });
+
+    const mid = await listProjectContext(host, config.scriptTimeoutMs);
+    expect(mid.projectPath).toBe(before.projectPath);
+    expect(mid.dirty).toBe(true);
+    expect(mid.fingerprint).not.toBe(before.fingerprint);
+    expect(mid.fingerprint).toBe(toggled.fingerprint);
   });
 
   it("compose rename_layer → save_copy; names persist on saved artifact", async (ctx) => {

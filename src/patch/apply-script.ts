@@ -851,6 +851,18 @@ function resolveOp(op) {
       targetCount: 1
     };
   }
+  if (op.op === "set_layer_switches") {
+    var switchesPair;
+    try {
+      switchesPair = resolveLayerTarget(op.target);
+    } catch (swre) {
+      return { error: formatResolveError(swre) };
+    }
+    return {
+      plan: { op: op, kind: "set_layer_switches", targets: [switchesPair] },
+      targetCount: 1
+    };
+  }
   if (op.op === "set_property_expression") {
     var exprPair;
     try {
@@ -915,6 +927,7 @@ function applyPlan(plan, opResult) {
   if (plan.kind === "create_solid") return applyCreateSolid(plan, opResult);
   if (plan.kind === "replace_layer_source") return applyReplaceLayerSource(plan, opResult);
   if (plan.kind === "set_layer_timing") return applySetLayerTiming(plan, opResult);
+  if (plan.kind === "set_layer_switches") return applySetLayerSwitches(plan, opResult);
   if (plan.kind === "set_property_expression") return applySetPropertyExpression(plan, opResult);
   if (plan.kind === "reset_layer_surface") return applyResetLayerSurface(plan, opResult);
   if (plan.kind === "delete_layer") return applyDeleteLayer(plan, opResult);

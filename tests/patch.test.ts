@@ -270,6 +270,11 @@ describe("patchProjectInputSchema", () => {
           outFrame: 90,
         },
         {
+          op: "set_layer_switches",
+          target: { compId: 1, layerId: 2 },
+          switches: { enabled: false },
+        },
+        {
           op: "set_property_expression",
           target: { compId: 1, layerId: 2 },
           matchNames: ["ADBE Transform Group", "ADBE Scale"],
@@ -294,11 +299,87 @@ describe("patchProjectInputSchema", () => {
       "create_solid",
       "replace_layer_source",
       "set_layer_timing",
+      "set_layer_switches",
       "set_property_expression",
       "reset_layer_surface",
       "delete_layer",
       "safe_delete_project_item",
     ]);
+  });
+
+  it("accepts set_layer_switches by ids and by unique names", () => {
+    const byIds = patchProjectInputSchema.parse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "set_layer_switches",
+          target: { compId: 12, layerId: 3 },
+          switches: { enabled: false, audioEnabled: true },
+        },
+      ],
+    });
+    expect(byIds.operations[0]).toMatchObject({
+      op: "set_layer_switches",
+      target: { compId: 12, layerId: 3 },
+      switches: { enabled: false, audioEnabled: true },
+    });
+
+    const byNames = patchProjectInputSchema.parse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "set_layer_switches",
+          target: { compName: "main", layerName: "Voice" },
+          switches: { timeRemapEnabled: true },
+        },
+      ],
+    });
+    expect(byNames.operations[0]).toMatchObject({
+      op: "set_layer_switches",
+      target: { compName: "main", layerName: "Voice" },
+      switches: { timeRemapEnabled: true },
+    });
+  });
+
+  it("rejects empty or unknown set_layer_switches bags", () => {
+    const empty = patchProjectInputSchema.safeParse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "set_layer_switches",
+          target: { compId: 1, layerId: 2 },
+          switches: {},
+        },
+      ],
+    });
+    expect(empty.success).toBe(false);
+
+    const unknown = patchProjectInputSchema.safeParse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "set_layer_switches",
+          target: { compId: 1, layerId: 2 },
+          switches: { enabled: false, videoEnabled: false },
+        },
+      ],
+    });
+    expect(unknown.success).toBe(false);
+  });
+
+  it("rejects timeRemapEnabled on set_layer_timing", () => {
+    const result = patchProjectInputSchema.safeParse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "set_layer_timing",
+          target: { compId: 1, layerId: 2 },
+          inFrame: 0,
+          timeRemapEnabled: true,
+        },
+      ],
+    });
+    expect(result.success).toBe(false);
   });
 
   it("rejects set_property_expression with both or neither selectors", () => {
@@ -470,6 +551,8 @@ describe("buildPatchApplyScript", () => {
     expect(script).toContain("applyCreateSolid");
     expect(script).toContain("applyReplaceLayerSource");
     expect(script).toContain("applySetLayerTiming");
+    expect(script).toContain("applySetLayerSwitches");
+    expect(script).toContain("readLayerSwitches");
     expect(script).toContain("parsePropertyPathSegments");
     expect(script).toContain('split("->")');
     expect(script).toContain("applySetPropertyExpression");

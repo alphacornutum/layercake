@@ -180,8 +180,9 @@ export function createServer(
         "Apply-only typed mutations against the open project (no preview/plan tokens, no implicit save). " +
         "Requires project.path + project.fingerprint guards from ae_project_context. " +
         "Ops: set_text_style; rename_layer; rename_project_item; set_layer_index; create_solid (always-create); " +
-        "replace_layer_source; set_layer_timing (integer frames only); set_property_expression " +
-        "(exactly one of matchNames|propertyPath; prefer matchNames from ae_get_layer); " +
+        "replace_layer_source; set_layer_timing (integer frames only); set_layer_switches " +
+        "(partial switches bag; full switch snapshot evidence; timeRemapEnabled lives here); " +
+        "set_property_expression (exactly one of matchNames|propertyPath; prefer matchNames from ae_get_layer); " +
         "reset_layer_surface; delete_layer; create_folder / move_project_item / delete_project_item " +
         "(permissive AE remove); safe_delete_project_item (refuse in-use / unknownRefsPossible; empty folders only). " +
         "Layer targets accept id or unique name like ae_get_layer — ambiguous names refuse with candidates. " +

@@ -62,28 +62,29 @@ Read-only inbound references for one `itemId` (`Item.id`): `used_in_comp`, `laye
 
 ### `ae_patch_project` ops
 
-| Op                         | Purpose                                                                                            |
-| -------------------------- | -------------------------------------------------------------------------------------------------- |
-| `set_text_style`           | Set authored TextDocument/CharacterRange font strings (exact string; no synonym mapping)           |
-| `rename_layer`             | Rename exactly one timeline layer per op (`target` id\|name + desired `layerName`)                 |
-| `rename_project_item`      | Rename a Project panel item by `itemId`                                                            |
-| `set_layer_index`          | Reorder one layer to a 1-based `index`                                                             |
-| `create_solid`             | Always create a new Solid FootageItem (name, dims, pixelAspect, color; optional folder)            |
-| `replace_layer_source`     | Replace AVLayer source; evidence reports `layerIdPreserved` / `newLayerId`                         |
-| `set_layer_timing`         | Set start/in/out via **integer frames** (+ optional stretch / timeRemap); seconds-only refused     |
-| `set_property_expression`  | Set/clear expression on one PropertyBase — exactly one of `matchNames` \| nexrender `propertyPath` |
-| `reset_layer_surface`      | Clear keys/effects/masks/styles/markers/matte/parent (flags); optional transform/expression clears |
-| `delete_layer`             | Delete one timeline layer by `target`                                                              |
-| `create_folder`            | Create a `FolderItem` under `parentFolderId` (real inventory root id, never a magic `0`)           |
-| `move_project_item`        | Move items by `selector.kind: "items"` + `itemIds` into `destinationFolderId`                      |
-| `delete_project_item`      | Permissive AE `Item.remove()`; refuses root; may delete in-use items / recurse folders             |
-| `safe_delete_project_item` | Delete only when inbound refs are empty and `unknownRefsPossible` is false; empty folders only     |
+| Op                         | Purpose                                                                                                                             |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `set_text_style`           | Set authored TextDocument/CharacterRange font strings (exact string; no synonym mapping)                                            |
+| `rename_layer`             | Rename exactly one timeline layer per op (`target` id\|name + desired `layerName`)                                                  |
+| `rename_project_item`      | Rename a Project panel item by `itemId`                                                                                             |
+| `set_layer_index`          | Reorder one layer to a 1-based `index`                                                                                              |
+| `create_solid`             | Always create a new Solid FootageItem (name, dims, pixelAspect, color; optional folder)                                             |
+| `replace_layer_source`     | Replace AVLayer source; evidence reports `layerIdPreserved` / `newLayerId`                                                          |
+| `set_layer_timing`         | Set start/in/out via **integer frames** (+ optional stretch); seconds-only refused                                                  |
+| `set_layer_switches`       | Set timeline/layer switch booleans (`enabled`, `audioEnabled`, `timeRemapEnabled`, …); omit=preserve; full switch snapshot evidence |
+| `set_property_expression`  | Set/clear expression on one PropertyBase — exactly one of `matchNames` \| nexrender `propertyPath`                                  |
+| `reset_layer_surface`      | Clear keys/effects/masks/styles/markers/matte/parent (flags); optional transform/expression clears                                  |
+| `delete_layer`             | Delete one timeline layer by `target`                                                                                               |
+| `create_folder`            | Create a `FolderItem` under `parentFolderId` (real inventory root id, never a magic `0`)                                            |
+| `move_project_item`        | Move items by `selector.kind: "items"` + `itemIds` into `destinationFolderId`                                                       |
+| `delete_project_item`      | Permissive AE `Item.remove()`; refuses root; may delete in-use items / recurse folders                                              |
+| `safe_delete_project_item` | Delete only when inbound refs are empty and `unknownRefsPossible` is false; empty folders only                                      |
 
 Successful targets include **post-condition-verified** before/after evidence (apply re-reads live state after the write; `changed` only when it matches the request). See [ADR 0003](adr/0003-patch-targeting-and-post-conditions.md). Prefer `matchNames` from `ae_get_layer` for `set_property_expression` (locale-stable); `propertyPath` splits on `->` when present, otherwise `.`.
 
 #### Layer targeting (id or unique name)
 
-Layer-targeting control-plane ops (`rename_layer`, `set_layer_index`, `replace_layer_source`, `set_layer_timing`, `set_property_expression`, `reset_layer_surface`, `delete_layer`) and each `set_text_style` `selector.kind: "layers"` entry use the same shape as `ae_get_layer`: exactly one of `compId` \| `compName`, exactly one of `layerId` \| `layerName` (case-sensitive exact match). Ambiguous names refuse before mutation with candidate lists. Prefer ids when names may collide.
+Layer-targeting control-plane ops (`rename_layer`, `set_layer_index`, `replace_layer_source`, `set_layer_timing`, `set_layer_switches`, `set_property_expression`, `reset_layer_surface`, `delete_layer`) and each `set_text_style` `selector.kind: "layers"` entry use the same shape as `ae_get_layer`: exactly one of `compId` \| `compName`, exactly one of `layerId` \| `layerName` (case-sensitive exact match). Ambiguous names refuse before mutation with candidate lists. Prefer ids when names may collide. There is no ids-only exception for new layer-targeting ops.
 
 `set_text_style` `selector.kind: "comps"` accepts `compIds` and/or `compNames` (union; at least one non-empty). Existing `{ compIds: [...] }` and `{ compId, layerId }` payloads remain valid. `all_text_layers` is unchanged. Panel item ops stay on `Item.id`.
 
@@ -98,6 +99,18 @@ Layer-targeting control-plane ops (`rename_layer`, `set_layer_index`, `replace_l
 ```
 
 Desired `layerName` is opaque (braces / `{message_10}` preserved). AE allows duplicate layer names — LayerCake does not enforce uniqueness. Multi-rename = multiple ops in one `operations` array.
+
+#### `set_layer_switches` example
+
+```json
+{
+  "op": "set_layer_switches",
+  "target": { "compName": "main", "layerName": "Voice" },
+  "switches": { "enabled": false }
+}
+```
+
+Supply only the switches to change (`enabled`, `audioEnabled`, `solo`, `shy`, `locked`, `guideLayer`, `adjustmentLayer`, `threeDLayer`, `collapseTransformation`, `frameBlending`, `motionBlur`, `timeRemapEnabled`). Omitted switches and non-switch state are preserved. Evidence `before`/`after` is a full readable switch snapshot; post-condition success depends only on supplied keys. Use this op (not `set_layer_timing`) for `timeRemapEnabled`.
 
 #### `set_text_style` name-based example
 
@@ -118,7 +131,7 @@ Delete follows After Effects defaults: folders recursively remove contents; in-u
 
 ## Agent skill: `drive-after-effects`
 
-LayerCake ships the [Agent Skill](https://agentskills.io/) `drive-after-effects`: host check → open → `ae_project_context` bind → optional `ae_project_summary` → inventory → optional `create_backup` / copy-first `save_copy` → `ae_patch_project` → use returned fingerprint (or re-bind if another mutator may have run) → `save_copy`. Prefer typed patch over raw `ae_eval_script` for routine text-style, layer rename (`rename_layer`), and Project panel create/move/delete.
+LayerCake ships the [Agent Skill](https://agentskills.io/) `drive-after-effects`: host check → open → `ae_project_context` bind → optional `ae_project_summary` → inventory → optional `create_backup` / copy-first `save_copy` → `ae_patch_project` → use returned fingerprint (or re-bind if another mutator may have run) → `save_copy`. Prefer typed patch over raw `ae_eval_script` for routine text-style, layer rename (`rename_layer`), layer switches (`set_layer_switches`), and Project panel create/move/delete.
 
 Assumes a **1:1 agent ↔ After Effects** session (no mutex). See [ADR 0002](adr/0002-guarded-session-revision-fingerprint.md).
 
