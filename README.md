@@ -33,7 +33,7 @@ Once connected, try prompts like:
 - Open / close `.aep` / `.aet` projects with session guards (refuses opening over another project)
 - Bind `ae_project_context` (path, dirty, revision fingerprint) and summarize project health
 - List compositions, layers, footage, solids, placeholders, and folders
-- Apply typed patches (`ae_patch_project`: `set_text_style`, `rename_layer`, `create_folder`, `move_project_item`, `delete_project_item`) with verified before/after evidence, plus explicit saves (`save_copy` / `create_backup`)
+- Apply typed patches (`ae_patch_project`: text style, rename, solids/source replace, frame timing, expressions, layer reset/delete, panel ops, `safe_delete_project_item`) with verified before/after evidence, plus explicit saves (`save_copy` / `create_backup`)
 - Inspect a layer’s property tree or a footage item’s interpretation
 - Search the After Effects Scripting Guide locally
 - Run ExtendScript inside After Effects and return structured results

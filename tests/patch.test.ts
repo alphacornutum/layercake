@@ -220,6 +220,126 @@ describe("patchProjectInputSchema", () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it("accepts control-plane ops with op-specific fields", () => {
+    const parsed = patchProjectInputSchema.parse({
+      project: guardedProject(),
+      operations: [
+        { op: "rename_project_item", itemId: 56, name: "Solid A" },
+        {
+          op: "set_layer_index",
+          target: { compId: 1, layerId: 2 },
+          index: 1,
+        },
+        {
+          op: "create_solid",
+          name: "Matte",
+          width: 1920,
+          height: 1080,
+          pixelAspect: 1,
+          color: [1, 0, 0],
+          parentFolderId: 12,
+        },
+        {
+          op: "replace_layer_source",
+          target: { compName: "main", layerName: "Logo" },
+          sourceItemId: 56,
+        },
+        {
+          op: "set_layer_timing",
+          target: { compId: 1, layerId: 2 },
+          inFrame: 0,
+          outFrame: 90,
+        },
+        {
+          op: "set_property_expression",
+          target: { compId: 1, layerId: 2 },
+          matchNames: ["ADBE Transform Group", "ADBE Scale"],
+          expression: "[100,100]",
+          expressionEnabled: true,
+        },
+        {
+          op: "reset_layer_surface",
+          target: { compId: 1, layerId: 2 },
+          clearExpressions: true,
+        },
+        { op: "delete_layer", target: { compId: 1, layerId: 2 } },
+        {
+          op: "safe_delete_project_item",
+          selector: { kind: "items", itemIds: [99] },
+        },
+      ],
+    });
+    expect(parsed.operations.map((o) => o.op)).toEqual([
+      "rename_project_item",
+      "set_layer_index",
+      "create_solid",
+      "replace_layer_source",
+      "set_layer_timing",
+      "set_property_expression",
+      "reset_layer_surface",
+      "delete_layer",
+      "safe_delete_project_item",
+    ]);
+  });
+
+  it("rejects set_property_expression with both or neither selectors", () => {
+    const both = patchProjectInputSchema.safeParse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "set_property_expression",
+          target: { compId: 1, layerId: 2 },
+          matchNames: ["ADBE Scale"],
+          propertyPath: "ADBE Scale",
+          expression: "1",
+        },
+      ],
+    });
+    expect(both.success).toBe(false);
+
+    const neither = patchProjectInputSchema.safeParse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "set_property_expression",
+          target: { compId: 1, layerId: 2 },
+          expression: "1",
+        },
+      ],
+    });
+    expect(neither.success).toBe(false);
+  });
+
+  it("rejects seconds-only set_layer_timing payloads", () => {
+    const secondsOnly = patchProjectInputSchema.safeParse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "set_layer_timing",
+          target: { compId: 1, layerId: 2 },
+          inPoint: 0,
+          outPoint: 3,
+        },
+      ],
+    });
+    expect(secondsOnly.success).toBe(false);
+  });
+
+  it("accepts set_property_expression via propertyPath", () => {
+    const parsed = patchProjectInputSchema.parse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "set_property_expression",
+          target: { compId: 1, layerId: 2 },
+          propertyPath: "ADBE Transform Group.ADBE Scale",
+          expression: null,
+        },
+      ],
+    });
+    expect(parsed.operations[0]?.op).toBe("set_property_expression");
+  });
 });
 
 describe("checkBroadTargetGate", () => {
@@ -307,6 +427,40 @@ describe("buildPatchApplyScript", () => {
     expect(script).toContain("nestedItemCount");
     expect(script).toContain("usedInCompIds");
     expect(script).toContain("rootFolder.id === itemId");
+  });
+
+  it("includes control-plane ops, frame helpers, property path walk, and safe delete", () => {
+    const script = buildPatchApplyScript(
+      JSON.stringify({
+        project: guardedProject(),
+        operations: [
+          {
+            op: "create_solid",
+            name: "S",
+            width: 100,
+            height: 100,
+            pixelAspect: 1,
+            color: [0, 0, 0],
+          },
+        ],
+        allowBroadTargetSet: false,
+      }),
+    );
+    expect(script).toContain("function timeToFrame");
+    expect(script).toContain("function frameToTime");
+    expect(script).toContain("function collectItemRefs");
+    expect(script).toContain("applyCreateSolid");
+    expect(script).toContain("applyReplaceLayerSource");
+    expect(script).toContain("applySetLayerTiming");
+    expect(script).toContain("parsePropertyPathSegments");
+    expect(script).toContain('split("->")');
+    expect(script).toContain("applySetPropertyExpression");
+    expect(script).toContain("applyResetLayerSurface");
+    expect(script).toContain("applyDeleteLayer");
+    expect(script).toContain("applySafeDeleteProjectItem");
+    expect(script).toContain("unknownRefsPossible");
+    expect(script).toContain("safe_delete_project_item");
+    expect(script).toContain("layerIdPreserved");
   });
 
   it("includes rename_layer, comp/layer resolve, and rename post-condition (no footage helpers)", () => {

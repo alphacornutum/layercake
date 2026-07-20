@@ -38,6 +38,10 @@ const itemsSelectorSchema = z.object({
     .describe("Stable Project panel Item.id values (not names)"),
 });
 
+const rgbColorSchema = z
+  .tuple([z.number(), z.number(), z.number()])
+  .describe("RGB color in [0..1] per channel");
+
 export const setTextStyleOpSchema = z.object({
   op: z.literal("set_text_style"),
   selector: textSelectorSchema,
@@ -80,12 +84,119 @@ export const deleteProjectItemOpSchema = z.object({
   selector: itemsSelectorSchema,
 });
 
-export const patchOperationSchema = z.discriminatedUnion("op", [
+export const renameProjectItemOpSchema = z.object({
+  op: z.literal("rename_project_item"),
+  itemId: z.number().int().describe("Stable Project panel Item.id"),
+  name: z.string().min(1).describe("Desired item name (opaque; no normalization)"),
+});
+
+export const setLayerIndexOpSchema = z.object({
+  op: z.literal("set_layer_index"),
+  target: layerTargetSchema,
+  index: z.number().int().min(1).describe("1-based layer index within the composition"),
+});
+
+export const createSolidOpSchema = z.object({
+  op: z.literal("create_solid"),
+  name: z.string().min(1),
+  width: z.number().int().min(4).max(30000),
+  height: z.number().int().min(4).max(30000),
+  pixelAspect: z.number().positive(),
+  color: rgbColorSchema,
+  parentFolderId: z.number().int().optional().describe("Optional FolderItem Item.id"),
+});
+
+export const replaceLayerSourceOpSchema = z.object({
+  op: z.literal("replace_layer_source"),
+  target: layerTargetSchema,
+  sourceItemId: z.number().int().describe("Replacement AVItem Item.id"),
+  fixExpressions: z.boolean().optional().default(true),
+});
+
+export const setLayerTimingOpSchema = z
+  .object({
+    op: z.literal("set_layer_timing"),
+    target: layerTargetSchema,
+    startFrame: z.number().int().optional(),
+    inFrame: z.number().int().optional(),
+    outFrame: z.number().int().optional(),
+    stretch: z.number().optional().describe("Layer stretch percentage"),
+    timeRemapEnabled: z.boolean().optional(),
+  })
+  .strict()
+  .refine(
+    (v) =>
+      v.startFrame !== undefined ||
+      v.inFrame !== undefined ||
+      v.outFrame !== undefined ||
+      v.stretch !== undefined ||
+      v.timeRemapEnabled !== undefined,
+    {
+      message:
+        "Provide at least one integer frame field (startFrame/inFrame/outFrame), stretch, or timeRemapEnabled — seconds-only timing is refused",
+    },
+  );
+
+export const setPropertyExpressionOpSchema = z
+  .object({
+    op: z.literal("set_property_expression"),
+    target: layerTargetSchema,
+    matchNames: z.array(z.string().min(1)).min(1).optional(),
+    propertyPath: z.string().min(1).optional(),
+    expression: z.string().nullable().describe("Expression body, or null to clear"),
+    expressionEnabled: z.boolean().optional().default(true),
+  })
+  .superRefine((v, ctx) => {
+    const hasNames = (v.matchNames?.length ?? 0) > 0;
+    const hasPath = v.propertyPath !== undefined && v.propertyPath.length > 0;
+    if (hasNames === hasPath) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Provide exactly one of matchNames or propertyPath",
+      });
+    }
+  });
+
+export const resetLayerSurfaceOpSchema = z.object({
+  op: z.literal("reset_layer_surface"),
+  target: layerTargetSchema,
+  clearKeyframes: z.boolean().optional().default(true),
+  clearEffects: z.boolean().optional().default(true),
+  clearMasks: z.boolean().optional().default(true),
+  clearLayerStyles: z.boolean().optional().default(true),
+  clearMarkers: z.boolean().optional().default(true),
+  clearTrackMatte: z.boolean().optional().default(true),
+  clearParent: z.boolean().optional().default(true),
+  resetTransforms: z.boolean().optional().default(false),
+  clearExpressions: z.boolean().optional().default(false),
+});
+
+export const deleteLayerOpSchema = z.object({
+  op: z.literal("delete_layer"),
+  target: layerTargetSchema,
+});
+
+export const safeDeleteProjectItemOpSchema = z.object({
+  op: z.literal("safe_delete_project_item"),
+  selector: itemsSelectorSchema,
+});
+
+// z.union (not discriminatedUnion): several ops use .refine / .superRefine / .strict (ZodEffects).
+export const patchOperationSchema = z.union([
   setTextStyleOpSchema,
   renameLayerOpSchema,
   createFolderOpSchema,
   moveProjectItemOpSchema,
   deleteProjectItemOpSchema,
+  renameProjectItemOpSchema,
+  setLayerIndexOpSchema,
+  createSolidOpSchema,
+  replaceLayerSourceOpSchema,
+  setLayerTimingOpSchema,
+  setPropertyExpressionOpSchema,
+  resetLayerSurfaceOpSchema,
+  deleteLayerOpSchema,
+  safeDeleteProjectItemOpSchema,
 ]);
 
 export const patchProjectInputSchema = z.object({
@@ -106,5 +217,14 @@ export type RenameLayerOp = z.infer<typeof renameLayerOpSchema>;
 export type CreateFolderOp = z.infer<typeof createFolderOpSchema>;
 export type MoveProjectItemOp = z.infer<typeof moveProjectItemOpSchema>;
 export type DeleteProjectItemOp = z.infer<typeof deleteProjectItemOpSchema>;
+export type RenameProjectItemOp = z.infer<typeof renameProjectItemOpSchema>;
+export type SetLayerIndexOp = z.infer<typeof setLayerIndexOpSchema>;
+export type CreateSolidOp = z.infer<typeof createSolidOpSchema>;
+export type ReplaceLayerSourceOp = z.infer<typeof replaceLayerSourceOpSchema>;
+export type SetLayerTimingOp = z.infer<typeof setLayerTimingOpSchema>;
+export type SetPropertyExpressionOp = z.infer<typeof setPropertyExpressionOpSchema>;
+export type ResetLayerSurfaceOp = z.infer<typeof resetLayerSurfaceOpSchema>;
+export type DeleteLayerOp = z.infer<typeof deleteLayerOpSchema>;
+export type SafeDeleteProjectItemOp = z.infer<typeof safeDeleteProjectItemOpSchema>;
 export type PatchOperation = z.infer<typeof patchOperationSchema>;
 export type PatchProjectInput = z.infer<typeof patchProjectInputSchema>;

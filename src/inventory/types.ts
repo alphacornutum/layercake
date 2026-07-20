@@ -34,9 +34,30 @@ export type InventoryLayer = {
   outPoint: number;
   duration: number;
   stretch: number;
+  /** Layer start time in seconds (comp timeline). */
+  startTime: number;
+  /** Integer frames derived with containing-comp frameRate (nearest). */
+  startFrame: number;
+  inFrame: number;
+  outFrame: number;
+  durationFrames: number;
   motionBlur: boolean;
   label: number;
   hasEffects: boolean;
+  enabled: boolean;
+  hasVideo?: boolean;
+  videoEnabled?: boolean;
+  hasAudio?: boolean;
+  audioEnabled?: boolean;
+  guideLayer?: boolean;
+  adjustmentLayer?: boolean;
+  threeDLayer?: boolean;
+  collapseTransformation?: boolean;
+  frameBlending?: boolean;
+  timeRemapEnabled?: boolean;
+  parentLayerId?: number | null;
+  trackMatteType?: string | null;
+  trackMatteLayerId?: number | null;
   source?: InventorySourceRef;
 };
 
@@ -175,7 +196,12 @@ export type InspectPropertyNode = {
   hasExpression?: boolean;
   expressionEnabled?: boolean;
   expression?: string;
+  /** Sample under caller's `preExpression` flag. */
   value?: unknown;
+  /** Pre-expression sample (`valueAtTime(..., true)`); Transform dual-sample fields. */
+  authoredValue?: unknown;
+  /** Post-expression sample (`valueAtTime(..., false)`); Transform dual-sample fields. */
+  evaluatedValue?: unknown;
   keyframes?: InspectKeyframe[];
   properties?: InspectPropertyNode[];
 };
@@ -260,6 +286,41 @@ export type GetSourceArgs = {
   sourceId?: number;
   sourceName?: string;
   detail?: SourceInspectDetail;
+};
+
+/** Reference kind for `ae_get_item_refs`. */
+export type ItemRefKind =
+  | "used_in_comp"
+  | "layer_source"
+  | "proxy_for"
+  | "has_proxy"
+  | "track_matte"
+  | "parent_link"
+  | "expression_mention";
+
+export type ItemRefEntry = {
+  kind: ItemRefKind;
+  compId?: number;
+  compName?: string;
+  layerId?: number;
+  layerName?: string;
+  itemId?: number;
+  proxyItemId?: number;
+  matteLayerId?: number;
+  parentLayerId?: number;
+  propertyPath?: string;
+  confidence?: "heuristic";
+};
+
+export type ItemRefsResult = {
+  item: {
+    id: number;
+    name: string;
+    type: "folder" | "comp" | "footage" | "item";
+  };
+  refs: ItemRefEntry[];
+  unknownRefsPossible: boolean;
+  incompleteReasons: string[];
 };
 
 export type EffectOrigin = "firstParty" | "thirdParty";

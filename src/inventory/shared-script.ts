@@ -57,4 +57,16 @@ function serializeSourceRef(avItem) {
   }
   return ref;
 }
+
+/** Nearest integer frame from seconds using containing-comp frameRate. */
+function timeToFrame(time, frameRate) {
+  if (!frameRate || frameRate <= 0) return 0;
+  return Math.round(Number(time) * Number(frameRate));
+}
+
+/** Seconds from integer frame using containing-comp frameRate. */
+function frameToTime(frame, frameRate) {
+  if (!frameRate || frameRate <= 0) return 0;
+  return Number(frame) / Number(frameRate);
+}
 `.trim();

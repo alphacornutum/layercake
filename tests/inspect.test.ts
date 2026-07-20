@@ -93,6 +93,8 @@ const extendedSample: LayerInspectResult = {
             expressionEnabled: true,
             expression: "wiggle(2, 20)",
             value: [100, 200, 0],
+            authoredValue: [100, 200, 0],
+            evaluatedValue: [105, 198, 0],
             keyframes: [
               {
                 time: 0,
@@ -107,6 +109,20 @@ const extendedSample: LayerInspectResult = {
                 outInterpolationType: "BEZIER",
               },
             ],
+          },
+          {
+            name: "Scale",
+            matchName: "ADBE Scale",
+            propertyIndex: 3,
+            isGroup: false,
+            propertyValueType: "ThreeD",
+            numKeys: 0,
+            hasExpression: true,
+            expressionEnabled: true,
+            expression: "[100,100,100]*coverScale",
+            value: [100, 100, 100],
+            authoredValue: [100, 100, 100],
+            evaluatedValue: [142.5, 142.5, 100],
           },
         ],
       },
@@ -136,6 +152,8 @@ const fullSample: LayerInspectResult = {
             hasExpression: false,
             expressionEnabled: false,
             value: [10, 20, 0],
+            authoredValue: [10, 20, 0],
+            evaluatedValue: [10, 20, 0],
             keyframes: [
               {
                 time: 0,
@@ -275,6 +293,12 @@ describe("parseLayerInspect", () => {
     expect(pos.expression).toBe("wiggle(2, 20)");
     expect(pos.keyframes).toHaveLength(2);
     expect(pos.value).toEqual([100, 200, 0]);
+    expect(pos.authoredValue).toEqual([100, 200, 0]);
+    expect(pos.evaluatedValue).toEqual([105, 198, 0]);
+    const scale = parsed.layer.properties[0]!.properties![1]!;
+    expect(scale.matchName).toBe("ADBE Scale");
+    expect(scale.authoredValue).toEqual([100, 100, 100]);
+    expect(scale.evaluatedValue).toEqual([142.5, 142.5, 100]);
   });
 
   it("parses full with ease/tangents and unserializable values", () => {
@@ -283,6 +307,8 @@ describe("parseLayerInspect", () => {
     const pos = props[0]!;
     expect(pos.keyframes![0]!.inEase).toEqual([{ speed: 0, influence: 16.7 }]);
     expect(pos.keyframes![0]!.outSpatialTangent).toEqual([10, 0, 0]);
+    expect(pos.authoredValue).toEqual([10, 20, 0]);
+    expect(pos.evaluatedValue).toEqual([10, 20, 0]);
     const shape = props[1]!;
     expect(shape.value).toEqual({ unserializable: true, propertyValueType: "SHAPE" });
   });
@@ -349,6 +375,9 @@ describe("inspect scripts", () => {
     expect(layerScript).toContain("walkLayerProperties");
     expect(layerScript).toContain("unserializable");
     expect(layerScript).toContain('"detail":"extended"');
+    expect(layerScript).toContain("authoredValue");
+    expect(layerScript).toContain("evaluatedValue");
+    expect(layerScript).toContain("ADBE Scale");
 
     const sourceScript = buildGetSourceScript({ sourceId: 55, detail: "full" });
     expect(sourceScript).toContain("resolveFootage");

@@ -11,6 +11,9 @@ import type {
   InventoryLayer,
   InventorySource,
   InventorySourceRef,
+  ItemRefEntry,
+  ItemRefKind,
+  ItemRefsResult,
   LayerInspectDetail,
   LayerInspectLayer,
   LayerInspectResult,
@@ -129,10 +132,64 @@ function parseLayer(raw: unknown, path: string): InventoryLayer {
     outPoint: assertNumber(raw.outPoint, `${path}.outPoint`),
     duration: assertNumber(raw.duration, `${path}.duration`),
     stretch: assertNumber(raw.stretch, `${path}.stretch`),
+    startTime: assertNumber(raw.startTime, `${path}.startTime`),
+    startFrame: assertNumber(raw.startFrame, `${path}.startFrame`),
+    inFrame: assertNumber(raw.inFrame, `${path}.inFrame`),
+    outFrame: assertNumber(raw.outFrame, `${path}.outFrame`),
+    durationFrames: assertNumber(raw.durationFrames, `${path}.durationFrames`),
     motionBlur: assertBoolean(raw.motionBlur, `${path}.motionBlur`),
     label: assertNumber(raw.label, `${path}.label`),
     hasEffects: assertBoolean(raw.hasEffects, `${path}.hasEffects`),
+    enabled: assertBoolean(raw.enabled, `${path}.enabled`),
   };
+  if (raw.hasVideo !== undefined) {
+    layer.hasVideo = assertBoolean(raw.hasVideo, `${path}.hasVideo`);
+  }
+  if (raw.videoEnabled !== undefined) {
+    layer.videoEnabled = assertBoolean(raw.videoEnabled, `${path}.videoEnabled`);
+  }
+  if (raw.hasAudio !== undefined) {
+    layer.hasAudio = assertBoolean(raw.hasAudio, `${path}.hasAudio`);
+  }
+  if (raw.audioEnabled !== undefined) {
+    layer.audioEnabled = assertBoolean(raw.audioEnabled, `${path}.audioEnabled`);
+  }
+  if (raw.guideLayer !== undefined) {
+    layer.guideLayer = assertBoolean(raw.guideLayer, `${path}.guideLayer`);
+  }
+  if (raw.adjustmentLayer !== undefined) {
+    layer.adjustmentLayer = assertBoolean(raw.adjustmentLayer, `${path}.adjustmentLayer`);
+  }
+  if (raw.threeDLayer !== undefined) {
+    layer.threeDLayer = assertBoolean(raw.threeDLayer, `${path}.threeDLayer`);
+  }
+  if (raw.collapseTransformation !== undefined) {
+    layer.collapseTransformation = assertBoolean(
+      raw.collapseTransformation,
+      `${path}.collapseTransformation`,
+    );
+  }
+  if (raw.frameBlending !== undefined) {
+    layer.frameBlending = assertBoolean(raw.frameBlending, `${path}.frameBlending`);
+  }
+  if (raw.timeRemapEnabled !== undefined) {
+    layer.timeRemapEnabled = assertBoolean(raw.timeRemapEnabled, `${path}.timeRemapEnabled`);
+  }
+  if (raw.parentLayerId !== undefined && raw.parentLayerId !== null) {
+    layer.parentLayerId = assertNumber(raw.parentLayerId, `${path}.parentLayerId`);
+  } else if (raw.parentLayerId === null) {
+    layer.parentLayerId = null;
+  }
+  if (raw.trackMatteType !== undefined && raw.trackMatteType !== null) {
+    layer.trackMatteType = assertString(raw.trackMatteType, `${path}.trackMatteType`);
+  } else if (raw.trackMatteType === null) {
+    layer.trackMatteType = null;
+  }
+  if (raw.trackMatteLayerId !== undefined && raw.trackMatteLayerId !== null) {
+    layer.trackMatteLayerId = assertNumber(raw.trackMatteLayerId, `${path}.trackMatteLayerId`);
+  } else if (raw.trackMatteLayerId === null) {
+    layer.trackMatteLayerId = null;
+  }
   if (raw.source !== undefined) {
     layer.source = parseSourceRef(raw.source, `${path}.source`);
   }
@@ -371,6 +428,12 @@ function parseInspectPropertyNode(raw: unknown, path: string): InspectPropertyNo
   }
   if (raw.value !== undefined) {
     node.value = raw.value;
+  }
+  if (raw.authoredValue !== undefined) {
+    node.authoredValue = raw.authoredValue;
+  }
+  if (raw.evaluatedValue !== undefined) {
+    node.evaluatedValue = raw.evaluatedValue;
   }
   if (raw.keyframes !== undefined) {
     if (!Array.isArray(raw.keyframes)) {
@@ -655,4 +718,96 @@ export function parseProjectContext(json: string): ProjectContext {
     context.warning = DIRTY_WARNING;
   }
   return context;
+}
+
+const ITEM_REF_KINDS = new Set<ItemRefKind>([
+  "used_in_comp",
+  "layer_source",
+  "proxy_for",
+  "has_proxy",
+  "track_matte",
+  "parent_link",
+  "expression_mention",
+]);
+
+const ITEM_REF_TYPES = new Set(["folder", "comp", "footage", "item"]);
+
+function parseItemRefEntry(raw: unknown, path: string): ItemRefEntry {
+  if (!isRecord(raw)) {
+    throw new Error(`Invalid item refs: ${path} must be an object`);
+  }
+  const kind = assertString(raw.kind, `${path}.kind`) as ItemRefKind;
+  if (!ITEM_REF_KINDS.has(kind)) {
+    throw new Error(`Invalid item refs: ${path}.kind is not a known ref kind`);
+  }
+  const entry: ItemRefEntry = { kind };
+  if (raw.compId !== undefined) entry.compId = assertNumber(raw.compId, `${path}.compId`);
+  if (raw.compName !== undefined) entry.compName = assertString(raw.compName, `${path}.compName`);
+  if (raw.layerId !== undefined) entry.layerId = assertNumber(raw.layerId, `${path}.layerId`);
+  if (raw.layerName !== undefined) {
+    entry.layerName = assertString(raw.layerName, `${path}.layerName`);
+  }
+  if (raw.itemId !== undefined) entry.itemId = assertNumber(raw.itemId, `${path}.itemId`);
+  if (raw.proxyItemId !== undefined) {
+    entry.proxyItemId = assertNumber(raw.proxyItemId, `${path}.proxyItemId`);
+  }
+  if (raw.matteLayerId !== undefined) {
+    entry.matteLayerId = assertNumber(raw.matteLayerId, `${path}.matteLayerId`);
+  }
+  if (raw.parentLayerId !== undefined) {
+    entry.parentLayerId = assertNumber(raw.parentLayerId, `${path}.parentLayerId`);
+  }
+  if (raw.propertyPath !== undefined) {
+    entry.propertyPath = assertString(raw.propertyPath, `${path}.propertyPath`);
+  }
+  if (raw.confidence !== undefined) {
+    const c = assertString(raw.confidence, `${path}.confidence`);
+    if (c !== "heuristic") {
+      throw new Error(`Invalid item refs: ${path}.confidence must be "heuristic"`);
+    }
+    entry.confidence = "heuristic";
+  }
+  return entry;
+}
+
+/** Parse and validate the JSON payload from `ae_get_item_refs`. */
+export function parseItemRefs(raw: string): ItemRefsResult {
+  let data: unknown;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    throw new Error("Invalid item refs: result is not valid JSON");
+  }
+  if (!isRecord(data)) {
+    throw new Error("Invalid item refs: root must be an object");
+  }
+  if (!isRecord(data.item)) {
+    throw new Error("Invalid item refs: item must be an object");
+  }
+  if (!Array.isArray(data.refs)) {
+    throw new Error("Invalid item refs: refs must be an array");
+  }
+  if (!Array.isArray(data.incompleteReasons)) {
+    throw new Error("Invalid item refs: incompleteReasons must be an array");
+  }
+  const type = assertString(data.item.type, "item.type");
+  if (!ITEM_REF_TYPES.has(type)) {
+    throw new Error("Invalid item refs: item.type is not a known type");
+  }
+  // Facts only — never accept a deletionCandidate policy bit from the host.
+  if ("deletionCandidate" in data) {
+    throw new Error("Invalid item refs: deletionCandidate is not allowed");
+  }
+  return {
+    item: {
+      id: assertNumber(data.item.id, "item.id"),
+      name: assertString(data.item.name, "item.name"),
+      type: type as ItemRefsResult["item"]["type"],
+    },
+    refs: data.refs.map((ref, i) => parseItemRefEntry(ref, `refs[${i}]`)),
+    unknownRefsPossible: assertBoolean(data.unknownRefsPossible, "unknownRefsPossible"),
+    incompleteReasons: data.incompleteReasons.map((r, i) =>
+      assertString(r, `incompleteReasons[${i}]`),
+    ),
+  };
 }

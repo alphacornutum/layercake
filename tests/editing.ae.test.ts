@@ -9,6 +9,7 @@ import { assertHostConfigured, loadConfig } from "../src/config.js";
 import { createAeHost } from "../src/host/create-host.js";
 import { closeProject, openProjectGuarded, SessionError } from "../src/host/session.js";
 import type { AeHost } from "../src/host/types.js";
+import { getItemRefs } from "../src/inventory/get-item-refs.js";
 import { listComps } from "../src/inventory/list-comps.js";
 import { listFolders } from "../src/inventory/list-folders.js";
 import { listProjectContext } from "../src/inventory/list-project-context.js";
@@ -18,8 +19,10 @@ import { applyProjectPatch } from "../src/patch/apply.js";
 import { saveProject } from "../src/patch/save.js";
 import type {
   CreateFolderTargetResult,
+  CreateSolidTargetResult,
   DeleteProjectItemTargetResult,
   MoveProjectItemTargetResult,
+  ReplaceLayerSourceTargetResult,
   TextStyleTargetResult,
 } from "../src/patch/types.js";
 
@@ -701,6 +704,167 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
       expect(refused.error).toMatch(/Ambiguous layer name/i);
       expect(refused.error).toMatch(/"id"/);
       expect(refused.error).toMatch(/"index"/);
+    }
+  });
+
+  it("control-plane: create_solid → replace → timing/index/expression → reset → delete_layer → safe_delete", async (ctx) => {
+    if (!aeReady) {
+      ctx.skip();
+      return;
+    }
+    await openWorkCopy(host, true);
+    let ctxToken = await listProjectContext(host, config.scriptTimeoutMs);
+    const comps = await listComps(host, {}, config.scriptTimeoutMs);
+    const main = comps.compositions.find((c) => c.name === "main");
+    expect(main).toBeDefined();
+    const avLayer = main!.layers.find(
+      (l) => l.source?.type === "footage" || l.source?.type === "comp",
+    );
+    expect(avLayer).toBeDefined();
+
+    const create = await applyProjectPatch(
+      host,
+      {
+        project: { path: ctxToken.projectPath!, fingerprint: ctxToken.fingerprint },
+        operations: [
+          {
+            op: "create_solid",
+            name: "LC Control Solid",
+            width: 100,
+            height: 100,
+            pixelAspect: 1,
+            color: [1, 0, 0],
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(create.ok).toBe(true);
+    if (!create.ok) return;
+    const solidTarget = create.results[0]?.targets[0] as CreateSolidTargetResult;
+    const solidId = solidTarget.created?.id ?? solidTarget.itemId;
+    expect(solidId).toBeGreaterThan(0);
+    ctxToken = {
+      ...ctxToken,
+      fingerprint: create.fingerprint,
+      dirty: create.dirty,
+      revision: create.revision,
+    };
+
+    const replace = await applyProjectPatch(
+      host,
+      {
+        project: { path: ctxToken.projectPath!, fingerprint: ctxToken.fingerprint },
+        operations: [
+          {
+            op: "replace_layer_source",
+            target: { compId: main!.id, layerId: avLayer!.id },
+            sourceItemId: solidId,
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(replace.ok).toBe(true);
+    if (!replace.ok) return;
+    const replaceTarget = replace.results[0]?.targets[0] as ReplaceLayerSourceTargetResult;
+    const liveLayerId = replaceTarget.newLayerId ?? replaceTarget.layerId;
+    expect(replaceTarget.after?.sourceItemId).toBe(solidId);
+    ctxToken = {
+      ...ctxToken,
+      fingerprint: replace.fingerprint,
+      dirty: replace.dirty,
+      revision: replace.revision,
+    };
+
+    const refsInUse = await getItemRefs(host, solidId, config.scriptTimeoutMs);
+    expect(refsInUse.item.id).toBe(solidId);
+    expect(refsInUse).not.toHaveProperty("deletionCandidate");
+    expect(refsInUse.refs.some((r) => r.kind === "layer_source")).toBe(true);
+
+    const safeRefuseInUse = await applyProjectPatch(
+      host,
+      {
+        project: { path: ctxToken.projectPath!, fingerprint: ctxToken.fingerprint },
+        operations: [
+          {
+            op: "safe_delete_project_item",
+            selector: { kind: "items", itemIds: [solidId] },
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(safeRefuseInUse.ok).toBe(false);
+
+    const mutate = await applyProjectPatch(
+      host,
+      {
+        project: { path: ctxToken.projectPath!, fingerprint: ctxToken.fingerprint },
+        operations: [
+          {
+            op: "set_layer_index",
+            target: { compId: main!.id, layerId: liveLayerId },
+            index: 1,
+          },
+          {
+            op: "set_layer_timing",
+            target: { compId: main!.id, layerId: liveLayerId },
+            inFrame: 0,
+            outFrame: 30,
+          },
+          {
+            op: "set_property_expression",
+            target: { compId: main!.id, layerId: liveLayerId },
+            matchNames: ["ADBE Transform Group", "ADBE Scale"],
+            expression: "[100,100]",
+            expressionEnabled: true,
+          },
+          {
+            op: "reset_layer_surface",
+            target: { compId: main!.id, layerId: liveLayerId },
+            clearExpressions: true,
+            clearKeyframes: true,
+            clearEffects: true,
+          },
+          {
+            op: "delete_layer",
+            target: { compId: main!.id, layerId: liveLayerId },
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(mutate.ok).toBe(true);
+    if (!mutate.ok) return;
+    ctxToken = {
+      ...ctxToken,
+      fingerprint: mutate.fingerprint,
+      dirty: mutate.dirty,
+      revision: mutate.revision,
+    };
+
+    const refsAfter = await getItemRefs(host, solidId, config.scriptTimeoutMs);
+    expect(refsAfter.refs.filter((r) => r.kind === "layer_source")).toHaveLength(0);
+
+    const safeDel = await applyProjectPatch(
+      host,
+      {
+        project: { path: ctxToken.projectPath!, fingerprint: ctxToken.fingerprint },
+        operations: [
+          {
+            op: "safe_delete_project_item",
+            selector: { kind: "items", itemIds: [solidId] },
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    if (!refsAfter.unknownRefsPossible && refsAfter.refs.length === 0) {
+      expect(safeDel.ok).toBe(true);
+    } else {
+      // Heuristic incompleteness correctly blocks rather than false-allowing.
+      expect(safeDel.ok).toBe(false);
     }
   });
 
