@@ -33,12 +33,12 @@ Once connected, try prompts like:
 - Open / close `.aep` / `.aet` projects with session guards (refuses opening over another project)
 - Bind `ae_project_context` (path, dirty, revision fingerprint) and summarize project health
 - List compositions, layers, footage, solids, placeholders, and folders
-- Apply typed patches (`ae_patch_project`: `set_text_style`, `create_folder`, `move_project_item`, `delete_project_item`) and explicit saves (`save_copy` / `create_backup`)
+- Apply typed patches (`ae_patch_project`: `set_text_style`, `rename_layer`, `create_folder`, `move_project_item`, `delete_project_item`) with verified before/after evidence, plus explicit saves (`save_copy` / `create_backup`)
 - Inspect a layer’s property tree or a footage item’s interpretation
 - Search the After Effects Scripting Guide locally
 - Run ExtendScript inside After Effects and return structured results
 
-Broader typed ops (rename, create, …) grow over time; `ae_eval_script` remains the escape hatch.
+Typed mutation goes through `ae_patch_project`; `ae_eval_script` remains the escape hatch for one-off or unsupported edits. Details: [docs/mcp-tools.md](docs/mcp-tools.md).
 
 ## Requirements
 

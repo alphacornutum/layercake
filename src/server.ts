@@ -14,6 +14,7 @@ import { validateScriptSource } from "./host/script-wrapper.js";
 import { getLayer } from "./inventory/get-layer.js";
 import { getSource } from "./inventory/get-source.js";
 import { InspectSizeError } from "./inventory/inspect-limit.js";
+import { getLayerInputSchema } from "./inventory/layer-target-schema.js";
 import { listComps } from "./inventory/list-comps.js";
 import { listFolders } from "./inventory/list-folders.js";
 import { listProjectContext } from "./inventory/list-project-context.js";
@@ -177,14 +178,17 @@ export function createServer(
       description:
         "Apply-only typed mutations against the open project (no preview/plan tokens, no implicit save). " +
         "Requires project.path + project.fingerprint guards from ae_project_context. " +
-        "Ops: set_text_style (exact authored font via TextDocument/CharacterRange); " +
+        "Ops: set_text_style (exact authored font via TextDocument/CharacterRange; layer/comp selectors " +
+        "accept id or unique name like ae_get_layer — ambiguous names refuse with candidates); " +
+        "rename_layer (one layer per op via nested target id|name + desired layerName; opaque string); " +
         "create_folder / move_project_item / delete_project_item (Project panel Item.id handles only — " +
         "use real rootFolder.id from ae_list_folders, never a magic 0). " +
+        "Successful targets include post-condition-verified before/after evidence (re-read after write). " +
         "Mutates authored / pre-expression project state; panel ops do not read or write Property.expression. " +
         "Delete follows AE Item.remove defaults (folders recursively remove contents; in-use items may be deleted); " +
         "refuses deleting the project root; evidence includes nestedItemCount and full usedInCompIds. " +
         "On success, reuse returned fingerprint for the next save/patch when no other mutator intervened. " +
-        "Prefer this over ae_eval_script for routine text-style and panel placement work. " +
+        "Prefer this over ae_eval_script for routine text-style, layer rename, and panel placement work. " +
         "Call ae_save_project create_backup before risky broad patches; persist with save_copy after.",
       inputSchema: patchProjectInputSchema,
     },
@@ -434,35 +438,7 @@ export function createServer(
         "Unsupported value types are flagged { unserializable: true, propertyValueType }. " +
         "Success JSON larger than AE_INSPECT_MAX_BYTES (default 512 KiB) is a hard error — narrow with leaner detail / matchNames. " +
         "Layer.id ≠ Item.id; join layer.source.id to ae_list_sources / comps.",
-      inputSchema: z
-        .object({
-          compId: z.number().int().optional().describe("Composition Item.id"),
-          compName: z.string().optional().describe("Exact composition name (case-sensitive)"),
-          layerId: z.number().int().optional().describe("Layer.id within the composition"),
-          layerName: z.string().optional().describe("Exact layer name (case-sensitive)"),
-          detail: z
-            .enum(["overview", "extended", "full"])
-            .optional()
-            .describe('Depth tier (default "overview")'),
-          matchNames: z
-            .array(z.string())
-            .optional()
-            .describe("Optional PropertyBase.matchName filters (exact; includes descendants)"),
-          atTime: z
-            .number()
-            .optional()
-            .describe("Sample time in composition seconds (default: composition CTI)"),
-          preExpression: z
-            .boolean()
-            .optional()
-            .describe("valueAtTime preExpression flag (default true)"),
-        })
-        .refine((v) => (v.compId !== undefined) !== (v.compName !== undefined), {
-          message: "Provide exactly one of compId or compName",
-        })
-        .refine((v) => (v.layerId !== undefined) !== (v.layerName !== undefined), {
-          message: "Provide exactly one of layerId or layerName",
-        }),
+      inputSchema: getLayerInputSchema,
     },
     async (args) => {
       try {

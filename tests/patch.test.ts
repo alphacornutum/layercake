@@ -8,10 +8,14 @@ import { PATCH_MAX_TARGETS } from "../src/patch/constants.js";
 import { patchProjectInputSchema } from "../src/patch/schema.js";
 import { saveProject } from "../src/patch/save.js";
 
+function guardedProject() {
+  return { path: "/tmp/Demo.aep", fingerprint: "rev:1|dirty:0|path:/tmp/Demo.aep" };
+}
+
 describe("patchProjectInputSchema", () => {
   it("accepts set_text_style apply-only payload", () => {
     const parsed = patchProjectInputSchema.parse({
-      project: { path: "/tmp/Demo.aep", fingerprint: "rev:1|dirty:0|path:/tmp/Demo.aep" },
+      project: guardedProject(),
       operations: [
         {
           op: "set_text_style",
@@ -26,7 +30,7 @@ describe("patchProjectInputSchema", () => {
 
   it("accepts panel ops create_folder / move_project_item / delete_project_item", () => {
     const parsed = patchProjectInputSchema.parse({
-      project: { path: "/tmp/Demo.aep", fingerprint: "rev:1|dirty:0|path:/tmp/Demo.aep" },
+      project: guardedProject(),
       operations: [
         { op: "create_folder", name: "Bundle", parentFolderId: 12 },
         {
@@ -49,7 +53,7 @@ describe("patchProjectInputSchema", () => {
 
   it("rejects empty itemIds on move/delete", () => {
     const move = patchProjectInputSchema.safeParse({
-      project: { path: "/tmp/Demo.aep", fingerprint: "rev:1|dirty:0|path:/tmp/Demo.aep" },
+      project: guardedProject(),
       operations: [
         {
           op: "move_project_item",
@@ -61,17 +65,157 @@ describe("patchProjectInputSchema", () => {
     expect(move.success).toBe(false);
   });
 
-  it("rejects unknown ops and rename", () => {
+  it("rejects unknown ops", () => {
     const result = patchProjectInputSchema.safeParse({
-      project: { path: "/tmp/Demo.aep", fingerprint: "rev:1|dirty:0|path:/tmp/Demo.aep" },
+      project: guardedProject(),
       operations: [{ op: "rename", selector: { kind: "all_text_layers" }, name: "x" }],
     });
     expect(result.success).toBe(false);
   });
 
+  it("accepts rename_layer by ids and by unique names", () => {
+    const byIds = patchProjectInputSchema.parse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "rename_layer",
+          target: { compId: 12, layerId: 3 },
+          layerName: "{brand_url}",
+        },
+      ],
+    });
+    expect(byIds.operations[0]?.op).toBe("rename_layer");
+
+    const byNames = patchProjectInputSchema.parse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "rename_layer",
+          target: { compName: "main", layerName: "Hello World" },
+          layerName: "{message_10}",
+        },
+      ],
+    });
+    expect(byNames.operations[0]).toMatchObject({
+      op: "rename_layer",
+      layerName: "{message_10}",
+    });
+  });
+
+  it("rejects rename_layer / set_text_style layer targets missing or with both selectors", () => {
+    const missingComp = patchProjectInputSchema.safeParse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "rename_layer",
+          target: { layerId: 3 },
+          layerName: "x",
+        },
+      ],
+    });
+    expect(missingComp.success).toBe(false);
+
+    const bothLayer = patchProjectInputSchema.safeParse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "rename_layer",
+          target: { compId: 1, layerId: 2, layerName: "Hello" },
+          layerName: "x",
+        },
+      ],
+    });
+    expect(bothLayer.success).toBe(false);
+
+    const bothComp = patchProjectInputSchema.safeParse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "set_text_style",
+          selector: {
+            kind: "layers",
+            layers: [{ compId: 1, compName: "main", layerId: 2 }],
+          },
+          style: { font: "ArialMT" },
+        },
+      ],
+    });
+    expect(bothComp.success).toBe(false);
+  });
+
+  it("accepts set_text_style id-only and name-based layer/comp selectors", () => {
+    const idOnly = patchProjectInputSchema.parse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "set_text_style",
+          selector: { kind: "layers", layers: [{ compId: 1, layerId: 2 }] },
+          style: { font: "ArialMT" },
+        },
+      ],
+    });
+    expect(idOnly.operations[0]?.op).toBe("set_text_style");
+
+    const byNames = patchProjectInputSchema.parse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "set_text_style",
+          selector: {
+            kind: "layers",
+            layers: [{ compName: "main", layerName: "Hello World" }],
+          },
+          style: { font: "ArialMT" },
+        },
+      ],
+    });
+    expect(byNames.operations[0]?.op).toBe("set_text_style");
+
+    const compsByName = patchProjectInputSchema.parse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "set_text_style",
+          selector: { kind: "comps", compNames: ["main"] },
+          style: { font: "ArialMT" },
+        },
+      ],
+    });
+    expect(compsByName.operations[0]).toMatchObject({
+      op: "set_text_style",
+      selector: { kind: "comps", compNames: ["main"] },
+    });
+
+    const compsIdsOnly = patchProjectInputSchema.parse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "set_text_style",
+          selector: { kind: "comps", compIds: [1] },
+          style: { font: "ArialMT" },
+        },
+      ],
+    });
+    expect(compsIdsOnly.operations[0]?.op).toBe("set_text_style");
+  });
+
+  it("rejects empty comps selector lists", () => {
+    const empty = patchProjectInputSchema.safeParse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "set_text_style",
+          selector: { kind: "comps", compIds: [], compNames: [] },
+          style: { font: "ArialMT" },
+        },
+      ],
+    });
+    expect(empty.success).toBe(false);
+  });
+
   it("rejects empty operations", () => {
     const result = patchProjectInputSchema.safeParse({
-      project: { path: "/tmp/Demo.aep", fingerprint: "rev:1|dirty:0|path:/tmp/Demo.aep" },
+      project: guardedProject(),
       operations: [],
     });
     expect(result.success).toBe(false);
@@ -98,7 +242,7 @@ describe("buildPatchApplyScript", () => {
   it("includes guards, undo group, font apply, and broad gate", () => {
     const script = buildPatchApplyScript(
       JSON.stringify({
-        project: { path: "/tmp/Demo.aep", fingerprint: "rev:1|dirty:0|path:/tmp/Demo.aep" },
+        project: guardedProject(),
         operations: [
           {
             op: "set_text_style",
@@ -126,7 +270,7 @@ describe("buildPatchApplyScript", () => {
   it("includes panel op paths, cycle detection, and root refuse", () => {
     const script = buildPatchApplyScript(
       JSON.stringify({
-        project: { path: "/tmp/Demo.aep", fingerprint: "rev:1|dirty:0|path:/tmp/Demo.aep" },
+        project: guardedProject(),
         operations: [
           { op: "create_folder", name: "Bundle", parentFolderId: 12 },
           {
@@ -158,6 +302,28 @@ describe("buildPatchApplyScript", () => {
     expect(script).toContain("nestedItemCount");
     expect(script).toContain("usedInCompIds");
     expect(script).toContain("rootFolder.id === itemId");
+  });
+
+  it("includes rename_layer, comp/layer resolve, and rename post-condition (no footage helpers)", () => {
+    const script = buildPatchApplyScript(
+      JSON.stringify({
+        project: guardedProject(),
+        operations: [
+          {
+            op: "rename_layer",
+            target: { compName: "main", layerName: "Hello World" },
+            layerName: "{message_10}",
+          },
+        ],
+        allowBroadTargetSet: false,
+      }),
+    );
+    expect(script).toContain("applyRenameLayer");
+    expect(script).toContain("function resolveComp");
+    expect(script).toContain("function resolveLayer");
+    expect(script).toContain("ambiguous_layer_name");
+    expect(script).toContain("Post-condition failed: layer name did not match after write");
+    expect(script).not.toContain("function resolveFootage");
   });
 });
 
@@ -212,6 +378,77 @@ describe("parsePatchApplyResult", () => {
     ).toMatchObject({
       ok: false,
       rollback: { attempted: true, completed: true },
+    });
+  });
+
+  it("shapes rename_layer evidence with before/after names", () => {
+    const parsed = parsePatchApplyResult(
+      JSON.stringify({
+        ok: true,
+        results: [
+          {
+            index: 0,
+            op: "rename_layer",
+            status: "changed",
+            targets: [
+              {
+                compId: 12,
+                layerId: 3,
+                compName: "main",
+                layerName: "{message_10}",
+                status: "changed",
+                before: { name: "Hello World" },
+                after: { name: "{message_10}" },
+              },
+            ],
+          },
+        ],
+        fingerprint: "rev:3|dirty:1|path:/tmp/Demo.aep",
+        dirty: true,
+        revision: 3,
+      }),
+    );
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.results[0]?.targets[0]).toMatchObject({
+      before: { name: "Hello World" },
+      after: { name: "{message_10}" },
+      status: "changed",
+    });
+  });
+
+  it("shapes rename post-condition failure with actual after (not overall success)", () => {
+    const parsed = parsePatchApplyResult(
+      JSON.stringify({
+        ok: false,
+        error: "Post-condition failed: layer name did not match after write",
+        code: "apply_failed",
+        results: [
+          {
+            index: 0,
+            op: "rename_layer",
+            status: "failed",
+            targets: [
+              {
+                compId: 1,
+                layerId: 2,
+                status: "failed",
+                before: { name: "A" },
+                after: { name: "A" },
+                message: "Post-condition failed: layer name did not match after write",
+              },
+            ],
+          },
+        ],
+        rollback: { attempted: true, completed: true },
+      }),
+    );
+    expect(parsed.ok).toBe(false);
+    if (parsed.ok) return;
+    expect(parsed.code).toBe("apply_failed");
+    expect(parsed.results?.[0]?.targets[0]).toMatchObject({
+      status: "failed",
+      after: { name: "A" },
     });
   });
 
@@ -322,7 +559,7 @@ describe("applyProjectPatch", () => {
     const result = await applyProjectPatch(
       host,
       {
-        project: { path: "/tmp/Demo.aep", fingerprint: "rev:1|dirty:0|path:/tmp/Demo.aep" },
+        project: guardedProject(),
         operations: [
           {
             op: "set_text_style",

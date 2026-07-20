@@ -13,12 +13,14 @@ import { listComps } from "../src/inventory/list-comps.js";
 import { listFolders } from "../src/inventory/list-folders.js";
 import { listProjectContext } from "../src/inventory/list-project-context.js";
 import { listSources } from "../src/inventory/list-sources.js";
+import type { InventoryComposition, InventoryLayer } from "../src/inventory/types.js";
 import { applyProjectPatch } from "../src/patch/apply.js";
 import { saveProject } from "../src/patch/save.js";
 import type {
   CreateFolderTargetResult,
   DeleteProjectItemTargetResult,
   MoveProjectItemTargetResult,
+  TextStyleTargetResult,
 } from "../src/patch/types.js";
 
 /**
@@ -85,6 +87,18 @@ async function openWorkCopy(host: AeHost, resetFromCommitted: boolean): Promise<
   }
 }
 
+/** hello-world fixture: composition `main` and its text layer. */
+async function mainTextLayer(
+  host: AeHost,
+): Promise<{ main: InventoryComposition; textLayer: InventoryLayer }> {
+  const inventory = await listComps(host, {}, config.scriptTimeoutMs);
+  const main = inventory.compositions.find((c) => c.name === "main");
+  expect(main).toBeTruthy();
+  const textLayer = main!.layers.find((l) => l.type === "text");
+  expect(textLayer).toBeTruthy();
+  return { main: main!, textLayer: textLayer! };
+}
+
 describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () => {
   const host = hasHost ? createAeHost(config) : (null as unknown as AeHost);
 
@@ -144,11 +158,7 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
       expect(existsSync(backup.writtenPath)).toBe(true);
 
       const afterBackup = await listProjectContext(host, config.scriptTimeoutMs);
-      const inventory = await listComps(host, {}, config.scriptTimeoutMs);
-      const main = inventory.compositions.find((c) => c.name === "main");
-      expect(main).toBeTruthy();
-      const textLayer = main!.layers.find((l) => l.type === "text");
-      expect(textLayer).toBeTruthy();
+      const { main, textLayer } = await mainTextLayer(host);
 
       const patch = await applyProjectPatch(
         host,
@@ -162,7 +172,7 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
               op: "set_text_style",
               selector: {
                 kind: "layers",
-                layers: [{ compId: main!.id, layerId: textLayer!.id }],
+                layers: [{ compId: main.id, layerId: textLayer.id }],
               },
               style: { font: "ArialMT" },
             },
@@ -416,10 +426,7 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
     }
     await openWorkCopy(host, true);
     const ctxBind = await listProjectContext(host, config.scriptTimeoutMs);
-    const inventory = await listComps(host, {}, config.scriptTimeoutMs);
-    const main = inventory.compositions.find((c) => c.name === "main");
-    const textLayer = main?.layers.find((l) => l.type === "text");
-    expect(textLayer).toBeTruthy();
+    const { main, textLayer } = await mainTextLayer(host);
 
     const first = await applyProjectPatch(
       host,
@@ -430,7 +437,7 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
             op: "set_text_style",
             selector: {
               kind: "layers",
-              layers: [{ compId: main!.id, layerId: textLayer!.id }],
+              layers: [{ compId: main.id, layerId: textLayer.id }],
             },
             style: { font: "ArialMT" },
           },
@@ -451,7 +458,7 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
             op: "set_text_style",
             selector: {
               kind: "layers",
-              layers: [{ compId: main!.id, layerId: textLayer!.id }],
+              layers: [{ compId: main.id, layerId: textLayer.id }],
             },
             style: { font: "ArialMT" },
           },
@@ -462,6 +469,239 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
     expect(second.ok).toBe(true);
     if (!second.ok) return;
     expect(second.results[0]?.targets[0]?.status).toBe("already_satisfied");
+  });
+
+  it("set_text_style via unique compName/layerName and compNames", async (ctx) => {
+    if (!aeReady) {
+      ctx.skip();
+      return;
+    }
+    await openWorkCopy(host, true);
+    const before = await listProjectContext(host, config.scriptTimeoutMs);
+
+    const byLayerNames = await applyProjectPatch(
+      host,
+      {
+        project: { path: before.projectPath!, fingerprint: before.fingerprint },
+        operations: [
+          {
+            op: "set_text_style",
+            selector: {
+              kind: "layers",
+              layers: [{ compName: "main", layerName: "Hello World" }],
+            },
+            style: { font: "ArialMT" },
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(byLayerNames.ok).toBe(true);
+    if (!byLayerNames.ok) return;
+    const layerTarget = byLayerNames.results[0]?.targets[0] as TextStyleTargetResult | undefined;
+    expect(layerTarget?.status).toMatch(/^(changed|already_satisfied)$/);
+    expect(layerTarget?.after?.fonts).toBeTruthy();
+
+    const mid = await listProjectContext(host, config.scriptTimeoutMs);
+    const byCompNames = await applyProjectPatch(
+      host,
+      {
+        project: { path: mid.projectPath!, fingerprint: mid.fingerprint },
+        operations: [
+          {
+            op: "set_text_style",
+            selector: { kind: "comps", compNames: ["main"] },
+            style: { font: "ArialMT" },
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(byCompNames.ok).toBe(true);
+    if (!byCompNames.ok) return;
+    expect(byCompNames.results[0]?.targets[0]?.status).toBe("already_satisfied");
+  });
+
+  it("rename_layer by id and unique name; opaque mustache; no implicit save", async (ctx) => {
+    if (!aeReady) {
+      ctx.skip();
+      return;
+    }
+    await openWorkCopy(host, true);
+    const before = await listProjectContext(host, config.scriptTimeoutMs);
+    const { main, textLayer } = await mainTextLayer(host);
+    const originalName = textLayer.name;
+
+    const byId = await applyProjectPatch(
+      host,
+      {
+        project: { path: before.projectPath!, fingerprint: before.fingerprint },
+        operations: [
+          {
+            op: "rename_layer",
+            target: { compId: main.id, layerId: textLayer.id },
+            layerName: "{BrandURL}",
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(byId.ok).toBe(true);
+    if (!byId.ok) return;
+    expect(byId.results[0]?.op).toBe("rename_layer");
+    expect(byId.results[0]?.targets[0]).toMatchObject({
+      status: "changed",
+      before: { name: originalName },
+      after: { name: "{BrandURL}" },
+      compId: main.id,
+      layerId: textLayer.id,
+    });
+
+    const mid = await listProjectContext(host, config.scriptTimeoutMs);
+    expect(mid.projectPath).toBe(before.projectPath);
+    expect(mid.fingerprint).not.toBe(before.fingerprint);
+
+    const byName = await applyProjectPatch(
+      host,
+      {
+        project: { path: mid.projectPath!, fingerprint: mid.fingerprint },
+        operations: [
+          {
+            op: "rename_layer",
+            target: { compName: "main", layerName: "{BrandURL}" },
+            layerName: "{message_10}",
+          },
+          {
+            op: "rename_layer",
+            target: { compId: main.id, layerId: textLayer.id },
+            layerName: "{message_10}",
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(byName.ok).toBe(true);
+    if (!byName.ok) return;
+    expect(byName.results[0]?.targets[0]).toMatchObject({
+      status: "changed",
+      after: { name: "{message_10}" },
+    });
+    expect(byName.results[1]?.targets[0]).toMatchObject({
+      status: "already_satisfied",
+      after: { name: "{message_10}" },
+    });
+
+    const after = await listProjectContext(host, config.scriptTimeoutMs);
+    expect(after.projectPath).toBe(before.projectPath);
+  });
+
+  it("compose rename_layer → save_copy; names persist on saved artifact", async (ctx) => {
+    if (!aeReady) {
+      ctx.skip();
+      return;
+    }
+    await openWorkCopy(host, true);
+    const before = await listProjectContext(host, config.scriptTimeoutMs);
+    const { main, textLayer } = await mainTextLayer(host);
+
+    const patch = await applyProjectPatch(
+      host,
+      {
+        project: { path: before.projectPath!, fingerprint: before.fingerprint },
+        operations: [
+          {
+            op: "rename_layer",
+            target: { compId: main.id, layerId: textLayer.id },
+            layerName: "{brand_url}",
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(patch.ok).toBe(true);
+    if (!patch.ok) return;
+
+    const artifactDir = mkdtempSync(join(tmpdir(), "lc-ae-rename-save-"));
+    try {
+      const dest = join(artifactDir, "renamed-copy.aep");
+      copyFileSync(committedFixturePng, join(artifactDir, "1x1.png"));
+      const saved = await saveProject(
+        host,
+        {
+          mode: "save_copy",
+          expectedFingerprint: patch.fingerprint,
+          path: dest,
+          projectPath: before.projectPath ?? undefined,
+        },
+        { artifactDir, timeoutMs: config.scriptTimeoutMs },
+      );
+      expect(saved.ok).toBe(true);
+      if (!saved.ok) return;
+      expect(existsSync(saved.writtenPath)).toBe(true);
+
+      await closeDiscard(host);
+      await host.openProject(saved.writtenPath);
+      const reopened = await listComps(host, {}, config.scriptTimeoutMs);
+      const reMain = reopened.compositions.find((c) => c.name === "main");
+      const reLayer = reMain?.layers.find((l) => l.id === textLayer.id);
+      expect(reLayer?.name).toBe("{brand_url}");
+    } finally {
+      await closeDiscard(host);
+      rmSync(artifactDir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses ambiguous layer name for rename_layer (disposable duplicate)", async (ctx) => {
+    if (!aeReady) {
+      ctx.skip();
+      return;
+    }
+    await openWorkCopy(host, true);
+    // hello-world has one text layer; duplicate its name via eval so ambiguity is expressible.
+    const dup = await host.evalScript(
+      `
+      var items = app.project.items;
+      var comp = null;
+      for (var i = 1; i <= items.length; i++) {
+        if (items[i] instanceof CompItem && items[i].name === "main") { comp = items[i]; break; }
+      }
+      if (!comp) throw new Error("main missing");
+      var text = null;
+      for (var j = 1; j <= comp.numLayers; j++) {
+        if (comp.layer(j) instanceof TextLayer) { text = comp.layer(j); break; }
+      }
+      if (!text) throw new Error("text missing");
+      var solid = comp.layers.addSolid([1,1,1], text.name, 8, 8, 1);
+      return JSON.stringify({ layerName: text.name, solidId: solid.id });
+      `,
+      config.scriptTimeoutMs,
+    );
+    expect(dup.ok).toBe(true);
+    if (!dup.ok) return;
+    const dupInfo = JSON.parse(dup.result) as { layerName: string; solidId: number };
+
+    const bind = await listProjectContext(host, config.scriptTimeoutMs);
+    const refused = await applyProjectPatch(
+      host,
+      {
+        project: { path: bind.projectPath!, fingerprint: bind.fingerprint },
+        operations: [
+          {
+            op: "rename_layer",
+            target: { compName: "main", layerName: dupInfo.layerName },
+            layerName: "unique_after",
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(refused.ok).toBe(false);
+    if (!refused.ok) {
+      expect(refused.code).toBe("validation");
+      expect(refused.error).toMatch(/Ambiguous layer name/i);
+      expect(refused.error).toMatch(/"id"/);
+      expect(refused.error).toMatch(/"index"/);
+    }
   });
 
   it("refuses different-path open; close discard; stale fingerprint on patch/save", async (ctx) => {
