@@ -143,6 +143,25 @@ The tool MUST return a JSON object suitable for agent consumption, including pro
 - **WHEN** `ae_list_comps` runs successfully
 - **THEN** the open project MUST NOT be modified solely as a result of the inventory call
 
+### Requirement: Composition settings fields on list
+
+Each listed composition MUST include composition settings read from the live session so agents can plan `set_comp_settings` without `ae_eval_script`: `width`, `height`, `pixelAspect`, `frameRate`, integer `durationFrames`, integer `displayStartFrame`, integer `workAreaStartFrame`, integer `workAreaDurationFrames`, `renderer` (current renderer string when readable), and a `switches` object with booleans `motionBlur`, `frameBlending`, `draft3d`, `hideShyLayers`, `dropFrame`, and `preserveNestedResolution`. Existing second-based `duration` MUST remain for compatibility. Integer frame fields MUST be derived using that composition’s `frameRate` (nearest-frame conventions consistent with layer frame helpers).
+
+#### Scenario: Settings present on each composition
+
+- **WHEN** a composition is listed
+- **THEN** the composition object MUST include `width`, `height`, `pixelAspect`, `frameRate`, `durationFrames`, `displayStartFrame`, `workAreaStartFrame`, `workAreaDurationFrames`, `renderer` when readable, and the `switches` object with the listed boolean keys
+
+#### Scenario: Seconds duration kept
+
+- **WHEN** a composition is listed
+- **THEN** `duration` MUST remain present in seconds alongside `durationFrames`
+
+#### Scenario: Filter still returns settings
+
+- **WHEN** the caller filters with `compIds` or `compNames` and matches succeed
+- **THEN** each returned composition MUST still include the composition settings fields
+
 ### Requirement: Extended layer control-plane fields
 
 Each listed layer MUST additionally include control-plane fields read from the live session so agents can audit order, switches, parenting/mattes, and frame-exact timing without a deep property inspect: `startTime` (seconds); integer `startFrame`, `inFrame`, `outFrame`, and `durationFrames` derived using the containing composition’s `frameRate`; boolean switches `enabled`, and when applicable `hasVideo`/`videoEnabled`, `hasAudio`/`audioEnabled`, `guideLayer`, `adjustmentLayer`, `threeDLayer`, `collapseTransformation`, `frameBlendingType` or equivalent frame-blending flag, and `timeRemapEnabled`; optional `parentLayerId`; optional track-matte fields (`trackMatteType` and `trackMatteLayerId` when a matte applies). Existing second-based `inPoint` / `outPoint` / `duration` MUST remain for compatibility.

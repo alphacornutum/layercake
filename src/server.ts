@@ -15,6 +15,7 @@ import { getItemRefs } from "./inventory/get-item-refs.js";
 import { getLayer } from "./inventory/get-layer.js";
 import { getSource } from "./inventory/get-source.js";
 import { InspectSizeError } from "./inventory/inspect-limit.js";
+import { COMP_SWITCH_KEYS } from "./inventory/comp-switches.js";
 import { getLayerInputSchema } from "./inventory/layer-target-schema.js";
 import { listComps } from "./inventory/list-comps.js";
 import { listFolders } from "./inventory/list-folders.js";
@@ -182,10 +183,13 @@ export function createServer(
         "Ops: set_text_style; rename_layer; rename_project_item; set_layer_index; create_solid (always-create); " +
         "replace_layer_source; set_layer_timing (integer frames only); set_layer_switches " +
         "(partial switches bag; full switch snapshot evidence; timeRemapEnabled lives here); " +
+        "set_comp_settings (target.compId|compName + partial settings bag; integer-frame evidence; " +
+        "place before set_layer_timing in mixed batches); " +
         "set_property_expression (exactly one of matchNames|propertyPath; prefer matchNames from ae_get_layer); " +
         "reset_layer_surface; delete_layer; create_folder / move_project_item / delete_project_item " +
         "(permissive AE remove); safe_delete_project_item (refuse in-use / unknownRefsPossible; empty folders only). " +
         "Layer targets accept id or unique name like ae_get_layer — ambiguous names refuse with candidates. " +
+        "Comp-only ops (set_comp_settings) use target.compId|compName the same way. " +
         "Panel item ops use Item.id (real rootFolder.id from ae_list_folders, never a magic 0). " +
         "Successful targets include post-condition-verified before/after evidence. " +
         "Prefer typed ops over ae_eval_script for these control-plane flows. " +
@@ -299,6 +303,12 @@ export function createServer(
       description:
         "Read-only inventory of compositions and their layers as JSON — prefer this before ae_eval_script. " +
         "Omit filters to list all comps; optional compIds and/or compNames (union) narrow the result. " +
+        "Each composition includes settings for planning set_comp_settings: width/height/pixelAspect/frameRate, " +
+        "integer durationFrames/displayStartFrame/workAreaStartFrame/workAreaDurationFrames, renderer, and " +
+        "switches (" +
+        COMP_SWITCH_KEYS.join("/") +
+        "); " +
+        "seconds duration is kept for compatibility. " +
         "Each layer includes a stable id (AE Layer.id, persists across reorder/rename/save; AE 22+) — prefer id over ephemeral index for follow-up scripts. " +
         "Layers with an AVLayer.source include a compact source object whose id is the source Item.id (join key to ae_list_sources / comps; distinct from Layer.id); " +
         'solids report source.footageKind "solid". ' +

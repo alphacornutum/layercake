@@ -11,7 +11,7 @@ Your agent discovers these tools automatically through MCP. Prefer inventory too
 | `ae_close_project`   | Close with explicit `discard` or `save` policy (never prompts); optional fingerprint guard                                             |
 | `ae_project_context` | Cheap bind token: path, dirty, revision, fingerprint (poll before/after mutate)                                                        |
 | `ae_project_summary` | Heavier passport: counts, third-party effects, missing footage/fonts                                                                   |
-| `ae_list_comps`      | Read-only JSON inventory of compositions and layers (switches, parent/matte, frame timing, Solid `footageKind`)                        |
+| `ae_list_comps`      | Read-only JSON inventory of compositions (settings + switches) and layers (switches, parent/matte, frame timing, Solid `footageKind`)  |
 | `ae_list_sources`    | Read-only JSON inventory of footage, solids, and placeholders                                                                          |
 | `ae_list_folders`    | Read-only nested JSON tree of the Project panel folder hierarchy                                                                       |
 | `ae_get_layer`       | Read-only deep dump of one layer property tree; dual authored/evaluated Transform samples on `extended`/`full`                         |
@@ -72,6 +72,7 @@ Read-only inbound references for one `itemId` (`Item.id`): `used_in_comp`, `laye
 | `replace_layer_source`     | Replace AVLayer source; evidence reports `layerIdPreserved` / `newLayerId`                                                          |
 | `set_layer_timing`         | Set start/in/out via **integer frames** (+ optional stretch); seconds-only refused                                                  |
 | `set_layer_switches`       | Set timeline/layer switch booleans (`enabled`, `audioEnabled`, `timeRemapEnabled`, …); omit=preserve; full switch snapshot evidence |
+| `set_comp_settings`        | Set composition settings via nested `target` + partial `settings` bag (dims/rate/frames/work area/renderer/switches); see below     |
 | `set_property_expression`  | Set/clear expression on one PropertyBase — exactly one of `matchNames` \| nexrender `propertyPath`                                  |
 | `reset_layer_surface`      | Clear keys/effects/masks/styles/markers/matte/parent (flags); optional transform/expression clears                                  |
 | `delete_layer`             | Delete one timeline layer by `target`                                                                                               |
@@ -80,13 +81,13 @@ Read-only inbound references for one `itemId` (`Item.id`): `used_in_comp`, `laye
 | `delete_project_item`      | Permissive AE `Item.remove()`; refuses root; may delete in-use items / recurse folders                                              |
 | `safe_delete_project_item` | Delete only when inbound refs are empty and `unknownRefsPossible` is false; empty folders only                                      |
 
-Successful targets include **post-condition-verified** before/after evidence (apply re-reads live state after the write; `changed` only when it matches the request). See [ADR 0003](adr/0003-patch-targeting-and-post-conditions.md). Prefer `matchNames` from `ae_get_layer` for `set_property_expression` (locale-stable); `propertyPath` splits on `->` when present, otherwise `.`.
+Successful targets include **post-condition-verified** before/after evidence (apply re-reads live state after the write; `changed` only when it matches the request). See [ADR 0003](adr/0003-patch-targeting-and-post-conditions.md). Nested `target` + op-specific bags (`settings` / `switches` / `style`) follow [ADR 0004](adr/0004-patch-op-target-and-settings-bags.md). Prefer `matchNames` from `ae_get_layer` for `set_property_expression` (locale-stable); `propertyPath` splits on `->` when present, otherwise `.`.
 
 #### Layer targeting (id or unique name)
 
 Layer-targeting control-plane ops (`rename_layer`, `set_layer_index`, `replace_layer_source`, `set_layer_timing`, `set_layer_switches`, `set_property_expression`, `reset_layer_surface`, `delete_layer`) and each `set_text_style` `selector.kind: "layers"` entry use the same shape as `ae_get_layer`: exactly one of `compId` \| `compName`, exactly one of `layerId` \| `layerName` (case-sensitive exact match). Ambiguous names refuse before mutation with candidate lists. Prefer ids when names may collide. There is no ids-only exception for new layer-targeting ops.
 
-`set_text_style` `selector.kind: "comps"` accepts `compIds` and/or `compNames` (union; at least one non-empty). Existing `{ compIds: [...] }` and `{ compId, layerId }` payloads remain valid. `all_text_layers` is unchanged. Panel item ops stay on `Item.id`.
+`set_comp_settings` uses comps-only `target` (`compId` XOR `compName`) with the same ambiguity rules. `set_text_style` `selector.kind: "comps"` accepts `compIds` and/or `compNames` (union; at least one non-empty). Existing `{ compIds: [...] }` and `{ compId, layerId }` payloads remain valid. `all_text_layers` is unchanged. Panel item ops stay on `Item.id`.
 
 #### `rename_layer` example
 
@@ -112,6 +113,22 @@ Desired `layerName` is opaque (braces / `{message_10}` preserved). AE allows dup
 
 Supply only the switches to change (`enabled`, `audioEnabled`, `solo`, `shy`, `locked`, `guideLayer`, `adjustmentLayer`, `threeDLayer`, `collapseTransformation`, `frameBlending`, `motionBlur`, `timeRemapEnabled`). Omitted switches and non-switch state are preserved. Evidence `before`/`after` is a full readable switch snapshot; post-condition success depends only on supplied keys. Use this op (not `set_layer_timing`) for `timeRemapEnabled`.
 
+#### `set_comp_settings` example
+
+```json
+{
+  "op": "set_comp_settings",
+  "target": { "compName": "main" },
+  "settings": {
+    "durationFrames": 450,
+    "workAreaDurationFrames": 450,
+    "switches": { "motionBlur": true }
+  }
+}
+```
+
+Partial `settings` bag (omit key = preserve): `width`, `height`, `pixelAspect`, `frameRate`, `durationFrames`, `displayStartFrame`, `workAreaStartFrame`, `workAreaDurationFrames`, `renderer`, and nested `switches` (`motionBlur`, `frameBlending`, `draft3d`, `hideShyLayers`, `dropFrame`, `preserveNestedResolution`). Evidence is a full settings snapshot; post-condition success depends only on supplied keys. Duration shrink clamps the current/preserved work area to the new end first, then applies other supplied fields; an explicit work area that would still end past duration fails. Plan from `ae_list_comps` composition settings fields. In a mixed batch with `set_layer_timing`, put `set_comp_settings` **first** (especially when changing `frameRate`) — apply does not reorder ops. No implicit save.
+
 #### `set_text_style` name-based example
 
 ```json
@@ -131,7 +148,7 @@ Delete follows After Effects defaults: folders recursively remove contents; in-u
 
 ## Agent skill: `drive-after-effects`
 
-LayerCake ships the [Agent Skill](https://agentskills.io/) `drive-after-effects`: host check → open → `ae_project_context` bind → optional `ae_project_summary` → inventory → optional `create_backup` / copy-first `save_copy` → `ae_patch_project` → use returned fingerprint (or re-bind if another mutator may have run) → `save_copy`. Prefer typed patch over raw `ae_eval_script` for routine text-style, layer rename (`rename_layer`), layer switches (`set_layer_switches`), and Project panel create/move/delete.
+LayerCake ships the [Agent Skill](https://agentskills.io/) `drive-after-effects`: host check → open → `ae_project_context` bind → optional `ae_project_summary` → inventory → optional `create_backup` / copy-first `save_copy` → `ae_patch_project` → use returned fingerprint (or re-bind if another mutator may have run) → `save_copy`. Prefer typed patch over raw `ae_eval_script` for routine text-style, layer rename (`rename_layer`), layer switches (`set_layer_switches`), composition settings (`set_comp_settings`), and Project panel create/move/delete.
 
 Assumes a **1:1 agent ↔ After Effects** session (no mutex). See [ADR 0002](adr/0002-guarded-session-revision-fingerprint.md).
 

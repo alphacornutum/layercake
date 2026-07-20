@@ -5,6 +5,13 @@
  * Relies on JSON.stringify from the extendscript-json polyfill injected by
  * wrapExtendScript (AE ExtendScript has no built-in JSON).
  */
+import { COMP_SWITCH_KEYS, COMP_SWITCH_KEYS_ES3 } from "./comp-switches.js";
+
+const readCompSwitchesDefaults = COMP_SWITCH_KEYS.map((k) => `${k}: false`).join(",\n    ");
+const readCompSwitchesReads = COMP_SWITCH_KEYS.map(
+  (k) => `try {\n    switches.${k} = !!comp.${k};\n  } catch (e) {}`,
+).join("\n  ");
+
 export const SHARED_INVENTORY_HELPERS = `
 function projectNameOf() {
   var projectName = "";
@@ -68,5 +75,31 @@ function timeToFrame(time, frameRate) {
 function frameToTime(frame, frameRate) {
   if (!frameRate || frameRate <= 0) return 0;
   return Number(frame) / Number(frameRate);
+}
+
+function compSwitchKeys() {
+  return [${COMP_SWITCH_KEYS_ES3}];
+}
+
+/** Composition Advanced-tab / panel switches; unread → false. */
+function readCompSwitches(comp) {
+  var switches = {
+    ${readCompSwitchesDefaults}
+  };
+  ${readCompSwitchesReads}
+  return switches;
+}
+
+/** Integer display-start frame; falls back to displayStartTime. */
+function readDisplayStartFrame(comp, frameRate) {
+  try {
+    return Number(comp.displayStartFrame);
+  } catch (e) {
+    try {
+      return timeToFrame(comp.displayStartTime, frameRate);
+    } catch (e2) {
+      return 0;
+    }
+  }
 }
 `.trim();

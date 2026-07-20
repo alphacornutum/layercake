@@ -1,9 +1,14 @@
 import { z } from "zod";
 
-import { layerTargetSchema } from "../inventory/layer-target-schema.js";
+import { COMP_SWITCH_KEYS, type CompSwitchKey } from "../inventory/comp-switches.js";
+import { compTargetSchema, layerTargetSchema } from "../inventory/layer-target-schema.js";
 
-export { layerTargetSchema };
-export type { LayerTarget } from "../inventory/layer-target-schema.js";
+export { compTargetSchema, layerTargetSchema };
+export type { CompTarget, LayerTarget } from "../inventory/layer-target-schema.js";
+
+const compSwitchFieldSchemas = Object.fromEntries(
+  COMP_SWITCH_KEYS.map((k) => [k, z.boolean().optional()]),
+) as { [K in CompSwitchKey]: z.ZodOptional<z.ZodBoolean> };
 
 const compsSelectorSchema = z
   .object({
@@ -176,6 +181,39 @@ export const setLayerSwitchesOpSchema = z.object({
   ),
 });
 
+const compSwitchesBagSchema = z.object(compSwitchFieldSchemas).strict();
+
+const compSettingsBagSchema = z
+  .object({
+    width: z.number().int().min(1).max(30000).optional(),
+    height: z.number().int().min(1).max(30000).optional(),
+    pixelAspect: z.number().positive().optional(),
+    frameRate: z.number().positive().optional(),
+    durationFrames: z.number().int().min(0).optional(),
+    displayStartFrame: z.number().int().optional(),
+    workAreaStartFrame: z.number().int().min(0).optional(),
+    workAreaDurationFrames: z.number().int().min(0).optional(),
+    renderer: z.string().min(1).optional(),
+    switches: compSwitchesBagSchema.optional(),
+  })
+  .strict()
+  .refine(
+    (v) => {
+      const { switches, ...rest } = v;
+      if (Object.values(rest).some((x) => x !== undefined)) return true;
+      return !!switches && Object.values(switches).some((x) => x !== undefined);
+    },
+    { message: "Provide at least one allowlisted field in settings" },
+  );
+
+export const setCompSettingsOpSchema = z.object({
+  op: z.literal("set_comp_settings"),
+  target: compTargetSchema,
+  settings: compSettingsBagSchema.describe(
+    "Partial composition settings; omitted keys are preserved. Evidence returns a full settings snapshot.",
+  ),
+});
+
 export const setPropertyExpressionOpSchema = z
   .object({
     op: z.literal("set_property_expression"),
@@ -233,6 +271,7 @@ export const patchOperationSchema = z.union([
   replaceLayerSourceOpSchema,
   setLayerTimingOpSchema,
   setLayerSwitchesOpSchema,
+  setCompSettingsOpSchema,
   setPropertyExpressionOpSchema,
   resetLayerSurfaceOpSchema,
   deleteLayerOpSchema,
@@ -263,6 +302,7 @@ export type CreateSolidOp = z.infer<typeof createSolidOpSchema>;
 export type ReplaceLayerSourceOp = z.infer<typeof replaceLayerSourceOpSchema>;
 export type SetLayerTimingOp = z.infer<typeof setLayerTimingOpSchema>;
 export type SetLayerSwitchesOp = z.infer<typeof setLayerSwitchesOpSchema>;
+export type SetCompSettingsOp = z.infer<typeof setCompSettingsOpSchema>;
 export type SetPropertyExpressionOp = z.infer<typeof setPropertyExpressionOpSchema>;
 export type ResetLayerSurfaceOp = z.infer<typeof resetLayerSurfaceOpSchema>;
 export type DeleteLayerOp = z.infer<typeof deleteLayerOpSchema>;

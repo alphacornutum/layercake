@@ -23,6 +23,7 @@ import type {
   DeleteProjectItemTargetResult,
   MoveProjectItemTargetResult,
   ReplaceLayerSourceTargetResult,
+  SetCompSettingsTargetResult,
   SetLayerSwitchesTargetResult,
   TextStyleTargetResult,
 } from "../src/patch/types.js";
@@ -648,6 +649,55 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
     expect(mid.dirty).toBe(true);
     expect(mid.fingerprint).not.toBe(before.fingerprint);
     expect(mid.fingerprint).toBe(toggled.fingerprint);
+  });
+
+  it("set_comp_settings changes duration/work area; no implicit save", async (ctx) => {
+    if (!aeReady) {
+      ctx.skip();
+      return;
+    }
+    await openWorkCopy(host, true);
+    const before = await listProjectContext(host, config.scriptTimeoutMs);
+    const inventory = await listComps(host, {}, config.scriptTimeoutMs);
+    const main = inventory.compositions.find((c) => c.name === "main");
+    expect(main).toBeTruthy();
+    if (!main) return;
+    const desiredDuration = main.durationFrames + 30;
+    const desiredWorkArea = desiredDuration;
+
+    const patched = await applyProjectPatch(
+      host,
+      {
+        project: { path: before.projectPath!, fingerprint: before.fingerprint },
+        operations: [
+          {
+            op: "set_comp_settings",
+            target: { compId: main.id },
+            settings: {
+              durationFrames: desiredDuration,
+              workAreaDurationFrames: desiredWorkArea,
+            },
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(patched.ok).toBe(true);
+    if (!patched.ok) return;
+    const target = patched.results[0]?.targets[0] as SetCompSettingsTargetResult;
+    expect(patched.results[0]?.op).toBe("set_comp_settings");
+    expect(target.status).toBe("changed");
+    expect(target.after?.durationFrames).toBe(desiredDuration);
+    expect(target.after?.workAreaDurationFrames).toBe(desiredWorkArea);
+
+    const mid = await listProjectContext(host, config.scriptTimeoutMs);
+    expect(mid.projectPath).toBe(before.projectPath);
+    expect(mid.dirty).toBe(true);
+    expect(mid.fingerprint).toBe(patched.fingerprint);
+
+    const relisted = await listComps(host, { compIds: [main.id] }, config.scriptTimeoutMs);
+    expect(relisted.compositions[0]?.durationFrames).toBe(desiredDuration);
+    expect(relisted.compositions[0]?.workAreaDurationFrames).toBe(desiredWorkArea);
   });
 
   it("compose rename_layer → save_copy; names persist on saved artifact", async (ctx) => {

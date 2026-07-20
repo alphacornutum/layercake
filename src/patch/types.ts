@@ -1,3 +1,5 @@
+import type { CompSwitchesSnapshot } from "../inventory/comp-switches.js";
+
 export type PatchOpStatus =
   | "changed"
   | "already_satisfied"
@@ -126,6 +128,30 @@ export type SetLayerSwitchesTargetResult = LayerTargetBase & {
   after?: LayerSwitchesSnapshot;
 };
 
+/** Full composition settings snapshot (inventory / patch evidence). */
+export type CompSettingsSnapshot = {
+  width: number;
+  height: number;
+  pixelAspect: number;
+  frameRate: number;
+  durationFrames: number;
+  displayStartFrame: number;
+  workAreaStartFrame: number;
+  workAreaDurationFrames: number;
+  renderer: string;
+  switches: CompSwitchesSnapshot;
+};
+
+/** `set_comp_settings` target evidence (full settings snapshot before/after). */
+export type SetCompSettingsTargetResult = {
+  compId: number;
+  compName: string;
+  status: PatchOpStatus;
+  message?: string;
+  before?: CompSettingsSnapshot;
+  after?: CompSettingsSnapshot;
+};
+
 /** `set_property_expression` target evidence. */
 export type SetPropertyExpressionTargetResult = LayerTargetBase & {
   selector?: { matchNames?: string[]; propertyPath?: string };
@@ -187,6 +213,7 @@ export type PatchTargetResult =
   | ReplaceLayerSourceTargetResult
   | SetLayerTimingTargetResult
   | SetLayerSwitchesTargetResult
+  | SetCompSettingsTargetResult
   | SetPropertyExpressionTargetResult
   | ResetLayerSurfaceTargetResult
   | DeleteLayerTargetResult;

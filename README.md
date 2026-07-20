@@ -95,7 +95,7 @@ Once connected, try prompts like:
 - Resolve inbound references for a project item (`ae_get_item_refs`).
 - Inspect a layer property tree at `overview`, `extended`, or `full` depth.
 - Inspect a footage item and its interpretation settings.
-- Apply typed patches through `ae_patch_project`, including text style, rename, solids and source replace, frame timing, expressions, layer reset/delete, Project panel ops, and `safe_delete_project_item`.
+- Apply typed patches through `ae_patch_project`, including text style, rename, solids and source replace, frame timing, layer switches, composition settings, expressions, layer reset/delete, Project panel ops, and `safe_delete_project_item`.
 - Return verified before/after evidence for successful typed mutations.
 - Save through explicit `save_copy` or `create_backup` modes.
 - Search and read a local copy of the After Effects Scripting Guide.

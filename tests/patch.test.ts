@@ -275,6 +275,11 @@ describe("patchProjectInputSchema", () => {
           switches: { enabled: false },
         },
         {
+          op: "set_comp_settings",
+          target: { compId: 1 },
+          settings: { durationFrames: 450, workAreaDurationFrames: 450 },
+        },
+        {
           op: "set_property_expression",
           target: { compId: 1, layerId: 2 },
           matchNames: ["ADBE Transform Group", "ADBE Scale"],
@@ -300,11 +305,83 @@ describe("patchProjectInputSchema", () => {
       "replace_layer_source",
       "set_layer_timing",
       "set_layer_switches",
+      "set_comp_settings",
       "set_property_expression",
       "reset_layer_surface",
       "delete_layer",
       "safe_delete_project_item",
     ]);
+  });
+
+  it("accepts set_comp_settings by compId and by unique compName", () => {
+    const byId = patchProjectInputSchema.parse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "set_comp_settings",
+          target: { compId: 12 },
+          settings: { durationFrames: 300, switches: { motionBlur: true } },
+        },
+      ],
+    });
+    expect(byId.operations[0]).toMatchObject({
+      op: "set_comp_settings",
+      target: { compId: 12 },
+    });
+    const byName = patchProjectInputSchema.parse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "set_comp_settings",
+          target: { compName: "main" },
+          settings: { width: 1280, height: 720 },
+        },
+      ],
+    });
+    expect(byName.operations[0]).toMatchObject({
+      op: "set_comp_settings",
+      target: { compName: "main" },
+    });
+  });
+
+  it("rejects empty/unknown set_comp_settings bags and invalid targets", () => {
+    const empty = patchProjectInputSchema.safeParse({
+      project: guardedProject(),
+      operations: [{ op: "set_comp_settings", target: { compId: 1 }, settings: {} }],
+    });
+    expect(empty.success).toBe(false);
+    const emptySwitches = patchProjectInputSchema.safeParse({
+      project: guardedProject(),
+      operations: [{ op: "set_comp_settings", target: { compId: 1 }, settings: { switches: {} } }],
+    });
+    expect(emptySwitches.success).toBe(false);
+    const unknown = patchProjectInputSchema.safeParse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "set_comp_settings",
+          target: { compId: 1 },
+          settings: { durationFrames: 10, bgColor: [0, 0, 0] },
+        },
+      ],
+    });
+    expect(unknown.success).toBe(false);
+    const both = patchProjectInputSchema.safeParse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "set_comp_settings",
+          target: { compId: 1, compName: "main" },
+          settings: { durationFrames: 10 },
+        },
+      ],
+    });
+    expect(both.success).toBe(false);
+    const neither = patchProjectInputSchema.safeParse({
+      project: guardedProject(),
+      operations: [{ op: "set_comp_settings", target: {}, settings: { durationFrames: 10 } }],
+    });
+    expect(neither.success).toBe(false);
   });
 
   it("accepts set_layer_switches by ids and by unique names", () => {
@@ -552,6 +629,13 @@ describe("buildPatchApplyScript", () => {
     expect(script).toContain("applyReplaceLayerSource");
     expect(script).toContain("applySetLayerTiming");
     expect(script).toContain("applySetLayerSwitches");
+    expect(script).toContain("applySetCompSettings");
+    expect(script).toContain("readCompSettingsSnapshot");
+    expect(script).toContain("clampWorkAreaToDuration");
+    expect(script).toContain("compSettingsMatchRequest");
+    expect(script).toContain("function readCompSwitches");
+    expect(script).toContain("function compSwitchKeys");
+    expect(script).not.toContain("rendererIsInstalled");
     expect(script).toContain("readLayerSwitches");
     expect(script).toContain("parsePropertyPathSegments");
     expect(script).toContain('split("->")');
