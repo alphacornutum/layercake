@@ -66,16 +66,144 @@ function resolvePropertySelector(layer, op) {
 }
 
 function readLayerTimingFrames(layer, frameRate) {
-  var out = {
+  return {
     startFrame: timeToFrame(layer.startTime, frameRate),
     inFrame: timeToFrame(layer.inPoint, frameRate),
     outFrame: timeToFrame(layer.outPoint, frameRate),
     stretch: layer.stretch
   };
+}
+
+function readLayerSwitches(layer) {
+  var out = {};
+  try {
+    out.enabled = !!layer.enabled;
+  } catch (e) {}
+  try {
+    out.audioEnabled = !!layer.audioEnabled;
+  } catch (e) {}
+  try {
+    out.solo = !!layer.solo;
+  } catch (e) {}
+  try {
+    out.shy = !!layer.shy;
+  } catch (e) {}
+  try {
+    out.locked = !!layer.locked;
+  } catch (e) {}
+  try {
+    out.guideLayer = !!layer.guideLayer;
+  } catch (e) {}
+  try {
+    out.adjustmentLayer = !!layer.adjustmentLayer;
+  } catch (e) {}
+  try {
+    out.threeDLayer = !!layer.threeDLayer;
+  } catch (e) {}
+  try {
+    out.collapseTransformation = !!layer.collapseTransformation;
+  } catch (e) {}
+  try {
+    out.frameBlending = !!layer.frameBlending;
+  } catch (e) {}
+  try {
+    out.motionBlur = !!layer.motionBlur;
+  } catch (e) {}
   try {
     out.timeRemapEnabled = !!layer.timeRemapEnabled;
   } catch (e) {}
   return out;
+}
+
+function setLayerSwitchValue(layer, key, value) {
+  var v = !!value;
+  if (key === "enabled") {
+    layer.enabled = v;
+    return;
+  }
+  if (key === "audioEnabled") {
+    layer.audioEnabled = v;
+    return;
+  }
+  if (key === "solo") {
+    layer.solo = v;
+    return;
+  }
+  if (key === "shy") {
+    layer.shy = v;
+    return;
+  }
+  if (key === "locked") {
+    layer.locked = v;
+    return;
+  }
+  if (key === "guideLayer") {
+    layer.guideLayer = v;
+    return;
+  }
+  if (key === "adjustmentLayer") {
+    layer.adjustmentLayer = v;
+    return;
+  }
+  if (key === "threeDLayer") {
+    layer.threeDLayer = v;
+    return;
+  }
+  if (key === "collapseTransformation") {
+    layer.collapseTransformation = v;
+    return;
+  }
+  if (key === "frameBlending") {
+    layer.frameBlending = v;
+    return;
+  }
+  if (key === "motionBlur") {
+    layer.motionBlur = v;
+    return;
+  }
+  if (key === "timeRemapEnabled") {
+    layer.timeRemapEnabled = v;
+    return;
+  }
+  throw new Error("Unknown switch key: " + key);
+}
+
+function orderedSwitchWriteKeys(switches) {
+  var allKeys = [
+    "enabled",
+    "audioEnabled",
+    "solo",
+    "shy",
+    "locked",
+    "guideLayer",
+    "adjustmentLayer",
+    "threeDLayer",
+    "collapseTransformation",
+    "frameBlending",
+    "motionBlur",
+    "timeRemapEnabled"
+  ];
+  var supplied = [];
+  var i;
+  for (i = 0; i < allKeys.length; i++) {
+    if (switches[allKeys[i]] !== undefined) {
+      supplied.push(allKeys[i]);
+    }
+  }
+  var unlockFirst = switches.locked === false;
+  var lockLast = switches.locked === true;
+  var ordered = [];
+  if (unlockFirst) {
+    ordered.push("locked");
+  }
+  for (i = 0; i < supplied.length; i++) {
+    if (supplied[i] === "locked") continue;
+    ordered.push(supplied[i]);
+  }
+  if (lockLast) {
+    ordered.push("locked");
+  }
+  return ordered;
 }
 
 function layerByIdInComp(comp, layerId) {
@@ -429,9 +557,6 @@ function applySetLayerTiming(plan, opResult) {
   if (op.inFrame !== undefined && before.inFrame !== op.inFrame) already = false;
   if (op.outFrame !== undefined && before.outFrame !== op.outFrame) already = false;
   if (op.stretch !== undefined && before.stretch !== op.stretch) already = false;
-  if (op.timeRemapEnabled !== undefined && before.timeRemapEnabled !== op.timeRemapEnabled) {
-    already = false;
-  }
   if (already) {
     targetResult.status = "already_satisfied";
     targetResult.after = before;
@@ -451,9 +576,6 @@ function applySetLayerTiming(plan, opResult) {
     if (op.stretch !== undefined) {
       t.layer.stretch = op.stretch;
     }
-    if (op.timeRemapEnabled !== undefined) {
-      t.layer.timeRemapEnabled = !!op.timeRemapEnabled;
-    }
     var after = readLayerTimingFrames(t.layer, frameRate);
     targetResult.after = after;
     var ok = true;
@@ -461,9 +583,6 @@ function applySetLayerTiming(plan, opResult) {
     if (op.inFrame !== undefined && after.inFrame !== op.inFrame) ok = false;
     if (op.outFrame !== undefined && after.outFrame !== op.outFrame) ok = false;
     if (op.stretch !== undefined && after.stretch !== op.stretch) ok = false;
-    if (op.timeRemapEnabled !== undefined && after.timeRemapEnabled !== op.timeRemapEnabled) {
-      ok = false;
-    }
     if (ok) {
       targetResult.status = "changed";
       opResult.targets.push(targetResult);
@@ -481,6 +600,86 @@ function applySetLayerTiming(plan, opResult) {
     } catch (ae) {}
     opResult.targets.push(targetResult);
     return { anyChanged: false, anyFailed: true, applyError: String(te) };
+  }
+}
+
+function applySetLayerSwitches(plan, opResult) {
+  var t = plan.targets[0];
+  var op = plan.op;
+  var switches = op.switches || {};
+  var before = readLayerSwitches(t.layer);
+  var targetResult = {
+    compId: t.comp.id,
+    layerId: t.layer.id,
+    compName: t.comp.name,
+    layerName: t.layer.name,
+    status: "failed",
+    before: before
+  };
+  var writeKeys = orderedSwitchWriteKeys(switches);
+  if (writeKeys.length === 0) {
+    targetResult.message = "No switch keys supplied";
+    opResult.targets.push(targetResult);
+    return { anyChanged: false, anyFailed: true, applyError: targetResult.message };
+  }
+  var inapplicable = [];
+  var i;
+  for (i = 0; i < writeKeys.length; i++) {
+    if (before[writeKeys[i]] === undefined) {
+      inapplicable.push(writeKeys[i]);
+    }
+  }
+  if (inapplicable.length > 0) {
+    targetResult.after = before;
+    targetResult.message =
+      "Switch key(s) not applicable on this layer: " + inapplicable.join(", ");
+    opResult.targets.push(targetResult);
+    return { anyChanged: false, anyFailed: true, applyError: targetResult.message };
+  }
+  var already = true;
+  for (i = 0; i < writeKeys.length; i++) {
+    if (before[writeKeys[i]] !== !!switches[writeKeys[i]]) {
+      already = false;
+      break;
+    }
+  }
+  if (already) {
+    targetResult.status = "already_satisfied";
+    targetResult.after = before;
+    opResult.targets.push(targetResult);
+    return { anyChanged: false, anyFailed: false, applyError: null };
+  }
+  try {
+    for (i = 0; i < writeKeys.length; i++) {
+      setLayerSwitchValue(t.layer, writeKeys[i], switches[writeKeys[i]]);
+    }
+    var after = readLayerSwitches(t.layer);
+    targetResult.after = after;
+    var mismatched = [];
+    for (i = 0; i < writeKeys.length; i++) {
+      var key = writeKeys[i];
+      if (after[key] === undefined || after[key] !== !!switches[key]) {
+        mismatched.push(key);
+      }
+    }
+    if (mismatched.length === 0) {
+      targetResult.status = "changed";
+      opResult.targets.push(targetResult);
+      return { anyChanged: true, anyFailed: false, applyError: null };
+    }
+    targetResult.status = "failed";
+    targetResult.message =
+      "Post-condition failed: switch(es) did not match request: " + mismatched.join(", ");
+    opResult.targets.push(targetResult);
+    return { anyChanged: true, anyFailed: true, applyError: targetResult.message };
+  } catch (se) {
+    targetResult.status = "failed";
+    targetResult.message = String(se);
+    try {
+      targetResult.after = readLayerSwitches(t.layer);
+    } catch (ae) {}
+    opResult.targets.push(targetResult);
+    return { anyChanged: false, anyFailed: true, applyError: String(se) };
   }
 }
 

@@ -96,6 +96,21 @@ export type LayerTimingFrames = {
   inFrame?: number;
   outFrame?: number;
   stretch?: number;
+};
+
+/** Full switch-snapshot keys readable on a layer (omit when host cannot read). */
+export type LayerSwitchesSnapshot = {
+  enabled?: boolean;
+  audioEnabled?: boolean;
+  solo?: boolean;
+  shy?: boolean;
+  locked?: boolean;
+  guideLayer?: boolean;
+  adjustmentLayer?: boolean;
+  threeDLayer?: boolean;
+  collapseTransformation?: boolean;
+  frameBlending?: boolean;
+  motionBlur?: boolean;
   timeRemapEnabled?: boolean;
 };
 
@@ -103,6 +118,12 @@ export type LayerTimingFrames = {
 export type SetLayerTimingTargetResult = LayerTargetBase & {
   before?: LayerTimingFrames;
   after?: LayerTimingFrames;
+};
+
+/** `set_layer_switches` target evidence (full switch snapshot before/after). */
+export type SetLayerSwitchesTargetResult = LayerTargetBase & {
+  before?: LayerSwitchesSnapshot;
+  after?: LayerSwitchesSnapshot;
 };
 
 /** `set_property_expression` target evidence. */
@@ -165,6 +186,7 @@ export type PatchTargetResult =
   | SetLayerIndexTargetResult
   | ReplaceLayerSourceTargetResult
   | SetLayerTimingTargetResult
+  | SetLayerSwitchesTargetResult
   | SetPropertyExpressionTargetResult
   | ResetLayerSurfaceTargetResult
   | DeleteLayerTargetResult;
