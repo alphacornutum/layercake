@@ -215,6 +215,7 @@ For first tests, use a disposable project.
 
 ## See also
 
-- [MCP tools and skill](mcp-tools.md)
+- [MCP tools and agent skill](mcp-tools.md)
+- [Related projects and choosing an After Effects MCP](related-projects.md)
 - [Troubleshooting](troubleshooting.md)
 - [Scripting guide corpus](scripting-guide.md)

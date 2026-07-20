@@ -98,7 +98,7 @@ Product skill files live at top-level `skills/` (shipped with the npm package). 
 
 ## Related docs
 
-- Operator showcase/quickstart: [`README.md`](README.md); reference depth in [`docs/setup.md`](docs/setup.md), [`docs/mcp-tools.md`](docs/mcp-tools.md), [`docs/troubleshooting.md`](docs/troubleshooting.md), [`docs/scripting-guide.md`](docs/scripting-guide.md)
+- Operator showcase/quickstart: [`README.md`](README.md); reference depth in [`docs/setup.md`](docs/setup.md), [`docs/mcp-tools.md`](docs/mcp-tools.md), [`docs/related-projects.md`](docs/related-projects.md), [`docs/troubleshooting.md`](docs/troubleshooting.md), [`docs/scripting-guide.md`](docs/scripting-guide.md)
 - Behavior requirements: [`openspec/specs/`](openspec/specs/)
 - Architecture Decision Records: [`docs/adr/`](docs/adr/) (why we chose surprising / hard-to-reverse options)
 - Coding placement / dependency rules: `.ai/src/rules/architecture.md` (synced to agent tools)
