@@ -186,7 +186,9 @@ export function createServer(
         "set_comp_settings (target.compId|compName + partial settings bag; integer-frame evidence; " +
         "place before set_layer_timing in mixed batches); " +
         "set_property_expression (exactly one of matchNames|propertyPath; prefer matchNames from ae_get_layer); " +
-        "reset_layer_surface; delete_layer; create_folder / move_project_item / delete_project_item " +
+        "set_layer_transform (partial transform bag; authored value evidence; fingerprint guards for stale apply); " +
+        "reset_layer_surface (resetTransforms verifies AE defaults with value evidence; clearExpressions separate); " +
+        "delete_layer; create_folder / move_project_item / delete_project_item " +
         "(permissive AE remove); safe_delete_project_item (refuse in-use / unknownRefsPossible; empty folders only). " +
         "Layer targets accept id or unique name like ae_get_layer — ambiguous names refuse with candidates. " +
         "Comp-only ops (set_comp_settings) use target.compId|compName the same way. " +

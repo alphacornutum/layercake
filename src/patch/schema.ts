@@ -234,6 +234,41 @@ export const setPropertyExpressionOpSchema = z
     }
   });
 
+// Prefer length-bounded array over z.tuple: tuple JSON Schema emits `items` as an
+// array of schemas, which Codex rejects when building MCP tool specs.
+const spatialArraySchema = z
+  .union([z.array(z.number()).length(2), z.array(z.number()).length(3)])
+  .describe("Spatial/scale array (length 2 or 3)");
+
+const layerTransformBagSchema = z
+  .object({
+    anchorPoint: spatialArraySchema.optional(),
+    position: spatialArraySchema.optional(),
+    scale: spatialArraySchema.optional(),
+    rotation: z.number().optional().describe("2D / Z rotation in degrees"),
+    opacity: z.number().optional().describe("Opacity 0–100"),
+  })
+  .strict()
+  .refine(
+    (v) =>
+      v.anchorPoint !== undefined ||
+      v.position !== undefined ||
+      v.scale !== undefined ||
+      v.rotation !== undefined ||
+      v.opacity !== undefined,
+    { message: "Provide at least one transform key in transform" },
+  );
+
+export const setLayerTransformOpSchema = z
+  .object({
+    op: z.literal("set_layer_transform"),
+    target: layerTargetSchema,
+    transform: layerTransformBagSchema.describe(
+      "Partial authored Transform bag; omitted keys are preserved. Evidence returns a full readable snapshot.",
+    ),
+  })
+  .strict();
+
 export const resetLayerSurfaceOpSchema = z.object({
   op: z.literal("reset_layer_surface"),
   target: layerTargetSchema,
@@ -273,6 +308,7 @@ export const patchOperationSchema = z.union([
   setLayerSwitchesOpSchema,
   setCompSettingsOpSchema,
   setPropertyExpressionOpSchema,
+  setLayerTransformOpSchema,
   resetLayerSurfaceOpSchema,
   deleteLayerOpSchema,
   safeDeleteProjectItemOpSchema,
@@ -304,6 +340,7 @@ export type SetLayerTimingOp = z.infer<typeof setLayerTimingOpSchema>;
 export type SetLayerSwitchesOp = z.infer<typeof setLayerSwitchesOpSchema>;
 export type SetCompSettingsOp = z.infer<typeof setCompSettingsOpSchema>;
 export type SetPropertyExpressionOp = z.infer<typeof setPropertyExpressionOpSchema>;
+export type SetLayerTransformOp = z.infer<typeof setLayerTransformOpSchema>;
 export type ResetLayerSurfaceOp = z.infer<typeof resetLayerSurfaceOpSchema>;
 export type DeleteLayerOp = z.infer<typeof deleteLayerOpSchema>;
 export type SafeDeleteProjectItemOp = z.infer<typeof safeDeleteProjectItemOpSchema>;

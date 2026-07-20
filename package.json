@@ -1,7 +1,7 @@
 {
   "name": "layercake",
   "version": "0.1.0",
-  "description": "LayerCake — MCP server for local Adobe After Effects: open projects, run ExtendScript, and search scripting docs",
+  "description": "LayerCake — MCP server for local Adobe After Effects: template-first, state-aware automation",
   "keywords": [
     "adobe",
     "after-effects",

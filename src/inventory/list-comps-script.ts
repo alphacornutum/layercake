@@ -61,23 +61,21 @@ function serializeLayer(layer, frameRate) {
       "Layer.id is unavailable. After Effects 22 (2022) or newer is required for ae_list_comps."
     );
   }
-  var inPoint = layer.inPoint;
-  var outPoint = layer.outPoint;
-  var startTime = layer.startTime;
+  var timing = layerTimingFrames(layer, frameRate);
   var payload = {
     id: layer.id,
     index: layer.index,
     name: layer.name,
     type: layerType(layer),
-    inPoint: inPoint,
-    outPoint: outPoint,
-    duration: outPoint - inPoint,
-    stretch: layer.stretch,
-    startTime: startTime,
-    startFrame: timeToFrame(startTime, frameRate),
-    inFrame: timeToFrame(inPoint, frameRate),
-    outFrame: timeToFrame(outPoint, frameRate),
-    durationFrames: timeToFrame(outPoint, frameRate) - timeToFrame(inPoint, frameRate),
+    inPoint: timing.inPoint,
+    outPoint: timing.outPoint,
+    duration: timing.outPoint - timing.inPoint,
+    stretch: timing.stretch,
+    startTime: timing.startTime,
+    startFrame: timing.startFrame,
+    inFrame: timing.inFrame,
+    outFrame: timing.outFrame,
+    durationFrames: timing.durationFrames,
     motionBlur: motionBlurOf(layer),
     label: layer.label,
     hasEffects: hasEffects(layer),

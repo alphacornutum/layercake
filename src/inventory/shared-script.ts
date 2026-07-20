@@ -77,6 +77,59 @@ function frameToTime(frame, frameRate) {
   return Number(frame) / Number(frameRate);
 }
 
+/**
+ * True when seconds land on the integer frame within a tight frame-unit epsilon.
+ * Prefer frame units over absolute seconds so non-integer fps (23.976, 29.97) stay fair.
+ */
+function isOnGridFrame(time, frame, frameRate) {
+  if (!frameRate || frameRate <= 0) return false;
+  var delta = Math.abs(Number(time) * Number(frameRate) - Number(frame));
+  return delta < 1e-6;
+}
+
+/** Integer-frame + raw-seconds timing snapshot for a layer (inventory + patch evidence). */
+function layerTimingFrames(layer, frameRate) {
+  var startTime = layer.startTime;
+  var inPoint = layer.inPoint;
+  var outPoint = layer.outPoint;
+  var inFrame = timeToFrame(inPoint, frameRate);
+  var outFrame = timeToFrame(outPoint, frameRate);
+  return {
+    startTime: startTime,
+    inPoint: inPoint,
+    outPoint: outPoint,
+    startFrame: timeToFrame(startTime, frameRate),
+    inFrame: inFrame,
+    outFrame: outFrame,
+    durationFrames: outFrame - inFrame,
+    stretch: layer.stretch
+  };
+}
+
+/**
+ * Semantic 2D Transform key → AE matchName (patch set_layer_transform / resetTransforms).
+ * Inspect's broader sample set builds on isCoreTransformMatchName.
+ */
+function transformMatchName(key) {
+  if (key === "anchorPoint") return "ADBE Anchor Point";
+  if (key === "position") return "ADBE Position";
+  if (key === "scale") return "ADBE Scale";
+  if (key === "rotation") return "ADBE Rotate Z";
+  if (key === "opacity") return "ADBE Opacity";
+  return null;
+}
+
+/** Core 2D Transform leaf matchNames shared by patch + inspect. */
+function isCoreTransformMatchName(matchName) {
+  return (
+    matchName === "ADBE Anchor Point" ||
+    matchName === "ADBE Position" ||
+    matchName === "ADBE Scale" ||
+    matchName === "ADBE Rotate Z" ||
+    matchName === "ADBE Opacity"
+  );
+}
+
 function compSwitchKeys() {
   return [${COMP_SWITCH_KEYS_ES3}];
 }

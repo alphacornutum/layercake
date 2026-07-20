@@ -16,6 +16,7 @@ import { listProjectContext } from "../src/inventory/list-project-context.js";
 import { listSources } from "../src/inventory/list-sources.js";
 import type { InventoryComposition, InventoryLayer } from "../src/inventory/types.js";
 import { applyProjectPatch } from "../src/patch/apply.js";
+import type { PatchProjectInput } from "../src/patch/schema.js";
 import { saveProject } from "../src/patch/save.js";
 import type {
   CreateFolderTargetResult,
@@ -23,8 +24,11 @@ import type {
   DeleteProjectItemTargetResult,
   MoveProjectItemTargetResult,
   ReplaceLayerSourceTargetResult,
+  ResetLayerSurfaceTargetResult,
   SetCompSettingsTargetResult,
   SetLayerSwitchesTargetResult,
+  SetLayerTimingTargetResult,
+  SetLayerTransformTargetResult,
   TextStyleTargetResult,
 } from "../src/patch/types.js";
 
@@ -651,6 +655,214 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
     expect(mid.fingerprint).toBe(toggled.fingerprint);
   });
 
+  it("set_layer_transform sets Position/Anchor; already_satisfied; refuses keyframes; honest resetTransforms", async (ctx) => {
+    if (!aeReady) {
+      ctx.skip();
+      return;
+    }
+    await openWorkCopy(host, true);
+    let ctxToken = await listProjectContext(host, config.scriptTimeoutMs);
+    const inventory = await listComps(host, {}, config.scriptTimeoutMs);
+    const main = inventory.compositions.find((c) => c.name === "main");
+    expect(main).toBeTruthy();
+    if (!main) return;
+
+    const created = await applyProjectPatch(
+      host,
+      {
+        project: { path: ctxToken.projectPath!, fingerprint: ctxToken.fingerprint },
+        operations: [
+          {
+            op: "create_solid",
+            name: "XF Solid",
+            width: 600,
+            height: 1100,
+            pixelAspect: 1,
+            color: [0.2, 0.4, 0.8],
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    const solidTarget = created.results[0]?.targets[0] as CreateSolidTargetResult;
+    const solidId = solidTarget.created?.id ?? solidTarget.itemId;
+    ctxToken = {
+      ...ctxToken,
+      fingerprint: created.fingerprint,
+      dirty: created.dirty,
+      revision: created.revision,
+    };
+
+    const addLayer = await host.evalScript(
+      `
+      var items = app.project.items;
+      var comp = null;
+      var solid = null;
+      for (var i = 1; i <= items.length; i++) {
+        if (items[i] instanceof CompItem && items[i].id === ${main.id}) comp = items[i];
+        if (items[i].id === ${solidId}) solid = items[i];
+      }
+      if (!comp || !solid) throw new Error("comp or solid missing");
+      var layer = comp.layers.add(solid);
+      layer.name = "XF Layer";
+      return JSON.stringify({ layerId: layer.id, compWidth: comp.width, compHeight: comp.height });
+      `,
+      config.scriptTimeoutMs,
+    );
+    expect(addLayer.ok).toBe(true);
+    if (!addLayer.ok) return;
+    const layerInfo = JSON.parse(addLayer.result) as {
+      layerId: number;
+      compWidth: number;
+      compHeight: number;
+    };
+    ctxToken = await listProjectContext(host, config.scriptTimeoutMs);
+
+    const setXf = await applyProjectPatch(
+      host,
+      {
+        project: { path: ctxToken.projectPath!, fingerprint: ctxToken.fingerprint },
+        operations: [
+          {
+            op: "set_layer_transform",
+            target: { compId: main.id, layerId: layerInfo.layerId },
+            transform: {
+              anchorPoint: [300, 550],
+              position: [300, 550],
+            },
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(setXf.ok).toBe(true);
+    if (!setXf.ok) return;
+    const xfTarget = setXf.results[0]?.targets[0] as SetLayerTransformTargetResult;
+    expect(setXf.results[0]?.op).toBe("set_layer_transform");
+    expect(xfTarget.status).toBe("changed");
+    expect(xfTarget.before?.position).toBeTruthy();
+    expect(xfTarget.after?.position?.[0]).toBeCloseTo(300, 2);
+    expect(xfTarget.after?.position?.[1]).toBeCloseTo(550, 2);
+    expect(xfTarget.after?.anchorPoint?.[0]).toBeCloseTo(300, 2);
+    expect(xfTarget.after?.anchorPoint?.[1]).toBeCloseTo(550, 2);
+    ctxToken = {
+      ...ctxToken,
+      fingerprint: setXf.fingerprint,
+      dirty: setXf.dirty,
+      revision: setXf.revision,
+    };
+
+    const again = await applyProjectPatch(
+      host,
+      {
+        project: { path: ctxToken.projectPath!, fingerprint: ctxToken.fingerprint },
+        operations: [
+          {
+            op: "set_layer_transform",
+            target: { compId: main.id, layerId: layerInfo.layerId },
+            transform: { position: [300, 550], anchorPoint: [300, 550] },
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(again.ok).toBe(true);
+    if (!again.ok) return;
+    const againTarget = again.results[0]?.targets[0] as SetLayerTransformTargetResult;
+    expect(againTarget.status).toBe("already_satisfied");
+    ctxToken = {
+      ...ctxToken,
+      fingerprint: again.fingerprint,
+      dirty: again.dirty,
+      revision: again.revision,
+    };
+
+    await host.evalScript(
+      `
+      var items = app.project.items;
+      var comp = null;
+      for (var i = 1; i <= items.length; i++) {
+        if (items[i] instanceof CompItem && items[i].id === ${main.id}) { comp = items[i]; break; }
+      }
+      if (!comp) throw new Error("comp missing");
+      var layer = null;
+      for (var j = 1; j <= comp.numLayers; j++) {
+        if (comp.layer(j).id === ${layerInfo.layerId}) { layer = comp.layer(j); break; }
+      }
+      if (!layer) throw new Error("layer missing");
+      var pos = layer.property("ADBE Transform Group").property("ADBE Position");
+      pos.setValueAtTime(0, [100, 100]);
+      pos.setValueAtTime(1, [200, 200]);
+      return "ok";
+      `,
+      config.scriptTimeoutMs,
+    );
+    ctxToken = await listProjectContext(host, config.scriptTimeoutMs);
+
+    const keyed = await applyProjectPatch(
+      host,
+      {
+        project: { path: ctxToken.projectPath!, fingerprint: ctxToken.fingerprint },
+        operations: [
+          {
+            op: "set_layer_transform",
+            target: { compId: main.id, layerId: layerInfo.layerId },
+            transform: { position: [400, 400] },
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(keyed.ok).toBe(false);
+    if (keyed.ok) return;
+    const keyedTarget = keyed.results?.[0]?.targets[0] as SetLayerTransformTargetResult | undefined;
+    expect(keyedTarget?.status).toBe("failed");
+    expect(keyedTarget?.message).toMatch(/keyframed/i);
+
+    ctxToken = await listProjectContext(host, config.scriptTimeoutMs);
+    const reset = await applyProjectPatch(
+      host,
+      {
+        project: { path: ctxToken.projectPath!, fingerprint: ctxToken.fingerprint },
+        operations: [
+          {
+            op: "reset_layer_surface",
+            target: { compId: main.id, layerId: layerInfo.layerId },
+            clearKeyframes: true,
+            clearEffects: false,
+            clearMasks: false,
+            clearLayerStyles: false,
+            clearMarkers: false,
+            clearTrackMatte: false,
+            clearParent: false,
+            resetTransforms: true,
+            clearExpressions: false,
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(reset.ok).toBe(true);
+    if (!reset.ok) return;
+    const resetTarget = reset.results[0]?.targets[0] as ResetLayerSurfaceTargetResult;
+    expect(resetTarget.status).toBe("changed");
+    expect(resetTarget.cleared).not.toHaveProperty("transforms");
+    expect(resetTarget.before?.transforms?.position).toBeTruthy();
+    expect(resetTarget.after?.transforms?.position?.[0]).toBeCloseTo(layerInfo.compWidth / 2, 1);
+    expect(resetTarget.after?.transforms?.position?.[1]).toBeCloseTo(layerInfo.compHeight / 2, 1);
+    expect(resetTarget.after?.transforms?.anchorPoint?.[0]).toBeCloseTo(300, 1);
+    expect(resetTarget.after?.transforms?.anchorPoint?.[1]).toBeCloseTo(550, 1);
+    expect(resetTarget.after?.transforms?.scale?.[0]).toBeCloseTo(100, 1);
+    expect(resetTarget.after?.transforms?.rotation).toBeCloseTo(0, 1);
+    expect(resetTarget.after?.transforms?.opacity).toBeCloseTo(100, 1);
+
+    const afterPatch = await listProjectContext(host, config.scriptTimeoutMs);
+    expect(afterPatch.projectPath).toBe(ctxToken.projectPath);
+    expect(afterPatch.dirty).toBe(true);
+  });
+
   it("set_comp_settings changes duration/work area; no implicit save", async (ctx) => {
     if (!aeReady) {
       ctx.skip();
@@ -807,6 +1019,398 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
       expect(refused.error).toMatch(/"id"/);
       expect(refused.error).toMatch(/"index"/);
     }
+  });
+
+  it("set_layer_timing leaves in/out on-grid with exact durationFrames", async (ctx) => {
+    if (!aeReady) {
+      ctx.skip();
+      return;
+    }
+    await openWorkCopy(host, true);
+    const before = await listProjectContext(host, config.scriptTimeoutMs);
+    const { main, textLayer } = await mainTextLayer(host);
+    const inFrame = 5;
+    const outFrame = 35;
+    const expectedDuration = outFrame - inFrame;
+
+    const patch = await applyProjectPatch(
+      host,
+      {
+        project: { path: before.projectPath!, fingerprint: before.fingerprint },
+        operations: [
+          {
+            op: "set_layer_timing",
+            target: { compId: main.id, layerId: textLayer.id },
+            inFrame,
+            outFrame,
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(patch.ok).toBe(true);
+    if (!patch.ok) return;
+    const target = patch.results[0]?.targets[0] as SetLayerTimingTargetResult;
+    expect(["changed", "already_satisfied"]).toContain(target.status);
+    expect(target.keyframesPreserved).toBe(true);
+    expect(target.after).toMatchObject({
+      inFrame,
+      outFrame,
+      durationFrames: expectedDuration,
+    });
+    expect(typeof target.after?.inPoint).toBe("number");
+    expect(typeof target.after?.outPoint).toBe("number");
+    expect(typeof target.after?.startTime).toBe("number");
+
+    const fps = main.frameRate;
+    const onGrid = (seconds: number, frame: number) => Math.abs(seconds * fps - frame) < 1e-6;
+    expect(onGrid(target.after!.inPoint!, inFrame)).toBe(true);
+    expect(onGrid(target.after!.outPoint!, outFrame)).toBe(true);
+    expect(target.after!.outFrame! - target.after!.inFrame!).toBe(expectedDuration);
+
+    const relisted = await listComps(host, {}, config.scriptTimeoutMs);
+    const reLayer = relisted.compositions
+      .find((c) => c.id === main.id)
+      ?.layers.find((l) => l.id === textLayer.id);
+    expect(reLayer?.inFrame).toBe(inFrame);
+    expect(reLayer?.outFrame).toBe(outFrame);
+    expect(reLayer?.durationFrames).toBe(expectedDuration);
+  });
+
+  it("set_layer_timing preserves Scale key times across frame-rate churn", async (ctx) => {
+    if (!aeReady) {
+      ctx.skip();
+      return;
+    }
+    await openWorkCopy(host, true);
+
+    /** Absolute composition-time keys — must survive fps + trim churn. */
+    const expectedKey0 = 23.0;
+    const expectedKey1 = 24.0;
+    /** Match apply KEY_TIME_EPSILON — tighter than a frame, looser than float noise. */
+    const keyTimeTol = 1e-4;
+
+    const seeded = await host.evalScript(
+      `
+      var items = app.project.items;
+      var comp = null;
+      for (var i = 1; i <= items.length; i++) {
+        if (items[i] instanceof CompItem && items[i].name === "main") { comp = items[i]; break; }
+      }
+      if (!comp) throw new Error("main missing");
+      // Long enough for 23–24s keys under every fps we churn through.
+      comp.duration = 40;
+      var solid = comp.layers.addSolid([0.2, 0.4, 0.8], "LC Timing Key Solid", 200, 200, 1);
+      var scale = solid.property("ADBE Transform Group").property("ADBE Scale");
+      scale.setValueAtTime(${expectedKey0}, [100, 100]);
+      scale.setValueAtTime(${expectedKey1}, [120, 120]);
+      return JSON.stringify({
+        layerId: solid.id,
+        key0: scale.keyTime(1),
+        key1: scale.keyTime(2),
+        numKeys: scale.numKeys,
+        frameRate: comp.frameRate
+      });
+      `,
+      config.scriptTimeoutMs,
+    );
+    expect(seeded.ok).toBe(true);
+    if (!seeded.ok) return;
+    const layerInfo = JSON.parse(seeded.result) as {
+      layerId: number;
+      key0: number;
+      key1: number;
+      numKeys: number;
+      frameRate: number;
+    };
+    expect(layerInfo.numKeys).toBe(2);
+    expect(layerInfo.key0).toBeCloseTo(expectedKey0, 5);
+    expect(layerInfo.key1).toBeCloseTo(expectedKey1, 5);
+
+    const readScaleKeys = async () => {
+      const verified = await host.evalScript(
+        `
+        var items = app.project.items;
+        var comp = null;
+        for (var i = 1; i <= items.length; i++) {
+          if (items[i] instanceof CompItem && items[i].name === "main") { comp = items[i]; break; }
+        }
+        if (!comp) throw new Error("main missing");
+        var layer = null;
+        for (var j = 1; j <= comp.numLayers; j++) {
+          if (comp.layer(j).id === ${layerInfo.layerId}) { layer = comp.layer(j); break; }
+        }
+        if (!layer) throw new Error("layer missing");
+        var scale = layer.property("ADBE Transform Group").property("ADBE Scale");
+        return JSON.stringify({
+          numKeys: scale.numKeys,
+          key0: scale.keyTime(1),
+          key1: scale.keyTime(2),
+          val0: scale.keyValue(1),
+          val1: scale.keyValue(2),
+          inPoint: layer.inPoint,
+          outPoint: layer.outPoint,
+          startTime: layer.startTime,
+          frameRate: comp.frameRate
+        });
+        `,
+        config.scriptTimeoutMs,
+      );
+      expect(verified.ok).toBe(true);
+      if (!verified.ok) {
+        throw new Error(verified.error);
+      }
+      return JSON.parse(verified.result) as {
+        numKeys: number;
+        key0: number;
+        key1: number;
+        val0: number[];
+        val1: number[];
+        inPoint: number;
+        outPoint: number;
+        startTime: number;
+        frameRate: number;
+      };
+    };
+
+    const assertKeysPreserved = async (label: string) => {
+      const afterKeys = await readScaleKeys();
+      expect(afterKeys.numKeys, label).toBe(2);
+      expect(Math.abs(afterKeys.key0 - expectedKey0), `${label} key0 eps`).toBeLessThan(keyTimeTol);
+      expect(Math.abs(afterKeys.key1 - expectedKey1), `${label} key1 eps`).toBeLessThan(keyTimeTol);
+      expect(afterKeys.val0[0], `${label} val0`).toBeCloseTo(100, 3);
+      expect(afterKeys.val1[0], `${label} val1`).toBeCloseTo(120, 3);
+      return afterKeys;
+    };
+
+    let ctxToken = await listProjectContext(host, config.scriptTimeoutMs);
+    const comps0 = await listComps(host, {}, config.scriptTimeoutMs);
+    const main = comps0.compositions.find((c) => c.name === "main");
+    expect(main).toBeDefined();
+    if (!main) return;
+
+    /**
+     * Integer rates: typed `set_comp_settings` then `set_layer_timing` (full on-grid + keys).
+     * NTSC-ish rates: set fps via eval (set_comp_settings uses strict frameRate equality),
+     * then timing — AE float quantization can fail the 1e-6 on-grid edge check; key
+     * preservation must still hold either way.
+     */
+    const churn: Array<{
+      frameRate: number;
+      inFrame: number;
+      outFrame: number;
+      startFrame?: number;
+      via: "patch" | "eval";
+      expectTimingOk: boolean;
+    }> = [
+      { frameRate: 24, inFrame: 0, outFrame: 90, via: "patch", expectTimingOk: true },
+      {
+        frameRate: 12,
+        inFrame: 6,
+        outFrame: 60,
+        startFrame: 0,
+        via: "patch",
+        expectTimingOk: true,
+      },
+      { frameRate: 29.97, inFrame: 10, outFrame: 120, via: "eval", expectTimingOk: false },
+      { frameRate: 30, inFrame: 0, outFrame: 200, via: "patch", expectTimingOk: true },
+      {
+        frameRate: 23.976,
+        inFrame: 5,
+        outFrame: 150,
+        startFrame: 0,
+        via: "eval",
+        expectTimingOk: false,
+      },
+      {
+        frameRate: 25,
+        inFrame: 12,
+        outFrame: 180,
+        startFrame: -5,
+        via: "patch",
+        expectTimingOk: true,
+      },
+      { frameRate: 60, inFrame: 0, outFrame: 300, via: "patch", expectTimingOk: true },
+      {
+        frameRate: 48,
+        inFrame: 24,
+        outFrame: 240,
+        startFrame: -10,
+        via: "patch",
+        expectTimingOk: true,
+      },
+      {
+        frameRate: 59.94,
+        inFrame: 8,
+        outFrame: 240,
+        startFrame: 0,
+        via: "eval",
+        expectTimingOk: false,
+      },
+      { frameRate: 15, inFrame: 0, outFrame: 75, via: "patch", expectTimingOk: true },
+      {
+        frameRate: layerInfo.frameRate || 30,
+        inFrame: 0,
+        outFrame: 45,
+        via: "patch",
+        expectTimingOk: true,
+      },
+    ];
+
+    const setFrameRateViaEval = async (frameRate: number) => {
+      const set = await host.evalScript(
+        `
+        var items = app.project.items;
+        var comp = null;
+        for (var i = 1; i <= items.length; i++) {
+          if (items[i] instanceof CompItem && items[i].name === "main") { comp = items[i]; break; }
+        }
+        if (!comp) throw new Error("main missing");
+        app.beginUndoGroup("lc-fps");
+        comp.frameRate = ${frameRate};
+        comp.duration = 40;
+        app.endUndoGroup();
+        return JSON.stringify({ frameRate: comp.frameRate, duration: comp.duration });
+        `,
+        config.scriptTimeoutMs,
+      );
+      expect(set.ok).toBe(true);
+      if (!set.ok) throw new Error(set.error);
+      // Fingerprint changes outside patch — re-bind before the next timing write.
+      ctxToken = await listProjectContext(host, config.scriptTimeoutMs);
+      return JSON.parse(set.result) as { frameRate: number; duration: number };
+    };
+
+    for (const step of churn) {
+      const label =
+        `fps=${step.frameRate} via=${step.via} in=${step.inFrame} out=${step.outFrame}` +
+        (step.startFrame !== undefined ? ` start=${step.startFrame}` : "");
+      const durationFrames = Math.max(step.outFrame + 60, Math.ceil(40 * step.frameRate));
+
+      let hostFps = step.frameRate;
+      if (step.via === "eval") {
+        const applied = await setFrameRateViaEval(step.frameRate);
+        hostFps = applied.frameRate;
+      }
+
+      const timingOp: PatchProjectInput["operations"][number] = {
+        op: "set_layer_timing",
+        target: { compId: main.id, layerId: layerInfo.layerId },
+        inFrame: step.inFrame,
+        outFrame: step.outFrame,
+        ...(step.startFrame !== undefined ? { startFrame: step.startFrame } : {}),
+      };
+
+      const ops: PatchProjectInput["operations"] =
+        step.via === "patch"
+          ? [
+              {
+                op: "set_comp_settings",
+                target: { compId: main.id },
+                settings: {
+                  frameRate: step.frameRate,
+                  durationFrames,
+                  workAreaDurationFrames: durationFrames,
+                },
+              },
+              timingOp,
+            ]
+          : [timingOp];
+
+      const patch = await applyProjectPatch(
+        host,
+        {
+          project: { path: ctxToken.projectPath!, fingerprint: ctxToken.fingerprint },
+          operations: ops,
+        },
+        config.scriptTimeoutMs,
+      );
+
+      const timingResult = patch.results?.find((r) => r.op === "set_layer_timing");
+      const timingTarget = timingResult?.targets[0] as SetLayerTimingTargetResult | undefined;
+
+      if (step.expectTimingOk) {
+        if (!patch.ok) {
+          console.error(
+            `${label} FAILED`,
+            patch.error,
+            JSON.stringify(timingTarget ?? patch.results, null, 2),
+          );
+        }
+        expect(patch.ok, `${label} patch ok: ${!patch.ok ? patch.error : ""}`).toBe(true);
+        if (!patch.ok) return;
+
+        if (step.via === "patch") {
+          const settingsResult = patch.results.find((r) => r.op === "set_comp_settings");
+          const settingsTarget = settingsResult?.targets[0] as
+            | SetCompSettingsTargetResult
+            | undefined;
+          expect(["changed", "already_satisfied"], `${label} settings`).toContain(
+            settingsTarget?.status,
+          );
+          expect(settingsTarget?.after?.frameRate, `${label} settings fps`).toBeCloseTo(
+            step.frameRate,
+            3,
+          );
+          hostFps = settingsTarget?.after?.frameRate ?? step.frameRate;
+        }
+
+        expect(timingTarget, label).toBeDefined();
+        expect(["changed", "already_satisfied"], label).toContain(timingTarget!.status);
+        expect(timingTarget!.keyframesPreserved, `${label} keyframesPreserved`).toBe(true);
+        expect(timingTarget!.after?.inFrame, `${label} inFrame`).toBe(step.inFrame);
+        expect(timingTarget!.after?.outFrame, `${label} outFrame`).toBe(step.outFrame);
+        expect(timingTarget!.after?.durationFrames, `${label} durationFrames`).toBe(
+          step.outFrame - step.inFrame,
+        );
+        if (step.startFrame !== undefined) {
+          expect(timingTarget!.after?.startFrame, `${label} startFrame`).toBe(step.startFrame);
+        }
+
+        const onGrid = (seconds: number, frame: number) =>
+          Math.abs(seconds * hostFps - frame) < 1e-6;
+        expect(onGrid(timingTarget!.after!.inPoint!, step.inFrame), `${label} in on-grid`).toBe(
+          true,
+        );
+        expect(onGrid(timingTarget!.after!.outPoint!, step.outFrame), `${label} out on-grid`).toBe(
+          true,
+        );
+
+        ctxToken = {
+          ...ctxToken,
+          fingerprint: patch.fingerprint,
+          dirty: patch.dirty,
+          revision: patch.revision,
+        };
+      } else {
+        // NTSC path: timing may fail on-grid epsilon; keys must still be preserved.
+        expect(timingTarget, label).toBeDefined();
+        expect(timingTarget!.keyframesPreserved, `${label} keyframesPreserved`).toBe(true);
+        if (patch.ok) {
+          expect(["changed", "already_satisfied"], label).toContain(timingTarget!.status);
+          ctxToken = {
+            ...ctxToken,
+            fingerprint: patch.fingerprint,
+            dirty: patch.dirty,
+            revision: patch.revision,
+          };
+        } else {
+          expect(timingTarget!.status, label).toBe("failed");
+          expect(timingTarget!.message ?? patch.error, label).toMatch(/off-grid|timing/i);
+          // Failed apply still mutates inside AE; re-bind for the next step.
+          ctxToken = await listProjectContext(host, config.scriptTimeoutMs);
+        }
+      }
+
+      const keys = await assertKeysPreserved(label);
+      expect(keys.frameRate, `${label} host fps`).toBeCloseTo(hostFps, 2);
+    }
+
+    // Final inventory cross-check after the full churn.
+    const relisted = await listComps(host, {}, config.scriptTimeoutMs);
+    const reMain = relisted.compositions.find((c) => c.id === main.id);
+    expect(reMain?.frameRate).toBeCloseTo(churn[churn.length - 1]!.frameRate, 3);
+    await assertKeysPreserved("final");
   });
 
   it("control-plane: create_solid → replace → timing/index/expression → reset → delete_layer → safe_delete", async (ctx) => {
