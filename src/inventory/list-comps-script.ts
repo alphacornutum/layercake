@@ -146,11 +146,24 @@ function serializeComp(comp) {
   for (var li = 1; li <= comp.numLayers; li++) {
     layers.push(serializeLayer(comp.layer(li), frameRate));
   }
+  var renderer = "";
+  try {
+    renderer = String(comp.renderer || "");
+  } catch (e) {}
   return {
     id: comp.id,
     name: comp.name,
     duration: comp.duration,
     frameRate: frameRate,
+    width: comp.width,
+    height: comp.height,
+    pixelAspect: comp.pixelAspect,
+    durationFrames: timeToFrame(comp.duration, frameRate),
+    displayStartFrame: readDisplayStartFrame(comp, frameRate),
+    workAreaStartFrame: timeToFrame(comp.workAreaStart, frameRate),
+    workAreaDurationFrames: timeToFrame(comp.workAreaDuration, frameRate),
+    renderer: renderer,
+    switches: readCompSwitches(comp),
     numLayers: comp.numLayers,
     layers: layers
   };

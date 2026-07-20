@@ -1071,4 +1071,218 @@ function applySafeDeleteProjectItem(plan, opResult) {
 
   return { anyChanged: anyChanged, anyFailed: anyFailed, applyError: applyError };
 }
+
+function readCompSettingsSnapshot(comp) {
+  var frameRate = Number(comp.frameRate);
+  var renderer = "";
+  try {
+    renderer = String(comp.renderer || "");
+  } catch (e) {}
+  return {
+    width: Number(comp.width),
+    height: Number(comp.height),
+    pixelAspect: Number(comp.pixelAspect),
+    frameRate: frameRate,
+    durationFrames: timeToFrame(comp.duration, frameRate),
+    displayStartFrame: readDisplayStartFrame(comp, frameRate),
+    workAreaStartFrame: timeToFrame(comp.workAreaStart, frameRate),
+    workAreaDurationFrames: timeToFrame(comp.workAreaDuration, frameRate),
+    renderer: renderer,
+    switches: readCompSwitches(comp)
+  };
+}
+
+function clampWorkAreaToDuration(comp, rate, newDurFrames) {
+  var curWaStart = timeToFrame(comp.workAreaStart, rate);
+  var curWaDur = timeToFrame(comp.workAreaDuration, rate);
+  if (curWaStart + curWaDur <= newDurFrames) return;
+  var clampStart = curWaStart;
+  var clampDur = curWaDur;
+  if (clampStart < newDurFrames) {
+    clampDur = newDurFrames - clampStart;
+  } else {
+    clampStart = 0;
+    clampDur = newDurFrames;
+  }
+  comp.workAreaStart = frameToTime(clampStart, rate);
+  comp.workAreaDuration = frameToTime(clampDur, rate);
+}
+
+/** Shared already-satisfied + post-condition check for supplied settings keys. */
+function compSettingsMatchRequest(snapshot, settings) {
+  if (settings.width !== undefined && snapshot.width !== settings.width) return false;
+  if (settings.height !== undefined && snapshot.height !== settings.height) return false;
+  if (settings.pixelAspect !== undefined && snapshot.pixelAspect !== settings.pixelAspect) {
+    return false;
+  }
+  if (settings.frameRate !== undefined && snapshot.frameRate !== settings.frameRate) return false;
+  if (
+    settings.durationFrames !== undefined &&
+    snapshot.durationFrames !== settings.durationFrames
+  ) {
+    return false;
+  }
+  if (
+    settings.displayStartFrame !== undefined &&
+    snapshot.displayStartFrame !== settings.displayStartFrame
+  ) {
+    return false;
+  }
+  if (
+    settings.workAreaStartFrame !== undefined &&
+    snapshot.workAreaStartFrame !== settings.workAreaStartFrame
+  ) {
+    return false;
+  }
+  if (
+    settings.workAreaDurationFrames !== undefined &&
+    snapshot.workAreaDurationFrames !== settings.workAreaDurationFrames
+  ) {
+    return false;
+  }
+  if (settings.renderer !== undefined && snapshot.renderer !== settings.renderer) return false;
+  if (settings.switches) {
+    var sw = settings.switches;
+    var keys = compSwitchKeys();
+    for (var i = 0; i < keys.length; i++) {
+      var key = keys[i];
+      if (sw[key] !== undefined && snapshot.switches[key] !== !!sw[key]) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+function applySetCompSettings(plan, opResult) {
+  var comp = plan.comp;
+  var settings = plan.op.settings;
+  var before = readCompSettingsSnapshot(comp);
+  var targetResult = {
+    compId: comp.id,
+    compName: comp.name,
+    status: "failed",
+    before: before
+  };
+  if (compSettingsMatchRequest(before, settings)) {
+    targetResult.status = "already_satisfied";
+    targetResult.after = before;
+    opResult.targets.push(targetResult);
+    return { anyChanged: false, anyFailed: false, applyError: null };
+  }
+  if (settings.renderer !== undefined) {
+    var rendererOk = false;
+    try {
+      var rlist = comp.renderers;
+      if (rlist && rlist.length) {
+        for (var ri = 0; ri < rlist.length; ri++) {
+          if (String(rlist[ri]) === String(settings.renderer)) {
+            rendererOk = true;
+            break;
+          }
+        }
+      }
+    } catch (re) {
+      rendererOk = false;
+    }
+    if (!rendererOk) {
+      targetResult.status = "failed";
+      targetResult.message = "renderer is not in comp.renderers: " + settings.renderer;
+      targetResult.after = before;
+      opResult.targets.push(targetResult);
+      return { anyChanged: false, anyFailed: true, applyError: targetResult.message };
+    }
+  }
+  try {
+    var rate = before.frameRate;
+    if (settings.frameRate !== undefined) {
+      comp.frameRate = settings.frameRate;
+      rate = Number(comp.frameRate);
+    }
+    if (settings.durationFrames !== undefined) {
+      var newDurFrames = settings.durationFrames;
+      // Clamp current/preserved work area before duration shrink; explicit WA applied after.
+      clampWorkAreaToDuration(comp, rate, newDurFrames);
+      comp.duration = frameToTime(newDurFrames, rate);
+    }
+    if (settings.width !== undefined) comp.width = settings.width;
+    if (settings.height !== undefined) comp.height = settings.height;
+    if (settings.pixelAspect !== undefined) comp.pixelAspect = settings.pixelAspect;
+    if (settings.displayStartFrame !== undefined) {
+      try {
+        comp.displayStartFrame = settings.displayStartFrame;
+      } catch (dse) {
+        throw new Error(
+          "displayStartFrame is not writable on this host: " + String(dse)
+        );
+      }
+    }
+    if (settings.renderer !== undefined) {
+      comp.renderer = settings.renderer;
+    }
+    if (settings.switches) {
+      var sw = settings.switches;
+      var switchKeys = compSwitchKeys();
+      for (var ski = 0; ski < switchKeys.length; ski++) {
+        var sk = switchKeys[ski];
+        if (sw[sk] !== undefined) {
+          comp[sk] = !!sw[sk];
+        }
+      }
+    }
+    if (
+      settings.workAreaStartFrame !== undefined ||
+      settings.workAreaDurationFrames !== undefined
+    ) {
+      rate = Number(comp.frameRate);
+      var durFrames = timeToFrame(comp.duration, rate);
+      var waStart =
+        settings.workAreaStartFrame !== undefined
+          ? settings.workAreaStartFrame
+          : timeToFrame(comp.workAreaStart, rate);
+      var waDur =
+        settings.workAreaDurationFrames !== undefined
+          ? settings.workAreaDurationFrames
+          : timeToFrame(comp.workAreaDuration, rate);
+      if (waStart + waDur > durFrames) {
+        throw new Error(
+          "work area would end past composition duration (" +
+            (waStart + waDur) +
+            " > " +
+            durFrames +
+            " frames)"
+        );
+      }
+      if (settings.workAreaStartFrame !== undefined) {
+        comp.workAreaStart = frameToTime(settings.workAreaStartFrame, rate);
+      }
+      if (settings.workAreaDurationFrames !== undefined) {
+        comp.workAreaDuration = frameToTime(settings.workAreaDurationFrames, rate);
+      }
+    }
+    var after = readCompSettingsSnapshot(comp);
+    targetResult.after = after;
+    if (compSettingsMatchRequest(after, settings)) {
+      targetResult.status = "changed";
+      opResult.targets.push(targetResult);
+      return { anyChanged: true, anyFailed: false, applyError: null };
+    }
+    targetResult.status = "failed";
+    targetResult.message = "Post-condition failed: composition settings did not match request";
+    opResult.targets.push(targetResult);
+    return { anyChanged: true, anyFailed: true, applyError: targetResult.message };
+  } catch (ce) {
+    targetResult.status = "failed";
+    targetResult.message = String(ce);
+    var mutated = true;
+    try {
+      targetResult.after = readCompSettingsSnapshot(comp);
+      mutated = JSON.stringify(targetResult.after) !== JSON.stringify(before);
+    } catch (ae) {
+      mutated = true;
+    }
+    opResult.targets.push(targetResult);
+    return { anyChanged: mutated, anyFailed: true, applyError: String(ce) };
+  }
+}
 `.trim();

@@ -1,3 +1,4 @@
+import { COMP_SWITCH_KEYS, type CompSwitchesSnapshot } from "./comp-switches.js";
 import type {
   CompInventory,
   FolderInventory,
@@ -196,6 +197,17 @@ function parseLayer(raw: unknown, path: string): InventoryLayer {
   return layer;
 }
 
+function parseCompSwitches(raw: unknown, path: string): CompSwitchesSnapshot {
+  if (!isRecord(raw)) {
+    throw new Error(`Invalid inventory: ${path} must be an object`);
+  }
+  const switches = {} as CompSwitchesSnapshot;
+  for (const key of COMP_SWITCH_KEYS) {
+    switches[key] = assertBoolean(raw[key], `${path}.${key}`);
+  }
+  return switches;
+}
+
 function parseComposition(raw: unknown, path: string): InventoryComposition {
   if (!isRecord(raw)) {
     throw new Error(`Invalid inventory: ${path} must be an object`);
@@ -208,6 +220,18 @@ function parseComposition(raw: unknown, path: string): InventoryComposition {
     name: assertString(raw.name, `${path}.name`),
     duration: assertNumber(raw.duration, `${path}.duration`),
     frameRate: assertNumber(raw.frameRate, `${path}.frameRate`),
+    width: assertNumber(raw.width, `${path}.width`),
+    height: assertNumber(raw.height, `${path}.height`),
+    pixelAspect: assertNumber(raw.pixelAspect, `${path}.pixelAspect`),
+    durationFrames: assertNumber(raw.durationFrames, `${path}.durationFrames`),
+    displayStartFrame: assertNumber(raw.displayStartFrame, `${path}.displayStartFrame`),
+    workAreaStartFrame: assertNumber(raw.workAreaStartFrame, `${path}.workAreaStartFrame`),
+    workAreaDurationFrames: assertNumber(
+      raw.workAreaDurationFrames,
+      `${path}.workAreaDurationFrames`,
+    ),
+    renderer: assertString(raw.renderer ?? "", `${path}.renderer`),
+    switches: parseCompSwitches(raw.switches, `${path}.switches`),
     numLayers: assertNumber(raw.numLayers, `${path}.numLayers`),
     layers: raw.layers.map((layer, i) => parseLayer(layer, `${path}.layers[${i}]`)),
   };

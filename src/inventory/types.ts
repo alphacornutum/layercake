@@ -1,4 +1,8 @@
+import type { CompSwitchesSnapshot } from "./comp-switches.js";
 import type { LayerTarget } from "./layer-target-schema.js";
+
+export type { CompSwitchKey, CompSwitchesSnapshot } from "./comp-switches.js";
+export { COMP_SWITCH_KEYS } from "./comp-switches.js";
 
 export type LayerType =
   | "av"
@@ -66,6 +70,15 @@ export type InventoryComposition = {
   name: string;
   duration: number;
   frameRate: number;
+  width: number;
+  height: number;
+  pixelAspect: number;
+  durationFrames: number;
+  displayStartFrame: number;
+  workAreaStartFrame: number;
+  workAreaDurationFrames: number;
+  renderer: string;
+  switches: CompSwitchesSnapshot;
   numLayers: number;
   layers: InventoryLayer[];
 };

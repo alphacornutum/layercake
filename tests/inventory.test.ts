@@ -31,6 +31,15 @@ import type {
   SourceInventory,
 } from "../src/inventory/types.js";
 
+const defaultCompSwitches = {
+  motionBlur: false,
+  frameBlending: false,
+  draft3d: false,
+  hideShyLayers: false,
+  dropFrame: false,
+  preserveNestedResolution: false,
+};
+
 const sample: CompInventory = {
   projectName: "Demo.aep",
   compositions: [
@@ -39,6 +48,15 @@ const sample: CompInventory = {
       name: "Main",
       duration: 10,
       frameRate: 30,
+      width: 1920,
+      height: 1080,
+      pixelAspect: 1,
+      durationFrames: 300,
+      displayStartFrame: 0,
+      workAreaStartFrame: 0,
+      workAreaDurationFrames: 300,
+      renderer: "ADBE Advanced 3d",
+      switches: { ...defaultCompSwitches },
       numLayers: 4,
       layers: [
         {
@@ -161,6 +179,15 @@ const sample: CompInventory = {
       name: "Precomp",
       duration: 4,
       frameRate: 30,
+      width: 1920,
+      height: 1080,
+      pixelAspect: 1,
+      durationFrames: 120,
+      displayStartFrame: 0,
+      workAreaStartFrame: 0,
+      workAreaDurationFrames: 120,
+      renderer: "ADBE Advanced 3d",
+      switches: { ...defaultCompSwitches },
       numLayers: 0,
       layers: [],
     },
@@ -321,6 +348,17 @@ describe("parseCompInventory", () => {
     expect(parsed.compositions).toHaveLength(2);
     expect(parsed.compositions[0]!.layers[0]!.id).toBe(42);
     expect(parsed.compositions[0]!.layers[0]!.hasEffects).toBe(true);
+    expect(parsed.compositions[0]).toMatchObject({
+      width: 1920,
+      height: 1080,
+      pixelAspect: 1,
+      durationFrames: 300,
+      displayStartFrame: 0,
+      workAreaStartFrame: 0,
+      workAreaDurationFrames: 300,
+      renderer: "ADBE Advanced 3d",
+      switches: defaultCompSwitches,
+    });
     expect(parsed).not.toHaveProperty("folded");
     expect(JSON.stringify(parsed)).not.toMatch(/folded/i);
   });
@@ -435,6 +473,10 @@ describe("SHARED_INVENTORY_HELPERS", () => {
     expect(SHARED_INVENTORY_HELPERS).toContain("PlaceholderSource");
     expect(SHARED_INVENTORY_HELPERS).toContain("function timeToFrame");
     expect(SHARED_INVENTORY_HELPERS).toContain("function frameToTime");
+    expect(SHARED_INVENTORY_HELPERS).toContain("function readCompSwitches");
+    expect(SHARED_INVENTORY_HELPERS).toContain("function readDisplayStartFrame");
+    expect(SHARED_INVENTORY_HELPERS).toContain("function compSwitchKeys");
+    expect(SHARED_INVENTORY_HELPERS).toContain('"preserveNestedResolution"');
   });
 });
 
