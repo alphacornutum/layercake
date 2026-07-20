@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { zodToJsonSchema } from "zod-to-json-schema";
 
 import type { AeHost } from "../src/host/types.js";
 import { applyProjectPatch, parsePatchApplyResult } from "../src/patch/apply.js";
@@ -219,6 +220,23 @@ describe("patchProjectInputSchema", () => {
       operations: [],
     });
     expect(result.success).toBe(false);
+  });
+
+  it("emits Codex-compatible JSON Schema (no tuple-style items arrays)", () => {
+    const schema = zodToJsonSchema(patchProjectInputSchema, { $refStrategy: "none" });
+    const tupleItemsPaths: string[] = [];
+    const walk = (node: unknown, path: string): void => {
+      if (!node || typeof node !== "object") return;
+      if (Array.isArray(node)) {
+        node.forEach((v, i) => walk(v, `${path}[${i}]`));
+        return;
+      }
+      const obj = node as Record<string, unknown>;
+      if (Array.isArray(obj.items)) tupleItemsPaths.push(`${path}.items`);
+      for (const [k, v] of Object.entries(obj)) walk(v, `${path}.${k}`);
+    };
+    walk(schema, "$");
+    expect(tupleItemsPaths).toEqual([]);
   });
 
   it("accepts control-plane ops with op-specific fields", () => {

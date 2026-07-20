@@ -38,9 +38,9 @@ const itemsSelectorSchema = z.object({
     .describe("Stable Project panel Item.id values (not names)"),
 });
 
-const rgbColorSchema = z
-  .tuple([z.number(), z.number(), z.number()])
-  .describe("RGB color in [0..1] per channel");
+// Prefer length-bounded array over z.tuple: tuple JSON Schema emits `items` as an
+// array of schemas, which Codex rejects when building MCP tool specs.
+const rgbColorSchema = z.array(z.number()).length(3).describe("RGB color in [0..1] per channel");
 
 export const setTextStyleOpSchema = z.object({
   op: z.literal("set_text_style"),
