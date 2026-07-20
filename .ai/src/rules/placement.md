@@ -14,6 +14,7 @@ alwaysApply: true
 | Inventory tool                | `src/inventory/` — `list-<name>.ts`, `list-<name>-script.ts`, types in `types.ts`, parse in `parse.js` |
 | Shared ExtendScript helpers   | `src/inventory/shared-script.ts` when two+ inventory scripts need the same helper                      |
 | Shared id\|name resolve       | `src/inventory/resolve-script.ts` (inspect + patch; callers define `resolveFail`)                      |
+| Shared layer id\|name Zod     | `src/inventory/layer-target-schema.ts` (`layerTargetSchema` / `getLayerInputSchema`; patch re-exports) |
 | Typed patch ops               | `src/patch/` (`schema.ts`, `apply-script.ts`, `types.ts`)                                              |
 | Docs corpus/search            | `src/docs/`                                                                                            |
 | Unit / AE tests               | `tests/*.test.ts` / `tests/*.ae.test.ts`                                                               |

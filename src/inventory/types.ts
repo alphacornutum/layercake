@@ -1,3 +1,5 @@
+import type { LayerTarget } from "./layer-target-schema.js";
+
 export type LayerType =
   | "av"
   | "text"
@@ -215,11 +217,7 @@ export type LayerInspectResult = {
   layer: LayerInspectLayer;
 };
 
-export type GetLayerArgs = {
-  compId?: number;
-  compName?: string;
-  layerId?: number;
-  layerName?: string;
+export type GetLayerArgs = LayerTarget & {
   detail?: LayerInspectDetail;
   matchNames?: string[];
   atTime?: number;

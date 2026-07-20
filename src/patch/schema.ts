@@ -1,24 +1,9 @@
 import { z } from "zod";
 
-/** Exactly one of compId|compName and exactly one of layerId|layerName (inspect parity). */
-export const layerTargetSchema = z
-  .object({
-    compId: z.number().int().optional().describe("Composition Item.id"),
-    compName: z.string().optional().describe("Exact composition name (case-sensitive)"),
-    layerId: z.number().int().optional().describe("Layer.id within that composition"),
-    layerName: z
-      .string()
-      .optional()
-      .describe(
-        "Exact current layer name for lookup (case-sensitive; not the rename desired name)",
-      ),
-  })
-  .refine((v) => (v.compId !== undefined) !== (v.compName !== undefined), {
-    message: "Provide exactly one of compId or compName",
-  })
-  .refine((v) => (v.layerId !== undefined) !== (v.layerName !== undefined), {
-    message: "Provide exactly one of layerId or layerName",
-  });
+import { layerTargetSchema } from "../inventory/layer-target-schema.js";
+
+export { layerTargetSchema };
+export type { LayerTarget } from "../inventory/layer-target-schema.js";
 
 const compsSelectorSchema = z
   .object({
@@ -65,9 +50,7 @@ export const setTextStyleOpSchema = z.object({
 
 export const renameLayerOpSchema = z.object({
   op: z.literal("rename_layer"),
-  target: layerTargetSchema.describe(
-    "Lookup identity: exactly one of compId|compName and exactly one of layerId|layerName",
-  ),
+  target: layerTargetSchema,
   layerName: z
     .string()
     .min(1)
@@ -118,7 +101,6 @@ export const patchProjectInputSchema = z.object({
     .describe("Required when resolved targets exceed the built-in maximum"),
 });
 
-export type LayerTarget = z.infer<typeof layerTargetSchema>;
 export type SetTextStyleOp = z.infer<typeof setTextStyleOpSchema>;
 export type RenameLayerOp = z.infer<typeof renameLayerOpSchema>;
 export type CreateFolderOp = z.infer<typeof createFolderOpSchema>;

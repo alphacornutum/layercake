@@ -1,4 +1,4 @@
-import { SHARED_RESOLVE_HELPERS } from "../inventory/resolve-script.js";
+import { SHARED_COMP_LAYER_RESOLVE_HELPERS } from "../inventory/resolve-script.js";
 import { PATCH_MAX_TARGETS, PATCH_UNDO_GROUP_NAME } from "./constants.js";
 
 /**
@@ -22,7 +22,7 @@ function resolveFail(code, message, candidates) {
   throw new Error("AFX_RESOLVE:" + JSON.stringify(payload));
 }
 
-${SHARED_RESOLVE_HELPERS}
+${SHARED_COMP_LAYER_RESOLVE_HELPERS}
 
 function formatResolveError(err) {
   var msg = String(err);
@@ -172,12 +172,8 @@ function collectTextLayersInComp(comp, out) {
 }
 
 function resolveLayerTarget(ref) {
-  var compId = ref.compId !== undefined ? ref.compId : null;
-  var compName = ref.compName !== undefined ? ref.compName : null;
-  var layerId = ref.layerId !== undefined ? ref.layerId : null;
-  var layerName = ref.layerName !== undefined ? ref.layerName : null;
-  var comp = resolveComp(compId, compName);
-  var layer = resolveLayer(comp, layerId, layerName);
+  var comp = resolveComp(ref.compId, ref.compName);
+  var layer = resolveLayer(comp, ref.layerId, ref.layerName);
   return { comp: comp, layer: layer };
 }
 

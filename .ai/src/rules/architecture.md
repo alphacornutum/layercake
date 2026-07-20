@@ -18,7 +18,7 @@ alwaysApply: true
 - `src/server.ts` — register MCP tools/resources only; call host/inventory/docs; return `textResult` / `isError`.
 - `src/config.ts` — env loading and `ConfigError`; no AE I/O.
 - `src/host/` — `AeHost` interface, `createAeHost` factory, macOS AppleScript + Windows CLI bridges, script wrap/parse protocol.
-- `src/inventory/` — read-only project inventories: ExtendScript source strings + TS parse/filter; shared id\|name resolve in `resolve-script.ts`.
+- `src/inventory/` — read-only project inventories: ExtendScript source strings + TS parse/filter; shared id\|name resolve in `resolve-script.ts`; shared layer-target Zod in `layer-target-schema.ts`.
 - `src/patch/` — typed apply-only mutations, broad-gate, save helpers; compose with inventory context (never mega-tools that hide patch+save).
 - `src/docs/` — local corpus load/search; URIs use `ae://docs/...`.
 

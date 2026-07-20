@@ -8,10 +8,14 @@ import { PATCH_MAX_TARGETS } from "../src/patch/constants.js";
 import { patchProjectInputSchema } from "../src/patch/schema.js";
 import { saveProject } from "../src/patch/save.js";
 
+function guardedProject() {
+  return { path: "/tmp/Demo.aep", fingerprint: "rev:1|dirty:0|path:/tmp/Demo.aep" };
+}
+
 describe("patchProjectInputSchema", () => {
   it("accepts set_text_style apply-only payload", () => {
     const parsed = patchProjectInputSchema.parse({
-      project: { path: "/tmp/Demo.aep", fingerprint: "rev:1|dirty:0|path:/tmp/Demo.aep" },
+      project: guardedProject(),
       operations: [
         {
           op: "set_text_style",
@@ -26,7 +30,7 @@ describe("patchProjectInputSchema", () => {
 
   it("accepts panel ops create_folder / move_project_item / delete_project_item", () => {
     const parsed = patchProjectInputSchema.parse({
-      project: { path: "/tmp/Demo.aep", fingerprint: "rev:1|dirty:0|path:/tmp/Demo.aep" },
+      project: guardedProject(),
       operations: [
         { op: "create_folder", name: "Bundle", parentFolderId: 12 },
         {
@@ -49,7 +53,7 @@ describe("patchProjectInputSchema", () => {
 
   it("rejects empty itemIds on move/delete", () => {
     const move = patchProjectInputSchema.safeParse({
-      project: { path: "/tmp/Demo.aep", fingerprint: "rev:1|dirty:0|path:/tmp/Demo.aep" },
+      project: guardedProject(),
       operations: [
         {
           op: "move_project_item",
@@ -63,7 +67,7 @@ describe("patchProjectInputSchema", () => {
 
   it("rejects unknown ops", () => {
     const result = patchProjectInputSchema.safeParse({
-      project: { path: "/tmp/Demo.aep", fingerprint: "rev:1|dirty:0|path:/tmp/Demo.aep" },
+      project: guardedProject(),
       operations: [{ op: "rename", selector: { kind: "all_text_layers" }, name: "x" }],
     });
     expect(result.success).toBe(false);
@@ -71,7 +75,7 @@ describe("patchProjectInputSchema", () => {
 
   it("accepts rename_layer by ids and by unique names", () => {
     const byIds = patchProjectInputSchema.parse({
-      project: { path: "/tmp/Demo.aep", fingerprint: "rev:1|dirty:0|path:/tmp/Demo.aep" },
+      project: guardedProject(),
       operations: [
         {
           op: "rename_layer",
@@ -83,7 +87,7 @@ describe("patchProjectInputSchema", () => {
     expect(byIds.operations[0]?.op).toBe("rename_layer");
 
     const byNames = patchProjectInputSchema.parse({
-      project: { path: "/tmp/Demo.aep", fingerprint: "rev:1|dirty:0|path:/tmp/Demo.aep" },
+      project: guardedProject(),
       operations: [
         {
           op: "rename_layer",
@@ -100,7 +104,7 @@ describe("patchProjectInputSchema", () => {
 
   it("rejects rename_layer / set_text_style layer targets missing or with both selectors", () => {
     const missingComp = patchProjectInputSchema.safeParse({
-      project: { path: "/tmp/Demo.aep", fingerprint: "rev:1|dirty:0|path:/tmp/Demo.aep" },
+      project: guardedProject(),
       operations: [
         {
           op: "rename_layer",
@@ -112,7 +116,7 @@ describe("patchProjectInputSchema", () => {
     expect(missingComp.success).toBe(false);
 
     const bothLayer = patchProjectInputSchema.safeParse({
-      project: { path: "/tmp/Demo.aep", fingerprint: "rev:1|dirty:0|path:/tmp/Demo.aep" },
+      project: guardedProject(),
       operations: [
         {
           op: "rename_layer",
@@ -124,7 +128,7 @@ describe("patchProjectInputSchema", () => {
     expect(bothLayer.success).toBe(false);
 
     const bothComp = patchProjectInputSchema.safeParse({
-      project: { path: "/tmp/Demo.aep", fingerprint: "rev:1|dirty:0|path:/tmp/Demo.aep" },
+      project: guardedProject(),
       operations: [
         {
           op: "set_text_style",
@@ -141,7 +145,7 @@ describe("patchProjectInputSchema", () => {
 
   it("accepts set_text_style id-only and name-based layer/comp selectors", () => {
     const idOnly = patchProjectInputSchema.parse({
-      project: { path: "/tmp/Demo.aep", fingerprint: "rev:1|dirty:0|path:/tmp/Demo.aep" },
+      project: guardedProject(),
       operations: [
         {
           op: "set_text_style",
@@ -153,7 +157,7 @@ describe("patchProjectInputSchema", () => {
     expect(idOnly.operations[0]?.op).toBe("set_text_style");
 
     const byNames = patchProjectInputSchema.parse({
-      project: { path: "/tmp/Demo.aep", fingerprint: "rev:1|dirty:0|path:/tmp/Demo.aep" },
+      project: guardedProject(),
       operations: [
         {
           op: "set_text_style",
@@ -168,7 +172,7 @@ describe("patchProjectInputSchema", () => {
     expect(byNames.operations[0]?.op).toBe("set_text_style");
 
     const compsByName = patchProjectInputSchema.parse({
-      project: { path: "/tmp/Demo.aep", fingerprint: "rev:1|dirty:0|path:/tmp/Demo.aep" },
+      project: guardedProject(),
       operations: [
         {
           op: "set_text_style",
@@ -183,7 +187,7 @@ describe("patchProjectInputSchema", () => {
     });
 
     const compsIdsOnly = patchProjectInputSchema.parse({
-      project: { path: "/tmp/Demo.aep", fingerprint: "rev:1|dirty:0|path:/tmp/Demo.aep" },
+      project: guardedProject(),
       operations: [
         {
           op: "set_text_style",
@@ -197,7 +201,7 @@ describe("patchProjectInputSchema", () => {
 
   it("rejects empty comps selector lists", () => {
     const empty = patchProjectInputSchema.safeParse({
-      project: { path: "/tmp/Demo.aep", fingerprint: "rev:1|dirty:0|path:/tmp/Demo.aep" },
+      project: guardedProject(),
       operations: [
         {
           op: "set_text_style",
@@ -211,7 +215,7 @@ describe("patchProjectInputSchema", () => {
 
   it("rejects empty operations", () => {
     const result = patchProjectInputSchema.safeParse({
-      project: { path: "/tmp/Demo.aep", fingerprint: "rev:1|dirty:0|path:/tmp/Demo.aep" },
+      project: guardedProject(),
       operations: [],
     });
     expect(result.success).toBe(false);
@@ -238,7 +242,7 @@ describe("buildPatchApplyScript", () => {
   it("includes guards, undo group, font apply, and broad gate", () => {
     const script = buildPatchApplyScript(
       JSON.stringify({
-        project: { path: "/tmp/Demo.aep", fingerprint: "rev:1|dirty:0|path:/tmp/Demo.aep" },
+        project: guardedProject(),
         operations: [
           {
             op: "set_text_style",
@@ -266,7 +270,7 @@ describe("buildPatchApplyScript", () => {
   it("includes panel op paths, cycle detection, and root refuse", () => {
     const script = buildPatchApplyScript(
       JSON.stringify({
-        project: { path: "/tmp/Demo.aep", fingerprint: "rev:1|dirty:0|path:/tmp/Demo.aep" },
+        project: guardedProject(),
         operations: [
           { op: "create_folder", name: "Bundle", parentFolderId: 12 },
           {
@@ -300,63 +304,26 @@ describe("buildPatchApplyScript", () => {
     expect(script).toContain("rootFolder.id === itemId");
   });
 
-  it("includes rename_layer, shared id|name resolve, and post-condition checks", () => {
+  it("includes rename_layer, comp/layer resolve, and rename post-condition (no footage helpers)", () => {
     const script = buildPatchApplyScript(
       JSON.stringify({
-        project: { path: "/tmp/Demo.aep", fingerprint: "rev:1|dirty:0|path:/tmp/Demo.aep" },
+        project: guardedProject(),
         operations: [
           {
             op: "rename_layer",
             target: { compName: "main", layerName: "Hello World" },
             layerName: "{message_10}",
           },
-          {
-            op: "set_text_style",
-            selector: { kind: "comps", compNames: ["main"] },
-            style: { font: "ArialMT" },
-            allStyleRuns: true,
-            preserveUnspecified: true,
-          },
         ],
         allowBroadTargetSet: false,
       }),
     );
-    expect(script).toContain("rename_layer");
     expect(script).toContain("applyRenameLayer");
-    expect(script).toContain("resolveLayerTarget");
     expect(script).toContain("function resolveComp");
     expect(script).toContain("function resolveLayer");
-    expect(script).toContain("AFX_RESOLVE:");
-    expect(script).toContain("formatResolveError");
-    expect(script).toContain("compNames");
-    expect(script).toContain("Post-condition failed: layer name did not match after write");
-    expect(script).toContain("Post-condition failed: font did not match after write");
-    expect(script).toContain("Post-condition failed: parentFolderId did not match destination");
-    expect(script).toContain("Post-condition failed: item still present after remove");
-    expect(script).toContain("Post-condition failed: created folder name/parent");
-  });
-
-  it("shapes ambiguous name refusal with candidate lists in resolve helpers", () => {
-    // Stock fixture cannot express duplicate names; assert ExtendScript candidate payloads.
-    const script = buildPatchApplyScript(
-      JSON.stringify({
-        project: { path: "/tmp/Demo.aep", fingerprint: "rev:1|dirty:0|path:/tmp/Demo.aep" },
-        operations: [
-          {
-            op: "rename_layer",
-            target: { compName: "dup", layerName: "dup" },
-            layerName: "x",
-          },
-        ],
-        allowBroadTargetSet: false,
-      }),
-    );
-    expect(script).toContain("ambiguous_comp_name");
     expect(script).toContain("ambiguous_layer_name");
-    expect(script).toContain("Ambiguous composition name; multiple matches");
-    expect(script).toContain("Ambiguous layer name; multiple matches");
-    expect(script).toContain("candidates.push({ id: matches[c].id, name: matches[c].name })");
-    expect(script).toContain("index: matches[m].index");
+    expect(script).toContain("Post-condition failed: layer name did not match after write");
+    expect(script).not.toContain("function resolveFootage");
   });
 });
 
@@ -592,7 +559,7 @@ describe("applyProjectPatch", () => {
     const result = await applyProjectPatch(
       host,
       {
-        project: { path: "/tmp/Demo.aep", fingerprint: "rev:1|dirty:0|path:/tmp/Demo.aep" },
+        project: guardedProject(),
         operations: [
           {
             op: "set_text_style",

@@ -14,6 +14,7 @@ import { validateScriptSource } from "./host/script-wrapper.js";
 import { getLayer } from "./inventory/get-layer.js";
 import { getSource } from "./inventory/get-source.js";
 import { InspectSizeError } from "./inventory/inspect-limit.js";
+import { getLayerInputSchema } from "./inventory/layer-target-schema.js";
 import { listComps } from "./inventory/list-comps.js";
 import { listFolders } from "./inventory/list-folders.js";
 import { listProjectContext } from "./inventory/list-project-context.js";
@@ -437,35 +438,7 @@ export function createServer(
         "Unsupported value types are flagged { unserializable: true, propertyValueType }. " +
         "Success JSON larger than AE_INSPECT_MAX_BYTES (default 512 KiB) is a hard error — narrow with leaner detail / matchNames. " +
         "Layer.id ≠ Item.id; join layer.source.id to ae_list_sources / comps.",
-      inputSchema: z
-        .object({
-          compId: z.number().int().optional().describe("Composition Item.id"),
-          compName: z.string().optional().describe("Exact composition name (case-sensitive)"),
-          layerId: z.number().int().optional().describe("Layer.id within the composition"),
-          layerName: z.string().optional().describe("Exact layer name (case-sensitive)"),
-          detail: z
-            .enum(["overview", "extended", "full"])
-            .optional()
-            .describe('Depth tier (default "overview")'),
-          matchNames: z
-            .array(z.string())
-            .optional()
-            .describe("Optional PropertyBase.matchName filters (exact; includes descendants)"),
-          atTime: z
-            .number()
-            .optional()
-            .describe("Sample time in composition seconds (default: composition CTI)"),
-          preExpression: z
-            .boolean()
-            .optional()
-            .describe("valueAtTime preExpression flag (default true)"),
-        })
-        .refine((v) => (v.compId !== undefined) !== (v.compName !== undefined), {
-          message: "Provide exactly one of compId or compName",
-        })
-        .refine((v) => (v.layerId !== undefined) !== (v.layerName !== undefined), {
-          message: "Provide exactly one of layerId or layerName",
-        }),
+      inputSchema: getLayerInputSchema,
     },
     async (args) => {
       try {

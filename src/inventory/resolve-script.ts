@@ -2,7 +2,9 @@
  * Shared ExtendScript id|name resolve helpers for inspect and patch.
  * Callers must define `resolveFail(code, message, candidates)` before this block.
  */
-export const SHARED_RESOLVE_HELPERS = `
+
+/** Comp + layer resolve (used by inspect, get-layer, and patch). */
+export const SHARED_COMP_LAYER_RESOLVE_HELPERS = `
 function findCompById(compId) {
   var items = app.project.items;
   for (var i = 1; i <= items.length; i++) {
@@ -88,7 +90,10 @@ function resolveLayer(comp, layerId, layerName) {
   }
   return matches[0];
 }
+`.trim();
 
+/** Footage resolve (inspect / get-source only — not injected into patch apply). */
+export const SHARED_FOOTAGE_RESOLVE_HELPERS = `
 function findFootageById(sourceId) {
   var items = app.project.items;
   for (var i = 1; i <= items.length; i++) {
@@ -137,3 +142,9 @@ function resolveFootage(sourceId, sourceName) {
   return matches[0];
 }
 `.trim();
+
+/** Full resolve set for inspect scripts that may resolve comps, layers, or footage. */
+export const SHARED_RESOLVE_HELPERS = [
+  SHARED_COMP_LAYER_RESOLVE_HELPERS,
+  SHARED_FOOTAGE_RESOLVE_HELPERS,
+].join("\n\n");

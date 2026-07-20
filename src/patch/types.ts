@@ -5,28 +5,25 @@ export type PatchOpStatus =
   | "unsupported"
   | "failed";
 
-/** Text-style target evidence (`set_text_style`). */
-export type TextStyleTargetResult = {
+type LayerTargetBase = {
   compId: number;
   layerId: number;
   compName?: string;
   layerName?: string;
   status: PatchOpStatus;
-  before?: { fonts: string[] };
-  after?: { fonts: string[] };
   message?: string;
 };
 
+/** Text-style target evidence (`set_text_style`). */
+export type TextStyleTargetResult = LayerTargetBase & {
+  before?: { fonts: string[] };
+  after?: { fonts: string[] };
+};
+
 /** `rename_layer` target evidence (verified before/after names). */
-export type RenameLayerTargetResult = {
-  compId: number;
-  layerId: number;
-  compName?: string;
-  layerName?: string;
-  status: PatchOpStatus;
+export type RenameLayerTargetResult = LayerTargetBase & {
   before?: { name: string };
   after?: { name: string };
-  message?: string;
 };
 
 export type PanelFolderPlacement = {

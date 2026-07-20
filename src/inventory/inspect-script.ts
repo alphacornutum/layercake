@@ -11,9 +11,7 @@ function inspectFail(code, message, candidates) {
   throw new Error("AFX_INSPECT:" + JSON.stringify(payload));
 }
 
-function resolveFail(code, message, candidates) {
-  inspectFail(code, message, candidates);
-}
+var resolveFail = inspectFail;
 `.trim();
 
 const SHARED_INSPECT_SUFFIX = `

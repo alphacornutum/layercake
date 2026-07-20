@@ -79,7 +79,7 @@ Specs under `openspec/specs/<capability>/spec.md` are the behavior contracts. Co
 | `ae-source-inspect`       | `ae_get_source`                                                                | `src/inventory/get-source*.ts`, `inspect-*.ts`                                                    |
 | `ae-product-skill`        | `skill://drive-after-effects/...`, `skill://index.json`, server `instructions` | `src/skills/`, `skills/drive-after-effects/`                                                      |
 
-Shared inventory helpers: `shared-script.ts`, `resolve-script.ts` (id\|name resolve for inspect + patch), `parse.ts`, `types.ts`, `filter.ts`, `inspect-limit.ts`.
+Shared inventory helpers: `shared-script.ts`, `resolve-script.ts` (id\|name resolve for inspect + patch), `layer-target-schema.ts` (shared layer id\|name Zod for inspect + patch), `parse.ts`, `types.ts`, `filter.ts`, `inspect-limit.ts`.
 
 Product skill files live at top-level `skills/` (shipped with the npm package). They are independent of contributor AgentSync under `.ai/src/`.
 
