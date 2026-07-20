@@ -89,17 +89,24 @@ The product skill MUST document `set_layer_switches` as the typed `ae_patch_proj
 
 ### Requirement: Document set_layer_timing source-slip vs drag
 
-The product skill MUST document `set_layer_timing` as frame-exact start/in/out/stretch only, and MUST state that the op does not move keyframes (composition-absolute key times stay put). The skill MUST teach **source slip**: to keep the same parent in/out window while changing which source frames play (typical nested-comp case), supply the new `startFrame` together with the unchanged `inFrame` and `outFrame` in one op—not `startFrame` alone. The skill MUST contrast that with **drag layer in time** (move keys with the layer bar), which is not a typed op today; agents MUST use `ae_eval_script` for that until a dedicated op exists. The skill MUST note that slip via `startFrame` assumes time remapping is off (`timeRemapEnabled` remains on `set_layer_switches`).
+The product skill MUST document `set_layer_timing` as frame-exact start/in/out/stretch with **verified keyframe preservation**: successful writes MUST leave keyframe composition times and authored values unchanged (the op snapshots and restores keys when AE would nudge them). The skill MUST NOT describe preservation as merely “the op does not call key APIs.” The skill MUST teach **source slip**: to keep the same parent in/out window while changing which source frames play (typical nested-comp case), supply the new `startFrame` together with the unchanged `inFrame` and `outFrame` in one op—not `startFrame` alone. The skill MUST contrast that with **drag layer in time** (move keys with the layer bar), which is not a typed op today; agents MUST use `ae_eval_script` for that until a dedicated op exists. The skill MUST note that slip via `startFrame` assumes time remapping is off (`timeRemapEnabled` remains on `set_layer_switches`).
+
+The skill MUST state that post-condition success requires **on-grid** edges (`frame / frameRate` seconds, not merely nearest-frame rounding), exact `durationFrames` (`outFrame - inFrame`) equal to the expected span, and `keyframesPreserved: true`. The skill MUST note that timing evidence includes raw seconds as well as integer frames. For critical carriers, the skill MUST recommend agent-composed verification after `ae_save_project` (reopen or re-read) and optional boundary-frame contribution probes, and MUST state that those persistence/render checks are outside `set_layer_timing` itself.
 
 #### Scenario: Skill teaches slip payload and keyframe non-mutation
 
 - **WHEN** an agent reads `skills/drive-after-effects/SKILL.md` (or the equivalent MCP `skill://drive-after-effects/SKILL.md` resource)
-- **THEN** the skill MUST state that `set_layer_timing` does not move keyframes and MUST document the start+preserved-in/out slip recipe
+- **THEN** the skill MUST state that successful `set_layer_timing` preserves keyframe times/values (snapshot/restore) and MUST document the start+preserved-in/out slip recipe
 
 #### Scenario: Skill contrasts drag-with-keys as out of scope
 
 - **WHEN** an agent reads the product skill for layer timing
 - **THEN** the skill MUST state that UI-equivalent drag-with-keys is not typed on `set_layer_timing` and MUST point agents at `ae_eval_script` for that intent
+
+#### Scenario: Skill teaches on-grid exactness and audit composition
+
+- **WHEN** an agent reads the product skill for layer timing
+- **THEN** the skill MUST state on-grid / exact-durationFrames success, seconds-in-evidence, verified `keyframesPreserved`, and that save/reopen plus optional contribution probes are agent-composed outside the op
 
 ### Requirement: Document guarded editing workflow
 
@@ -148,14 +155,23 @@ The product skill MUST document that `ae_list_comps` exposes composition setting
 - **WHEN** an agent reads the product skill after this change ships
 - **THEN** the skill MUST mention composition settings on `ae_list_comps` and MUST document `set_comp_settings` with the batch-order guidance
 
+### Requirement: Document set_layer_transform
+
+The product skill MUST document `set_layer_transform` as the typed `ae_patch_project` op for authored 2D Transform values (`anchorPoint`, `position`, `scale`, `rotation`, `opacity`). The skill MUST state that callers supply only keys to change in a nested `transform` bag (omit key = preserve), that evidence includes actual authored/pre-expression numeric before/after transform snapshots, and that `changed` requires post-condition re-read success. The skill MUST tell agents to prefer this op over `ae_eval_script` for routine slot/transform repair after source replace (for example setting Position to the new Anchor Point), and MUST remind agents to use matching `project.fingerprint` on `ae_patch_project` for stale-project refuse. The skill MUST note that `reset_layer_surface` `resetTransforms` resets to AE defaults (typically Position at composition center), returns authored transform value evidence (not a transforms boolean), does not clear expressions (`clearExpressions` is separate), and may not equal “match new Anchor Point” — agents SHOULD use `set_layer_transform` with explicit numbers for that repair. The skill MUST warn that keyframed transform properties are refused until keys are cleared, and that authored success may still differ from post-expression on-screen values.
+
+#### Scenario: Skill mentions set_layer_transform and slot repair
+
+- **WHEN** an agent reads the product skill after `set_layer_transform` ships
+- **THEN** the skill MUST mention `set_layer_transform`, MUST note omit-to-preserve semantics and authored numeric value evidence, MUST NOT document an op-level expected-current bag, MUST mention fingerprint guards for stale apply, and MUST steer slot repair after replace toward explicit `set_layer_transform` rather than assuming `resetTransforms` alone
+
 ### Requirement: Document control-plane patch ops and safe delete
 
-The product skill MUST tell agents to prefer typed `ae_patch_project` ops over `ae_eval_script` for: project-item rename, layer reorder, solid creation, layer source replace, frame-exact layer timing, layer switches (`set_layer_switches`), composition settings (`set_comp_settings`), property expressions, layer surface reset, layer delete, and guarded cleanup via `safe_delete_project_item`. The skill MUST state that `timeRemapEnabled` is set via `set_layer_switches`, not `set_layer_timing`. For `set_property_expression`, the skill MUST prefer `matchNames` copied from `ae_get_layer` and MAY document nexrender-style `propertyPath` (`.` / `->`) as an alternative; exactly one selector. The skill MUST contrast `safe_delete_project_item` (refuse in-use / unknown refs; empty folders only) with permissive `delete_project_item`. The skill MUST state that Cover/Contain expression bodies, protected control-layer name policy, render-backed visibility PASS criteria, and `main`/`config` reachability policy remain agent/domain concerns outside LayerCake.
+The product skill MUST tell agents to prefer typed `ae_patch_project` ops over `ae_eval_script` for: project-item rename, layer reorder, solid creation, layer source replace, frame-exact layer timing, layer switches (`set_layer_switches`), composition settings (`set_comp_settings`), property expressions, authored layer transforms (`set_layer_transform`), layer surface reset, layer delete, and guarded cleanup via `safe_delete_project_item`. The skill MUST state that `timeRemapEnabled` is set via `set_layer_switches`, not `set_layer_timing`. The skill MUST state that `reset_layer_surface` `resetTransforms` applies and verifies AE default authored transform values with value evidence (and MUST NOT be treated as proof of arbitrary slot geometry or as clearing expressions). For `set_property_expression`, the skill MUST prefer `matchNames` copied from `ae_get_layer` and MAY document nexrender-style `propertyPath` (`.` / `->`) as an alternative; exactly one selector. The skill MUST contrast `safe_delete_project_item` (refuse in-use / unknown refs; empty folders only) with permissive `delete_project_item`. The skill MUST state that Cover/Contain expression bodies, protected control-layer name policy, render-backed visibility PASS criteria, and `main`/`config` reachability policy remain agent/domain concerns outside LayerCake.
 
 #### Scenario: Skill prefers typed control-plane ops
 
 - **WHEN** an agent reads the product skill after control-plane ops ship
-- **THEN** the skill MUST list or clearly reference the new ops (including `set_layer_switches` and `set_comp_settings`) and MUST tell agents to prefer them over raw eval for those tasks
+- **THEN** the skill MUST list or clearly reference the new ops (including `set_layer_switches`, `set_comp_settings`, and `set_layer_transform`) and MUST tell agents to prefer them over raw eval for those tasks
 
 #### Scenario: Skill contrasts safe vs permissive delete
 

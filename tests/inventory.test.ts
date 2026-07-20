@@ -473,10 +473,48 @@ describe("SHARED_INVENTORY_HELPERS", () => {
     expect(SHARED_INVENTORY_HELPERS).toContain("PlaceholderSource");
     expect(SHARED_INVENTORY_HELPERS).toContain("function timeToFrame");
     expect(SHARED_INVENTORY_HELPERS).toContain("function frameToTime");
+    expect(SHARED_INVENTORY_HELPERS).toContain("function isOnGridFrame");
+    expect(SHARED_INVENTORY_HELPERS).toContain("function layerTimingFrames");
+    expect(SHARED_INVENTORY_HELPERS).toContain("function transformMatchName");
+    expect(SHARED_INVENTORY_HELPERS).toContain("function isCoreTransformMatchName");
     expect(SHARED_INVENTORY_HELPERS).toContain("function readCompSwitches");
     expect(SHARED_INVENTORY_HELPERS).toContain("function readDisplayStartFrame");
     expect(SHARED_INVENTORY_HELPERS).toContain("function compSwitchKeys");
     expect(SHARED_INVENTORY_HELPERS).toContain('"preserveNestedResolution"');
+  });
+
+  it("treats frame/fps seconds as on-grid (including non-integer fps)", () => {
+    const helpers = new Function(`
+      ${SHARED_INVENTORY_HELPERS}
+      return {
+        timeToFrame: timeToFrame,
+        frameToTime: frameToTime,
+        isOnGridFrame: isOnGridFrame
+      };
+    `)() as {
+      timeToFrame: (time: number, frameRate: number) => number;
+      frameToTime: (frame: number, frameRate: number) => number;
+      isOnGridFrame: (time: number, frame: number, frameRate: number) => boolean;
+    };
+
+    for (const fps of [24, 30, 23.976, 29.97]) {
+      const frame = 518;
+      const seconds = helpers.frameToTime(frame, fps);
+      expect(helpers.timeToFrame(seconds, fps)).toBe(frame);
+      expect(helpers.isOnGridFrame(seconds, frame, fps)).toBe(true);
+      // Half-frame offset is off-grid for every integer frame (including the nearest).
+      const offGrid = seconds + 0.5 / fps;
+      const nearest = helpers.timeToFrame(offGrid, fps);
+      expect(helpers.isOnGridFrame(offGrid, frame, fps)).toBe(false);
+      expect(helpers.isOnGridFrame(offGrid, nearest, fps)).toBe(false);
+    }
+
+    // Tiny float noise under epsilon stays on-grid; larger drift does not.
+    const fps = 29.97;
+    const frame = 100;
+    const exact = frame / fps;
+    expect(helpers.isOnGridFrame(exact + 1e-10, frame, fps)).toBe(true);
+    expect(helpers.isOnGridFrame(exact + 1e-4, frame, fps)).toBe(false);
   });
 });
 

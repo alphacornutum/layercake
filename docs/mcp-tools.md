@@ -62,30 +62,31 @@ Read-only inbound references for one `itemId` (`Item.id`): `used_in_comp`, `laye
 
 ### `ae_patch_project` ops
 
-| Op                         | Purpose                                                                                                                             |
-| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `set_text_style`           | Set authored TextDocument/CharacterRange font strings (exact string; no synonym mapping)                                            |
-| `rename_layer`             | Rename exactly one timeline layer per op (`target` id\|name + desired `layerName`)                                                  |
-| `rename_project_item`      | Rename a Project panel item by `itemId`                                                                                             |
-| `set_layer_index`          | Reorder one layer to a 1-based `index`                                                                                              |
-| `create_solid`             | Always create a new Solid FootageItem (name, dims, pixelAspect, color; optional folder)                                             |
-| `replace_layer_source`     | Replace AVLayer source; evidence reports `layerIdPreserved` / `newLayerId`                                                          |
-| `set_layer_timing`         | Set start/in/out via **integer frames** (+ optional stretch); does **not** move keyframes; see source-slip notes below              |
-| `set_layer_switches`       | Set timeline/layer switch booleans (`enabled`, `audioEnabled`, `timeRemapEnabled`, …); omit=preserve; full switch snapshot evidence |
-| `set_comp_settings`        | Set composition settings via nested `target` + partial `settings` bag (dims/rate/frames/work area/renderer/switches); see below     |
-| `set_property_expression`  | Set/clear expression on one PropertyBase — exactly one of `matchNames` \| nexrender `propertyPath`                                  |
-| `reset_layer_surface`      | Clear keys/effects/masks/styles/markers/matte/parent (flags); optional transform/expression clears                                  |
-| `delete_layer`             | Delete one timeline layer by `target`                                                                                               |
-| `create_folder`            | Create a `FolderItem` under `parentFolderId` (real inventory root id, never a magic `0`)                                            |
-| `move_project_item`        | Move items by `selector.kind: "items"` + `itemIds` into `destinationFolderId`                                                       |
-| `delete_project_item`      | Permissive AE `Item.remove()`; refuses root; may delete in-use items / recurse folders                                              |
-| `safe_delete_project_item` | Delete only when inbound refs are empty and `unknownRefsPossible` is false; empty folders only                                      |
+| Op                         | Purpose                                                                                                                                      |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `set_text_style`           | Set authored TextDocument/CharacterRange font strings (exact string; no synonym mapping)                                                     |
+| `rename_layer`             | Rename exactly one timeline layer per op (`target` id\|name + desired `layerName`)                                                           |
+| `rename_project_item`      | Rename a Project panel item by `itemId`                                                                                                      |
+| `set_layer_index`          | Reorder one layer to a 1-based `index`                                                                                                       |
+| `create_solid`             | Always create a new Solid FootageItem (name, dims, pixelAspect, color; optional folder)                                                      |
+| `replace_layer_source`     | Replace AVLayer source; evidence reports `layerIdPreserved` / `newLayerId`                                                                   |
+| `set_layer_timing`         | Set start/in/out via **integer frames** (+ optional stretch); on-grid + exact `durationFrames`; verified keyframe preservation; see notes below |
+| `set_layer_switches`       | Set timeline/layer switch booleans (`enabled`, `audioEnabled`, `timeRemapEnabled`, …); omit=preserve; full switch snapshot evidence          |
+| `set_comp_settings`        | Set composition settings via nested `target` + partial `settings` bag (dims/rate/frames/work area/renderer/switches); see below              |
+| `set_property_expression`  | Set/clear expression on one PropertyBase — exactly one of `matchNames` \| nexrender `propertyPath`                                           |
+| `set_layer_transform`      | Set authored 2D Transform values (`anchorPoint`/`position`/`scale`/`rotation`/`opacity`); omit=preserve; numeric snapshot evidence           |
+| `reset_layer_surface`      | Clear keys/effects/masks/styles/markers/matte/parent (flags); `resetTransforms` verifies AE defaults with value evidence; `clearExpressions` separate |
+| `delete_layer`             | Delete one timeline layer by `target`                                                                                                        |
+| `create_folder`            | Create a `FolderItem` under `parentFolderId` (real inventory root id, never a magic `0`)                                                     |
+| `move_project_item`        | Move items by `selector.kind: "items"` + `itemIds` into `destinationFolderId`                                                                |
+| `delete_project_item`      | Permissive AE `Item.remove()`; refuses root; may delete in-use items / recurse folders                                                       |
+| `safe_delete_project_item` | Delete only when inbound refs are empty and `unknownRefsPossible` is false; empty folders only                                               |
 
-Successful targets include **post-condition-verified** before/after evidence (apply re-reads live state after the write; `changed` only when it matches the request). See [ADR 0003](adr/0003-patch-targeting-and-post-conditions.md). Nested `target` + op-specific bags (`settings` / `switches` / `style`) follow [ADR 0004](adr/0004-patch-op-target-and-settings-bags.md). Prefer `matchNames` from `ae_get_layer` for `set_property_expression` (locale-stable); `propertyPath` splits on `->` when present, otherwise `.`.
+Successful targets include **post-condition-verified** before/after evidence (apply re-reads live state after the write; `changed` only when it matches the request). See [ADR 0003](adr/0003-patch-targeting-and-post-conditions.md). Nested `target` + op-specific bags (`settings` / `switches` / `style` / `transform`) follow [ADR 0004](adr/0004-patch-op-target-and-settings-bags.md). Prefer `matchNames` from `ae_get_layer` for `set_property_expression` (locale-stable); `propertyPath` splits on `->` when present, otherwise `.`.
 
 #### Layer targeting (id or unique name)
 
-Layer-targeting control-plane ops (`rename_layer`, `set_layer_index`, `replace_layer_source`, `set_layer_timing`, `set_layer_switches`, `set_property_expression`, `reset_layer_surface`, `delete_layer`) and each `set_text_style` `selector.kind: "layers"` entry use the same shape as `ae_get_layer`: exactly one of `compId` \| `compName`, exactly one of `layerId` \| `layerName` (case-sensitive exact match). Ambiguous names refuse before mutation with candidate lists. Prefer ids when names may collide. There is no ids-only exception for new layer-targeting ops.
+Layer-targeting control-plane ops (`rename_layer`, `set_layer_index`, `replace_layer_source`, `set_layer_timing`, `set_layer_switches`, `set_property_expression`, `set_layer_transform`, `reset_layer_surface`, `delete_layer`) and each `set_text_style` `selector.kind: "layers"` entry use the same shape as `ae_get_layer`: exactly one of `compId` \| `compName`, exactly one of `layerId` \| `layerName` (case-sensitive exact match). Ambiguous names refuse before mutation with candidate lists. Prefer ids when names may collide. There is no ids-only exception for new layer-targeting ops.
 
 `set_comp_settings` uses comps-only `target` (`compId` XOR `compName`) with the same ambiguity rules. `set_text_style` `selector.kind: "comps"` accepts `compIds` and/or `compNames` (union; at least one non-empty). Existing `{ compIds: [...] }` and `{ compId, layerId }` payloads remain valid. `all_text_layers` is unchanged. Panel item ops stay on `Item.id`.
 
@@ -113,11 +114,27 @@ Desired `layerName` is opaque (braces / `{message_10}` preserved). AE allows dup
 
 Supply only the switches to change (`enabled`, `audioEnabled`, `solo`, `shy`, `locked`, `guideLayer`, `adjustmentLayer`, `threeDLayer`, `collapseTransformation`, `frameBlending`, `motionBlur`, `timeRemapEnabled`). Omitted switches and non-switch state are preserved. Evidence `before`/`after` is a full readable switch snapshot; post-condition success depends only on supplied keys. Use this op (not `set_layer_timing`) for `timeRemapEnabled`.
 
+#### `set_layer_transform` — slot repair after replace
+
+```json
+{
+  "op": "set_layer_transform",
+  "target": { "compName": "main", "layerName": "Logo" },
+  "transform": { "anchorPoint": [300, 550], "position": [300, 550] }
+}
+```
+
+Supply only the authored Transform keys to change (`anchorPoint`, `position`, `scale` as length-2|3 arrays; `rotation` degrees; `opacity` 0–100). Omitted keys are preserved. Evidence `before`/`after` is a full readable authored/pre-expression snapshot (actual numbers, not booleans); post-condition success depends only on supplied keys. Keyframed supplied properties are refused until keys are cleared (`reset_layer_surface` with `clearKeyframes`). Authored success may still differ from post-expression on-screen values — clear/fix expressions separately. Stale-project refuse uses matching `project.fingerprint` on `ae_patch_project` (no op-level expected-current bag). Prefer this over `ae_eval_script` for slot repair after `replace_layer_source` (e.g. set Position to the new Anchor Point).
+
+`reset_layer_surface` with `resetTransforms: true` applies and verifies AE defaults (Anchor = source center, Position = composition center, Scale 100%, Rotation 0, Opacity 100) and returns authored transform value evidence under `before.transforms` / `after.transforms` — not a `cleared.transforms` boolean. That default Position is often **not** “match new Anchor Point”; use `set_layer_transform` with explicit numbers for slot geometry. `clearExpressions` remains a separate flag (not implied by `resetTransforms`). If `clearKeyframes` is false and transform props still have keys, transform reset fails rather than half-applying.
+
 #### `set_layer_timing` — source slip vs drag
 
-`set_layer_timing` writes `startFrame` / `inFrame` / `outFrame` / optional `stretch` only. It does **not** move, copy, or delete keyframes — key times stay composition-absolute. That matches **source slip** (same parent in/out window, different nested source range). It does **not** match UI “drag the layer bar” (move keys with the layer); use `ae_eval_script` for drag-with-keys until a dedicated typed op exists.
+`set_layer_timing` writes `startFrame` / `inFrame` / `outFrame` / optional `stretch` only. Successful writes **preserve** keyframe composition times and authored values: the op snapshots keys before the timing write and restores any AE-nudged keys afterward (verified post-condition — not merely “we don’t call key APIs”). That matches **source slip** (same parent in/out window, different nested source range). It does **not** match UI “drag the layer bar” (intentionally move keys with the layer); use `ae_eval_script` for drag-with-keys until a dedicated typed op exists.
 
 For source slip, supply the new `startFrame` **and** the unchanged `inFrame` / `outFrame` in one op. Setting `startFrame` alone can let After Effects nudge the trim. Assumes time remapping is off (`timeRemapEnabled` stays on `set_layer_switches`).
+
+**Frame-exact + key-preservation post-condition:** success (`changed` / `already_satisfied`) requires every supplied edge to be **on-grid** (`frame / frameRate` seconds within a tight epsilon — not merely nearest-frame rounding), exact `durationFrames` (`outFrame - inFrame`) when in/out are in scope, and `keyframesPreserved: true`. Evidence `before`/`after` includes integer frames plus raw seconds; on key failure, evidence includes a compact `keyframeDrift` summary. The op does **not** save; for critical carriers, agents SHOULD `ae_save_project` and re-read (and MAY probe boundary-frame contribution via eval/render). Persistence and render proof stay outside this op.
 
 #### `set_layer_timing` source-slip example
 

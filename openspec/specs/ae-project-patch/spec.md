@@ -30,7 +30,7 @@ The MCP server MUST expose `ae_patch_project` that applies declarative, typed mu
 
 ### Requirement: Typed operation vocabulary
 
-`ae_patch_project` MUST accept operations only through a closed, typed vocabulary. The vocabulary MUST include `set_text_style`, `create_folder`, `move_project_item`, `delete_project_item`, `rename_layer`, `rename_project_item`, `set_layer_index`, `create_solid`, `replace_layer_source`, `set_layer_timing`, `set_layer_switches`, `set_comp_settings`, `set_property_expression`, `reset_layer_surface`, `delete_layer`, and `safe_delete_project_item`. Arbitrary ExtendScript or a generic untyped property setter MUST NOT be accepted inside this tool.
+`ae_patch_project` MUST accept operations only through a closed, typed vocabulary. The vocabulary MUST include `set_text_style`, `create_folder`, `move_project_item`, `delete_project_item`, `rename_layer`, `rename_project_item`, `set_layer_index`, `create_solid`, `replace_layer_source`, `set_layer_timing`, `set_layer_switches`, `set_comp_settings`, `set_property_expression`, `set_layer_transform`, `reset_layer_surface`, `delete_layer`, and `safe_delete_project_item`. Arbitrary ExtendScript or a generic untyped property setter MUST NOT be accepted inside this tool.
 
 #### Scenario: Unknown operation rejected
 
@@ -59,12 +59,12 @@ The MCP server MUST expose `ae_patch_project` that applies declarative, typed mu
 
 #### Scenario: Control-plane ops accepted in vocabulary
 
-- **WHEN** the caller supplies a valid `rename_project_item`, `set_layer_index`, `create_solid`, `replace_layer_source`, `set_layer_timing`, `set_layer_switches`, `set_comp_settings`, `set_property_expression`, `reset_layer_surface`, `delete_layer`, or `safe_delete_project_item` operation
+- **WHEN** the caller supplies a valid `rename_project_item`, `set_layer_index`, `create_solid`, `replace_layer_source`, `set_layer_timing`, `set_layer_switches`, `set_comp_settings`, `set_property_expression`, `set_layer_transform`, `reset_layer_surface`, `delete_layer`, or `safe_delete_project_item` operation
 - **THEN** the tool MUST accept it through the same Zod-validated operations array as other typed ops
 
 ### Requirement: Id-or-name targeting for layer patch selectors
 
-Layer-targeting patch operations MUST resolve compositions and layers with the same id-or-name rules as `ae_get_layer`: exactly one composition selector (`compId` or `compName`) and exactly one layer selector (`layerId` or `layerName`) per explicit layer target; name matches MUST be case-sensitive exact matches; ambiguous names MUST refuse before mutation with candidate lists (comps: at least `id` and `name`; layers: at least `id`, `index`, and `name`); not-found MUST fail clearly. This MUST apply to every layer-targeting patch op that uses a layer `target` or per-layer selector — including `rename_layer.target`, `set_layer_index`, `replace_layer_source`, `set_layer_timing`, `set_layer_switches`, `set_property_expression`, `reset_layer_surface`, `delete_layer`, and each entry of `set_text_style` when `selector.kind` is `layers`. LayerCake MUST NOT introduce an ids-only targeting exception for a new layer-targeting op unless a superseding ADR records that exception. For `set_text_style` when `selector.kind` is `comps`, the selector MUST accept `compIds` and/or `compNames` (union; at least one non-empty), resolve each name uniquely under the same ambiguity rules, and MUST continue to accept existing `compIds`-only payloads. `selector.kind` `all_text_layers` is unchanged. Existing `set_text_style` payloads that use only `compId`+`layerId` layer refs or only `compIds` MUST remain valid.
+Layer-targeting patch operations MUST resolve compositions and layers with the same id-or-name rules as `ae_get_layer`: exactly one composition selector (`compId` or `compName`) and exactly one layer selector (`layerId` or `layerName`) per explicit layer target; name matches MUST be case-sensitive exact matches; ambiguous names MUST refuse before mutation with candidate lists (comps: at least `id` and `name`; layers: at least `id`, `index`, and `name`); not-found MUST fail clearly. This MUST apply to every layer-targeting patch op that uses a layer `target` or per-layer selector — including `rename_layer.target`, `set_layer_index`, `replace_layer_source`, `set_layer_timing`, `set_layer_switches`, `set_property_expression`, `set_layer_transform`, `reset_layer_surface`, `delete_layer`, and each entry of `set_text_style` when `selector.kind` is `layers`. LayerCake MUST NOT introduce an ids-only targeting exception for a new layer-targeting op unless a superseding ADR records that exception. For `set_text_style` when `selector.kind` is `comps`, the selector MUST accept `compIds` and/or `compNames` (union; at least one non-empty), resolve each name uniquely under the same ambiguity rules, and MUST continue to accept existing `compIds`-only payloads. `selector.kind` `all_text_layers` is unchanged. Existing `set_text_style` payloads that use only `compId`+`layerId` layer refs or only `compIds` MUST remain valid.
 
 #### Scenario: set_text_style layers by unique names
 
@@ -89,6 +89,11 @@ Layer-targeting patch operations MUST resolve compositions and layers with the s
 #### Scenario: set_layer_switches uses shared target parity
 
 - **WHEN** `set_layer_switches` supplies a valid id-or-name `target`
+- **THEN** validation and resolve MUST use the same rules as `rename_layer.target` (no ids-only special case)
+
+#### Scenario: set_layer_transform uses shared target parity
+
+- **WHEN** `set_layer_transform` supplies a valid id-or-name `target`
 - **THEN** validation and resolve MUST use the same rules as `rename_layer.target` (no ids-only special case)
 
 ### Requirement: Rename layer operation
@@ -380,12 +385,28 @@ Given a host After Effects session and the committed test fixture (or a disposab
 
 ### Requirement: Set layer timing operation
 
-`set_layer_timing` MUST set timing on one layer (layer `target`) using integer frame fields (`startFrame`, `inFrame`, `outFrame` as applicable) converted with the containing composition’s `frameRate`. The op MUST reject payloads that supply only floating-point seconds for those timing fields when frame fields are required by the schema. Optional `stretch` MAY be included with an op-specific name. The op MUST NOT accept `timeRemapEnabled` (or other layer switches); callers MUST use `set_layer_switches` for remapping and other switch toggles. The op MUST NOT move, copy, remove, or otherwise mutate keyframes or other property-tree animation; keyframe times remain composition-absolute across a successful timing write. Evidence MUST include before/after frame fields (and stretch when applicable). Protected-layer product policy is out of scope for this op. UI-equivalent “drag layer in time” (shifting keyframes with the layer bar) is out of scope for this op.
+`set_layer_timing` MUST set timing on one layer (layer `target`) using integer frame fields (`startFrame`, `inFrame`, `outFrame` as applicable) converted with the containing composition’s `frameRate`. The op MUST reject payloads that supply only floating-point seconds for those timing fields when frame fields are required by the schema. Optional `stretch` MAY be included with an op-specific name. The op MUST NOT accept `timeRemapEnabled` (or other layer switches); callers MUST use `set_layer_switches` for remapping and other switch toggles.
+
+For every supplied frame field, apply MUST write seconds as `frame / frameRate` and MUST report `changed` only when the post-read satisfies **both**: (1) nearest-integer frame equals the request (`timeToFrame` / equivalent), and (2) the edge is **on-grid** — `abs(seconds * frameRate - frame)` is within a tight implementation epsilon (frame units). When the effective in and out frames after the op are determined (from supplied fields and/or already-matching preserved edges), apply MUST also require that `durationFrames` (`outFrame - inFrame`) equals the expected span from those effective frames. Rounded-frame agreement alone MUST NOT be sufficient for `changed` when an edge is off-grid or `durationFrames` mismatches.
+
+When the timing write runs (not `already_satisfied`), apply MUST snapshot all keyframes on the target layer’s property tree before mutating timing, MUST restore any keyframes whose composition times or values drift after the timing write (AE has no `setKeyTime`; restore MAY rebuild a property’s key timeline from the snapshot), and MUST report `changed` only when every pre-write keyframe’s composition time and authored value still match the snapshot within a tight implementation epsilon. Apply MUST NOT report `changed` when any key time or value remains drifted after restore. UI-equivalent “drag layer in time” (intentionally shifting keyframes with the layer bar) remains out of scope for this op.
+
+Evidence MUST include before/after integer frame fields (`startFrame`, `inFrame`, `outFrame`, derived `durationFrames`) and raw seconds (`startTime`, `inPoint`, `outPoint`), plus stretch when applicable, and MUST include `keyframesPreserved` (boolean). On key-preservation failure, evidence MUST include a compact drift summary (property identity and before/after times) sufficient for agents to see what moved without requiring a full keyframe dump on success. The op MUST NOT save the project and MUST NOT claim persistence-across-reopen or render-contribution proof. Protected-layer product policy is out of scope for this op.
 
 #### Scenario: Frame-exact in/out
 
 - **WHEN** `set_layer_timing` supplies `inFrame` and `outFrame` for a resolvable layer
-- **THEN** apply MUST set layer in/out so post-read integer frames match the request
+- **THEN** apply MUST set layer in/out so post-read integer frames match the request and both edges are on-grid
+
+#### Scenario: Exact durationFrames
+
+- **WHEN** `set_layer_timing` supplies `inFrame` and `outFrame` such that the expected span is `outFrame - inFrame`
+- **THEN** post-condition success MUST require that re-read `durationFrames` equals that expected span exactly
+
+#### Scenario: Off-grid edge fails post-condition
+
+- **WHEN** after write the re-read seconds for a supplied edge round to the requested frame but are not on-grid within epsilon
+- **THEN** apply MUST NOT report `changed` for that target and MUST include actual after frames and seconds in evidence
 
 #### Scenario: Seconds-only timing refused
 
@@ -397,10 +418,15 @@ Given a host After Effects session and the committed test fixture (or a disposab
 - **WHEN** the caller supplies `timeRemapEnabled` on a `set_layer_timing` operation
 - **THEN** validation MUST fail before mutation
 
-#### Scenario: Keyframes unchanged by timing write
+#### Scenario: Keyframes preserved across timing write
 
 - **WHEN** `set_layer_timing` successfully changes `startFrame` and/or `inFrame`/`outFrame` on a layer that has keyframes
-- **THEN** apply MUST NOT intentionally alter those keyframes’ composition times or values as part of the op
+- **THEN** post-read composition times and authored values for those keyframes MUST match the pre-write snapshot within epsilon and evidence MUST report `keyframesPreserved: true`
+
+#### Scenario: Keyframe drift fails post-condition
+
+- **WHEN** after the timing write (and any restore attempt) a keyframe’s composition time or authored value still differs from the pre-write snapshot beyond epsilon
+- **THEN** apply MUST NOT report `changed` for that target and MUST set `keyframesPreserved: false` with a compact drift summary in evidence
 
 #### Scenario: Source slip keeps parent window
 
@@ -409,12 +435,40 @@ Given a host After Effects session and the committed test fixture (or a disposab
 
 ### Requirement: Document set_layer_timing source-slip and keyframe semantics
 
-Operator documentation for `ae_patch_project` / `set_layer_timing` MUST state that keyframes stay at absolute composition times, MUST document the source-slip recipe (new `startFrame` plus preserved `inFrame` and `outFrame` in one op), MUST warn that setting `startFrame` alone can let After Effects nudge the trim, and MUST state that UI drag-with-keys is not provided by this op (use `ae_eval_script` until a dedicated typed op exists). A brief caveat MUST note that source slip via `startFrame` assumes time remapping is not driving the visible range.
+Operator documentation for `ae_patch_project` / `set_layer_timing` MUST state that successful timing writes preserve keyframe composition times and values (snapshot/restore inside the op; not merely “the op does not call key APIs”), MUST document the source-slip recipe (new `startFrame` plus preserved `inFrame` and `outFrame` in one op), MUST warn that setting `startFrame` alone can let After Effects nudge the trim, and MUST state that UI drag-with-keys is not provided by this op (use `ae_eval_script` until a dedicated typed op exists). A brief caveat MUST note that source slip via `startFrame` assumes time remapping is not driving the visible range. Documentation MUST also state that success requires on-grid edges and exact `durationFrames` (not merely nearest-frame rounding), that evidence includes seconds as well as frames and `keyframesPreserved`, and that save/reopen plus optional boundary-frame contribution checks remain agent-composed outside this op.
 
 #### Scenario: mcp-tools documents slip vs keys
 
 - **WHEN** an operator or agent reads `docs/mcp-tools.md` for `set_layer_timing`
-- **THEN** the documentation MUST cover keyframe non-mutation, the slip payload (start + preserved in/out), the start-alone trim warning, and that drag-with-keys is out of scope for this op
+- **THEN** the documentation MUST cover verified keyframe preservation, the slip payload (start + preserved in/out), the start-alone trim warning, and that drag-with-keys is out of scope for this op
+
+#### Scenario: mcp-tools documents on-grid exactness
+
+- **WHEN** an operator or agent reads `docs/mcp-tools.md` for `set_layer_timing`
+- **THEN** the documentation MUST state on-grid / exact-durationFrames post-conditions, seconds-in-evidence, and that persistence/render probes are outside the op
+
+### Requirement: set_layer_timing on-grid evidence contract
+
+Per-target evidence for `set_layer_timing` MUST expose both integer frame fields and raw layer timing seconds so agents can detect half-frame / off-grid edges without a separate eval. `already_satisfied` MUST apply only when every supplied field already matches on integer frames and is on-grid (and durationFrames matches when in/out are in scope).
+
+#### Scenario: Evidence includes seconds
+
+- **WHEN** `set_layer_timing` returns target evidence after a write attempt
+- **THEN** `before` and `after` MUST include `startTime`, `inPoint`, and `outPoint` seconds alongside integer frame fields and `durationFrames`
+
+### Requirement: set_layer_timing keyframe snapshot evidence
+
+Per-target evidence for `set_layer_timing` MUST expose `keyframesPreserved` so agents can trust key-time preservation without a separate inspect pass on the success path. When preservation fails, evidence MUST include a compact `keyframeDrift` (or equivalent) summary identifying at least property path and before/after times for drifted keys (implementation MAY cap the list length and mark truncation).
+
+#### Scenario: Success marks keys preserved
+
+- **WHEN** `set_layer_timing` reports `changed` or `already_satisfied` for a target
+- **THEN** evidence MUST include `keyframesPreserved: true`
+
+#### Scenario: Failure includes drift summary
+
+- **WHEN** `set_layer_timing` fails because keyframes could not be preserved
+- **THEN** evidence MUST include `keyframesPreserved: false` and a compact drift summary with before/after times
 
 ### Requirement: Set layer switches operation
 
@@ -575,14 +629,78 @@ When applying `set_comp_settings`, if `settings.durationFrames` is supplied and 
 - **WHEN** `create_solid` is applied twice with the same name, dimensions, and color
 - **THEN** each successful apply MUST return a distinct `itemId`
 
+### Requirement: Set layer transform operation
+
+`set_layer_transform` MUST set caller-supplied authored Transform values on exactly one layer identified by layer `target` (id-or-name inspect parity). The payload MUST include a nested `transform` object that accepts only an explicit allowlist of keys: `anchorPoint` (number array), `position` (number array), `scale` (number array), `rotation` (number, degrees), and `opacity` (number). Validation MUST require at least one allowlisted key and MUST reject unknown keys before mutation. Spatial arrays MUST have length 2 or 3. Apply MUST write only keys present in `transform` and MUST NOT intentionally change omitted transform keys or non-transform layer state (timing, sources, effects, masks, parenting, switches, expressions, names, or index). The op MUST NOT accept an expected-current / `if_match` bag; stale-project refuse remains the existing `ae_patch_project` `project.path` / `project.fingerprint` guards. Per-target evidence MUST include a full transform-snapshot `before` and `after` covering the allowlist keys readable on that layer, using actual authored/pre-expression numeric values (not boolean flags and not post-expression evaluated samples). Post-condition success MUST require that each supplied `transform` key’s re-read authored/pre-expression value equals the request within epsilon; unspecified keys MUST NOT affect post-condition success. Already-matching supplied keys MUST report `already_satisfied` when detectable without an unnecessary write. If a supplied property has keyframes (`numKeys > 0`), apply MUST refuse that target before write with a clear message. Inapplicable attributes for a layer type MUST fail that target (with actual `after` when readable), not silently skip. The op MUST NOT save the project and MUST NOT claim pixel/render proof. The op MUST NOT accept a generic untyped property/matchName setter bag.
+
+#### Scenario: Slot repair sets Position to match new Anchor
+
+- **WHEN** `set_layer_transform` is applied with `transform.position` `[300, 550]` on a resolvable layer whose authored Anchor Point is already `[300, 550]` and Position is `[960, 540]`
+- **THEN** apply MUST set Position to `[300, 550]` within epsilon, MUST leave omitted transform keys unchanged, MUST report actual numeric before/after snapshots including both Position and Anchor Point when readable, and MUST report `changed` only after post-condition success
+
+#### Scenario: Partial bag preserves omitted keys
+
+- **WHEN** `set_layer_transform` supplies only `transform.opacity` `50`
+- **THEN** apply MUST change opacity to 50 within epsilon and MUST NOT intentionally alter Anchor Point, Position, Scale, or Rotation
+
+#### Scenario: Empty or unknown transform refused
+
+- **WHEN** `transform` is empty or contains a key outside the allowlist
+- **THEN** validation MUST fail before any mutation
+
+#### Scenario: Ambiguous layer name refused
+
+- **WHEN** `target.layerName` matches more than one layer in the resolved composition
+- **THEN** the tool MUST refuse before mutation and MUST include a candidate list (at least `id`, `index`, and `name`)
+
+#### Scenario: Already satisfied
+
+- **WHEN** every supplied `transform` key already equals the live authored value within epsilon
+- **THEN** that target MUST report `already_satisfied` with full before/after snapshots and MUST NOT be reported as newly `changed`
+
+#### Scenario: Keyframed property refused
+
+- **WHEN** a supplied transform property has one or more keyframes
+- **THEN** apply MUST refuse that target before write and MUST NOT report `changed`
+
+#### Scenario: Post-condition mismatch is failure with actual after
+
+- **WHEN** a write completes but a supplied transform key’s re-read authored value does not match the request within epsilon
+- **THEN** that target MUST be reported as `failed`, evidence `after` MUST contain the actual re-read transform snapshot when readable, and the apply response MUST NOT claim overall success
+
+#### Scenario: No implicit save
+
+- **WHEN** `set_layer_transform` apply completes
+- **THEN** the tool MUST NOT save the project to disk as a side effect of this op
+
+#### Scenario: Generic property setter rejected
+
+- **WHEN** the caller attempts a generic untyped property-value or matchName bag as a patch op in place of `set_layer_transform`
+- **THEN** validation MUST reject it as outside the closed vocabulary
+
 ### Requirement: Reset layer surface operation
 
-`reset_layer_surface` MUST clear caller-selected authored surface features on one layer (layer `target`): keyframes, effects, masks, layer styles, markers, track matte, parenting, and/or listed switches, via explicit boolean flags in the op payload. Optional `resetTransforms` MUST reset authored transform properties to AE defaults for that layer/source when true. Optional `clearExpressions` MUST clear expressions when true. The op MUST NOT claim pixel-identical render proof. Evidence MUST report which categories were cleared and verified post-counts/flags.
+`reset_layer_surface` MUST clear caller-selected authored surface features on one layer (layer `target`): keyframes, effects, masks, layer styles, markers, track matte, parenting, and/or listed switches, via explicit boolean flags in the op payload. Optional `resetTransforms` MUST reset authored 2D Transform baseline properties (`anchorPoint`, `position`, `scale`, `rotation`, `opacity`) to AE defaults for that layer/source when true — at minimum Anchor Point to source center when readable, Position to composition center when readable, Scale to 100%, Rotation to 0, Opacity to 100 — and MUST verify those authored/pre-expression values via post-condition re-read. When `resetTransforms` is true, evidence MUST include actual authored numeric transform before/after values for the baseline keys and MUST NOT use a `cleared.transforms` boolean as proof of transform reset. `resetTransforms` MUST NOT clear expressions; optional `clearExpressions` remains a separate flag that MUST clear expressions when true. The op MUST NOT claim pixel-identical render proof. Evidence MUST report which non-transform categories were cleared and verified post-counts/flags, and MUST report transform value evidence when `resetTransforms` is true. If transform reset was requested and verification fails, the target MUST fail (MUST NOT succeed solely because other surface categories cleared).
 
 #### Scenario: Clear effects and keys
 
 - **WHEN** flags request clearing effects and keyframes
 - **THEN** apply MUST remove those features and post-read MUST show zero effects and no remaining keys on cleared properties when readable
+
+#### Scenario: resetTransforms applies and verifies defaults with value evidence
+
+- **WHEN** `resetTransforms` is true on a resolvable layer whose Position is not at composition center
+- **THEN** apply MUST write AE default authored transform values for the 2D baseline, MUST re-read those authored values, MUST include actual numeric transform before/after in evidence, MUST NOT emit `cleared.transforms` as the proof signal, and MUST report target success for the transform work only when defaults match within epsilon
+
+#### Scenario: resetTransforms must not lie
+
+- **WHEN** `resetTransforms` is true but authored Position (or another baseline key) remains different from the AE default after the op’s transform write attempt
+- **THEN** apply MUST NOT treat the target as successful solely because other surface categories cleared, and evidence MUST still expose the actual authored after transform snapshot when readable
+
+#### Scenario: resetTransforms does not clear expressions
+
+- **WHEN** `resetTransforms` is true and `clearExpressions` is false
+- **THEN** apply MUST NOT clear property expressions as a side effect of transform reset
 
 ### Requirement: Delete layer operation
 
@@ -619,7 +737,7 @@ When applying `set_comp_settings`, if `settings.durationFrames` is supplied and 
 
 ### Requirement: Control-plane ops use post-conditions and layer target parity
 
-Layer-targeting control-plane ops (`set_layer_index`, `replace_layer_source`, `set_layer_timing`, `set_layer_switches`, `set_property_expression`, `reset_layer_surface`, `delete_layer`) MUST use the same id-or-name layer `target` rules as `rename_layer`. These ops MUST report `changed` only after post-condition re-read success and MUST use `already_satisfied` when the desired state is already present and detectable.
+Layer-targeting control-plane ops (`set_layer_index`, `replace_layer_source`, `set_layer_timing`, `set_layer_switches`, `set_property_expression`, `set_layer_transform`, `reset_layer_surface`, `delete_layer`) MUST use the same id-or-name layer `target` rules as `rename_layer`. These ops MUST report `changed` only after post-condition re-read success and MUST use `already_satisfied` when the desired state is already present and detectable.
 
 #### Scenario: Ambiguous layer name refused
 

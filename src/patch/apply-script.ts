@@ -887,6 +887,18 @@ function resolveOp(op) {
       targetCount: 1
     };
   }
+  if (op.op === "set_layer_transform") {
+    var transformPair;
+    try {
+      transformPair = resolveLayerTarget(op.target);
+    } catch (xtre) {
+      return { error: formatResolveError(xtre) };
+    }
+    return {
+      plan: { op: op, kind: "set_layer_transform", targets: [transformPair] },
+      targetCount: 1
+    };
+  }
   if (op.op === "reset_layer_surface") {
     var resetPair;
     try {
@@ -942,6 +954,7 @@ function applyPlan(plan, opResult) {
   if (plan.kind === "set_layer_switches") return applySetLayerSwitches(plan, opResult);
   if (plan.kind === "set_comp_settings") return applySetCompSettings(plan, opResult);
   if (plan.kind === "set_property_expression") return applySetPropertyExpression(plan, opResult);
+  if (plan.kind === "set_layer_transform") return applySetLayerTransform(plan, opResult);
   if (plan.kind === "reset_layer_surface") return applyResetLayerSurface(plan, opResult);
   if (plan.kind === "delete_layer") return applyDeleteLayer(plan, opResult);
   if (plan.kind === "safe_delete_project_item") return applySafeDeleteProjectItem(plan, opResult);

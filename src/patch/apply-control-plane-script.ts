@@ -66,12 +66,7 @@ function resolvePropertySelector(layer, op) {
 }
 
 function readLayerTimingFrames(layer, frameRate) {
-  return {
-    startFrame: timeToFrame(layer.startTime, frameRate),
-    inFrame: timeToFrame(layer.inPoint, frameRate),
-    outFrame: timeToFrame(layer.outPoint, frameRate),
-    stretch: layer.stretch
-  };
+  return layerTimingFrames(layer, frameRate);
 }
 
 function readLayerSwitches(layer) {
@@ -204,6 +199,211 @@ function orderedSwitchWriteKeys(switches) {
     ordered.push("locked");
   }
   return ordered;
+}
+
+/** Absolute epsilon for authored transform component compares (spatial/scale/rotation/opacity). */
+var TRANSFORM_EPSILON = 0.001;
+
+var TRANSFORM_KEYS = ["anchorPoint", "position", "scale", "rotation", "opacity"];
+
+function isAeArray(v) {
+  return typeof v === "object" && v !== null && v.length !== undefined;
+}
+
+function getTransformProp(layer, key) {
+  var matchName = transformMatchName(key);
+  if (!matchName) return null;
+  try {
+    var xf = layer.property("ADBE Transform Group");
+    if (!xf) return null;
+    return xf.property(matchName);
+  } catch (e) {
+    return null;
+  }
+}
+
+function normalizeTransformValue(raw) {
+  if (raw === null || raw === undefined) return undefined;
+  if (isAeArray(raw)) {
+    var out = [];
+    for (var i = 0; i < raw.length; i++) {
+      out.push(Number(raw[i]));
+    }
+    return out;
+  }
+  var n = Number(raw);
+  if (isNaN(n)) return undefined;
+  return n;
+}
+
+/** Authored/pre-expression sample; prefer valueAtTime(..., true) like inspect. */
+function readAuthoredPropValue(prop, atTime) {
+  try {
+    return normalizeTransformValue(prop.valueAtTime(atTime, true));
+  } catch (e) {
+    try {
+      return normalizeTransformValue(prop.value);
+    } catch (e2) {
+      return undefined;
+    }
+  }
+}
+
+function readLayerTransform(layer) {
+  var atTime = 0;
+  try {
+    atTime = layer.containingComp.time;
+  } catch (e) {}
+  var out = {};
+  var i;
+  for (i = 0; i < TRANSFORM_KEYS.length; i++) {
+    var key = TRANSFORM_KEYS[i];
+    var prop = getTransformProp(layer, key);
+    if (!prop) continue;
+    var val = readAuthoredPropValue(prop, atTime);
+    if (val !== undefined) out[key] = val;
+  }
+  return out;
+}
+
+function transformValuesEqual(a, b) {
+  if (a === undefined || b === undefined) return false;
+  var aArr = isAeArray(a);
+  var bArr = isAeArray(b);
+  if (aArr || bArr) {
+    if (!aArr || !bArr) return false;
+    if (a.length !== b.length) return false;
+    var i;
+    for (i = 0; i < a.length; i++) {
+      if (Math.abs(Number(a[i]) - Number(b[i])) > TRANSFORM_EPSILON) return false;
+    }
+    return true;
+  }
+  return Math.abs(Number(a) - Number(b)) <= TRANSFORM_EPSILON;
+}
+
+function orderedTransformWriteKeys(transform) {
+  var supplied = [];
+  var i;
+  for (i = 0; i < TRANSFORM_KEYS.length; i++) {
+    if (transform[TRANSFORM_KEYS[i]] !== undefined) {
+      supplied.push(TRANSFORM_KEYS[i]);
+    }
+  }
+  return supplied;
+}
+
+function keyframedTransformKeys(layer, keys) {
+  var list = keys || TRANSFORM_KEYS;
+  var keyframed = [];
+  var i;
+  for (i = 0; i < list.length; i++) {
+    var key = list[i];
+    var prop = getTransformProp(layer, key);
+    if (!prop) continue;
+    try {
+      if (prop.numKeys > 0) keyframed.push(key);
+    } catch (ke) {}
+  }
+  return keyframed;
+}
+
+function defaultTransformValue(layer, comp, key, currentVal) {
+  var len = 2;
+  if (isAeArray(currentVal)) {
+    len = currentVal.length;
+  } else {
+    try {
+      if (layer.threeDLayer) len = 3;
+    } catch (e) {}
+  }
+  if (key === "anchorPoint") {
+    var srcW = 0;
+    var srcH = 0;
+    try {
+      if (layer.source) {
+        srcW = Number(layer.source.width);
+        srcH = Number(layer.source.height);
+      }
+    } catch (se) {}
+    if (len >= 3) return [srcW / 2, srcH / 2, 0];
+    return [srcW / 2, srcH / 2];
+  }
+  if (key === "position") {
+    if (len >= 3) return [Number(comp.width) / 2, Number(comp.height) / 2, 0];
+    return [Number(comp.width) / 2, Number(comp.height) / 2];
+  }
+  if (key === "scale") {
+    if (len >= 3) return [100, 100, 100];
+    return [100, 100];
+  }
+  if (key === "rotation") return 0;
+  return 100; // opacity
+}
+
+function defaultLayerTransform(layer, comp) {
+  var current = readLayerTransform(layer);
+  var out = {};
+  var i;
+  for (i = 0; i < TRANSFORM_KEYS.length; i++) {
+    var key = TRANSFORM_KEYS[i];
+    out[key] = defaultTransformValue(layer, comp, key, current[key]);
+  }
+  return out;
+}
+
+function coerceTransformArray(value, currentVal) {
+  if (!isAeArray(value)) return value;
+  var curLen = isAeArray(currentVal) ? currentVal.length : value.length;
+  if (value.length === curLen) return value;
+  // AE often exposes Position/Anchor/Scale as length 3 even on 2D layers.
+  if (value.length === 2 && curLen === 3) {
+    return [Number(value[0]), Number(value[1]), 0];
+  }
+  if (value.length === 3 && curLen === 2) {
+    return [Number(value[0]), Number(value[1])];
+  }
+  return value;
+}
+
+function writeTransformProp(prop, value) {
+  prop.setValue(value);
+}
+
+/**
+ * Write desired transform keys then re-read. Caller must refuse keyframed props first.
+ * @returns {{ after: object, mismatched: string[], writeError: string|null }}
+ */
+function writeAndVerifyTransforms(layer, desiredByKey, keys) {
+  var list = keys || TRANSFORM_KEYS;
+  var i;
+  var key;
+  var prop;
+  try {
+    for (i = 0; i < list.length; i++) {
+      key = list[i];
+      if (desiredByKey[key] === undefined) continue;
+      prop = getTransformProp(layer, key);
+      if (!prop) continue;
+      writeTransformProp(prop, desiredByKey[key]);
+    }
+  } catch (we) {
+    var afterErr = {};
+    try {
+      afterErr = readLayerTransform(layer);
+    } catch (ae) {}
+    return { after: afterErr, mismatched: [], writeError: String(we) };
+  }
+  var after = readLayerTransform(layer);
+  var mismatched = [];
+  for (i = 0; i < list.length; i++) {
+    key = list[i];
+    if (desiredByKey[key] === undefined) continue;
+    if (!transformValuesEqual(after[key], desiredByKey[key])) {
+      mismatched.push(key);
+    }
+  }
+  return { after: after, mismatched: mismatched, writeError: null };
 }
 
 function layerByIdInComp(comp, layerId) {
@@ -539,6 +739,333 @@ function applyReplaceLayerSource(plan, opResult) {
   }
 }
 
+/** Nearest-frame + on-grid (on-grid alone implies timeToFrame equality within epsilon). */
+function timingEdgeOk(seconds, frame, frameRate) {
+  return isOnGridFrame(seconds, frame, frameRate);
+}
+
+function layerTimingPostConditionError(op, snapshot, preserved, frameRate) {
+  if (op.startFrame !== undefined && !timingEdgeOk(snapshot.startTime, op.startFrame, frameRate)) {
+    return "Post-condition failed: timing edge off-grid or frames did not match request";
+  }
+  if (op.inFrame !== undefined && !timingEdgeOk(snapshot.inPoint, op.inFrame, frameRate)) {
+    return "Post-condition failed: timing edge off-grid or frames did not match request";
+  }
+  if (op.outFrame !== undefined && !timingEdgeOk(snapshot.outPoint, op.outFrame, frameRate)) {
+    return "Post-condition failed: timing edge off-grid or frames did not match request";
+  }
+  if (op.stretch !== undefined && snapshot.stretch !== op.stretch) {
+    return "Post-condition failed: timing frames did not match request";
+  }
+  // When both effective edges are determined, require both on-grid (implies exact durationFrames).
+  if (op.inFrame !== undefined || op.outFrame !== undefined) {
+    var wantIn = null;
+    var wantOut = null;
+    if (op.inFrame !== undefined) {
+      wantIn = op.inFrame;
+    } else if (timingEdgeOk(preserved.inPoint, preserved.inFrame, frameRate)) {
+      wantIn = preserved.inFrame;
+    }
+    if (op.outFrame !== undefined) {
+      wantOut = op.outFrame;
+    } else if (timingEdgeOk(preserved.outPoint, preserved.outFrame, frameRate)) {
+      wantOut = preserved.outFrame;
+    }
+    if (
+      wantIn !== null &&
+      wantOut !== null &&
+      (!timingEdgeOk(snapshot.inPoint, wantIn, frameRate) ||
+        !timingEdgeOk(snapshot.outPoint, wantOut, frameRate))
+    ) {
+      return "Post-condition failed: timing edge off-grid or frames did not match request";
+    }
+  }
+  return null;
+}
+
+/** Seconds; catches AE nudges (~0.02s) while tolerating float noise after fps churn. */
+var KEY_TIME_EPSILON = 1e-4;
+var KEYFRAME_DRIFT_CAP = 8;
+
+function resolvePropByMatchNames(layer, matchNames) {
+  var cur = layer;
+  for (var i = 0; i < matchNames.length; i++) {
+    try {
+      cur = cur.property(matchNames[i]);
+    } catch (e) {
+      return null;
+    }
+    if (!cur) return null;
+  }
+  return cur;
+}
+
+function keyValuesEqual(a, b) {
+  if (a === b) return true;
+  try {
+    if (typeof a === "number" || typeof b === "number") {
+      return Math.abs(Number(a) - Number(b)) <= KEY_TIME_EPSILON;
+    }
+  } catch (e) {}
+  try {
+    var aLen = a !== null && a !== undefined && a.length !== undefined && typeof a !== "string";
+    var bLen = b !== null && b !== undefined && b.length !== undefined && typeof b !== "string";
+    if (aLen && bLen) {
+      if (a.length !== b.length) return false;
+      for (var i = 0; i < a.length; i++) {
+        if (Math.abs(Number(a[i]) - Number(b[i])) > KEY_TIME_EPSILON) return false;
+      }
+      return true;
+    }
+  } catch (e2) {}
+  try {
+    if (a.comment !== undefined || b.comment !== undefined) {
+      return String(a.comment || "") === String(b.comment || "");
+    }
+  } catch (e3) {}
+  // Opaque values (TextDocument, Shape, …): times are the hard contract.
+  return true;
+}
+
+function snapshotKeyEntry(prop, keyIndex) {
+  var entry = {
+    time: prop.keyTime(keyIndex),
+    value: prop.keyValue(keyIndex)
+  };
+  try {
+    entry.inInterp = prop.keyInInterpolationType(keyIndex);
+    entry.outInterp = prop.keyOutInterpolationType(keyIndex);
+  } catch (e) {}
+  try {
+    entry.inEase = prop.keyInTemporalEase(keyIndex);
+    entry.outEase = prop.keyOutTemporalEase(keyIndex);
+  } catch (e) {}
+  try {
+    entry.inSpatial = prop.keyInSpatialTangent(keyIndex);
+    entry.outSpatial = prop.keyOutSpatialTangent(keyIndex);
+  } catch (e) {}
+  try {
+    entry.temporalContinuous = prop.keyTemporalContinuous(keyIndex);
+    entry.temporalAutoBezier = prop.keyTemporalAutoBezier(keyIndex);
+  } catch (e) {}
+  try {
+    entry.spatialContinuous = prop.keySpatialContinuous(keyIndex);
+    entry.spatialAutoBezier = prop.keySpatialAutoBezier(keyIndex);
+  } catch (e) {}
+  try {
+    entry.roving = prop.keyRoving(keyIndex);
+  } catch (e) {}
+  return entry;
+}
+
+function walkSnapshotKeyedProp(prop, parentPath, out) {
+  var matchName = "";
+  try {
+    matchName = String(prop.matchName);
+  } catch (e) {
+    return;
+  }
+  if (!matchName) return;
+  var path = parentPath.concat([matchName]);
+  var isGroup = false;
+  try {
+    isGroup = prop.propertyType !== PropertyType.PROPERTY;
+  } catch (e) {
+    return;
+  }
+  if (isGroup) {
+    var nProps = 0;
+    try {
+      nProps = prop.numProperties;
+    } catch (e) {
+      return;
+    }
+    for (var i = 1; i <= nProps; i++) {
+      try {
+        walkSnapshotKeyedProp(prop.property(i), path, out);
+      } catch (e) {}
+    }
+    return;
+  }
+  var nKeys = 0;
+  try {
+    nKeys = prop.numKeys;
+  } catch (e) {
+    return;
+  }
+  if (!nKeys || nKeys < 1) return;
+  var keys = [];
+  for (var k = 1; k <= nKeys; k++) {
+    try {
+      keys.push(snapshotKeyEntry(prop, k));
+    } catch (e) {
+      return;
+    }
+  }
+  out.push({ matchNames: path, keys: keys });
+}
+
+function snapshotLayerKeyframes(layer) {
+  var out = [];
+  var n = 0;
+  try {
+    n = layer.numProperties;
+  } catch (e) {
+    return out;
+  }
+  for (var i = 1; i <= n; i++) {
+    try {
+      walkSnapshotKeyedProp(layer.property(i), [], out);
+    } catch (e) {}
+  }
+  return out;
+}
+
+function propertyKeysMatchSnapshot(prop, keys) {
+  var n = 0;
+  try {
+    n = prop.numKeys;
+  } catch (e) {
+    return false;
+  }
+  if (n !== keys.length) return false;
+  for (var k = 0; k < keys.length; k++) {
+    try {
+      if (Math.abs(Number(prop.keyTime(k + 1)) - Number(keys[k].time)) >= KEY_TIME_EPSILON) {
+        return false;
+      }
+      if (!keyValuesEqual(prop.keyValue(k + 1), keys[k].value)) {
+        return false;
+      }
+    } catch (e) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function layerKeysMatchSnapshot(layer, snapshot) {
+  for (var i = 0; i < snapshot.length; i++) {
+    var prop = resolvePropByMatchNames(layer, snapshot[i].matchNames);
+    if (!prop || !propertyKeysMatchSnapshot(prop, snapshot[i].keys)) return false;
+  }
+  return true;
+}
+
+function collectKeyframeDrift(layer, snapshot) {
+  var drift = [];
+  var truncated = false;
+  for (var i = 0; i < snapshot.length; i++) {
+    var entry = snapshot[i];
+    var prop = resolvePropByMatchNames(layer, entry.matchNames);
+    var beforeTime = entry.keys.length ? entry.keys[0].time : null;
+    var afterTime = null;
+    var drifted = false;
+    if (!prop) {
+      drifted = true;
+    } else {
+      try {
+        if (prop.numKeys !== entry.keys.length) {
+          drifted = true;
+          if (prop.numKeys > 0) afterTime = prop.keyTime(1);
+        } else {
+          for (var k = 0; k < entry.keys.length; k++) {
+            var gotTime = prop.keyTime(k + 1);
+            if (
+              Math.abs(Number(gotTime) - Number(entry.keys[k].time)) >= KEY_TIME_EPSILON ||
+              !keyValuesEqual(prop.keyValue(k + 1), entry.keys[k].value)
+            ) {
+              drifted = true;
+              beforeTime = entry.keys[k].time;
+              afterTime = gotTime;
+              break;
+            }
+          }
+        }
+      } catch (e) {
+        drifted = true;
+      }
+    }
+    if (!drifted) continue;
+    if (drift.length < KEYFRAME_DRIFT_CAP) {
+      drift.push({
+        matchNames: entry.matchNames,
+        beforeTime: beforeTime,
+        afterTime: afterTime
+      });
+    } else {
+      truncated = true;
+    }
+  }
+  return { drift: drift, truncated: truncated };
+}
+
+function restorePropertyKeys(prop, keys) {
+  clearPropertyKeys(prop);
+  for (var k = 0; k < keys.length; k++) {
+    var key = keys[k];
+    var idx = prop.addKey(key.time);
+    try {
+      prop.setValueAtKey(idx, key.value);
+    } catch (e) {
+      try {
+        prop.setValueAtTime(key.time, key.value);
+        idx = prop.nearestKeyIndex(key.time);
+      } catch (e2) {}
+    }
+    try {
+      if (key.inInterp !== undefined && key.outInterp !== undefined) {
+        prop.setInterpolationTypeAtKey(idx, key.inInterp, key.outInterp);
+      }
+    } catch (e) {}
+    try {
+      if (key.inEase !== undefined && key.outEase !== undefined) {
+        prop.setTemporalEaseAtKey(idx, key.inEase, key.outEase);
+      }
+    } catch (e) {}
+    try {
+      if (key.inSpatial !== undefined && key.outSpatial !== undefined) {
+        prop.setSpatialTangentsAtKey(idx, key.inSpatial, key.outSpatial);
+      }
+    } catch (e) {}
+    try {
+      if (key.temporalContinuous !== undefined) {
+        prop.setTemporalContinuousAtKey(idx, key.temporalContinuous);
+      }
+    } catch (e) {}
+    try {
+      if (key.temporalAutoBezier !== undefined) {
+        prop.setTemporalAutoBezierAtKey(idx, key.temporalAutoBezier);
+      }
+    } catch (e) {}
+    try {
+      if (key.spatialContinuous !== undefined) {
+        prop.setSpatialContinuousAtKey(idx, key.spatialContinuous);
+      }
+    } catch (e) {}
+    try {
+      if (key.spatialAutoBezier !== undefined) {
+        prop.setSpatialAutoBezierAtKey(idx, key.spatialAutoBezier);
+      }
+    } catch (e) {}
+    try {
+      if (key.roving !== undefined) {
+        prop.setRovingAtKey(idx, key.roving);
+      }
+    } catch (e) {}
+  }
+}
+
+function restoreLayerKeyframes(layer, snapshot) {
+  for (var i = 0; i < snapshot.length; i++) {
+    var prop = resolvePropByMatchNames(layer, snapshot[i].matchNames);
+    if (!prop) continue;
+    if (!propertyKeysMatchSnapshot(prop, snapshot[i].keys)) {
+      restorePropertyKeys(prop, snapshot[i].keys);
+    }
+  }
+}
+
 function applySetLayerTiming(plan, opResult) {
   var t = plan.targets[0];
   var op = plan.op;
@@ -552,17 +1079,14 @@ function applySetLayerTiming(plan, opResult) {
     status: "failed",
     before: before
   };
-  var already = true;
-  if (op.startFrame !== undefined && before.startFrame !== op.startFrame) already = false;
-  if (op.inFrame !== undefined && before.inFrame !== op.inFrame) already = false;
-  if (op.outFrame !== undefined && before.outFrame !== op.outFrame) already = false;
-  if (op.stretch !== undefined && before.stretch !== op.stretch) already = false;
-  if (already) {
+  if (layerTimingPostConditionError(op, before, before, frameRate) === null) {
     targetResult.status = "already_satisfied";
     targetResult.after = before;
+    targetResult.keyframesPreserved = true;
     opResult.targets.push(targetResult);
     return { anyChanged: false, anyFailed: false, applyError: null };
   }
+  var keySnapshot = snapshotLayerKeyframes(t.layer);
   try {
     if (op.startFrame !== undefined) {
       t.layer.startTime = frameToTime(op.startFrame, frameRate);
@@ -576,30 +1100,46 @@ function applySetLayerTiming(plan, opResult) {
     if (op.stretch !== undefined) {
       t.layer.stretch = op.stretch;
     }
+    if (keySnapshot.length > 0 && !layerKeysMatchSnapshot(t.layer, keySnapshot)) {
+      restoreLayerKeyframes(t.layer, keySnapshot);
+    }
     var after = readLayerTimingFrames(t.layer, frameRate);
     targetResult.after = after;
-    var ok = true;
-    if (op.startFrame !== undefined && after.startFrame !== op.startFrame) ok = false;
-    if (op.inFrame !== undefined && after.inFrame !== op.inFrame) ok = false;
-    if (op.outFrame !== undefined && after.outFrame !== op.outFrame) ok = false;
-    if (op.stretch !== undefined && after.stretch !== op.stretch) ok = false;
-    if (ok) {
-      targetResult.status = "changed";
+    var postErr = layerTimingPostConditionError(op, after, before, frameRate);
+    if (postErr !== null) {
+      targetResult.status = "failed";
+      targetResult.message = postErr;
+      targetResult.keyframesPreserved = keySnapshot.length === 0 || layerKeysMatchSnapshot(t.layer, keySnapshot);
       opResult.targets.push(targetResult);
-      return { anyChanged: true, anyFailed: false, applyError: null };
+      return { anyChanged: true, anyFailed: true, applyError: targetResult.message };
     }
-    targetResult.status = "failed";
-    targetResult.message = "Post-condition failed: timing frames did not match request";
+    if (keySnapshot.length > 0 && !layerKeysMatchSnapshot(t.layer, keySnapshot)) {
+      var driftInfo = collectKeyframeDrift(t.layer, keySnapshot);
+      targetResult.status = "failed";
+      targetResult.message = "Post-condition failed: keyframes not preserved after timing write";
+      targetResult.keyframesPreserved = false;
+      targetResult.keyframeDrift = driftInfo.drift;
+      if (driftInfo.truncated) targetResult.keyframeDriftTruncated = true;
+      opResult.targets.push(targetResult);
+      return { anyChanged: true, anyFailed: true, applyError: targetResult.message };
+    }
+    targetResult.status = "changed";
+    targetResult.keyframesPreserved = true;
     opResult.targets.push(targetResult);
-    return { anyChanged: true, anyFailed: true, applyError: targetResult.message };
+    return { anyChanged: true, anyFailed: false, applyError: null };
   } catch (te) {
     targetResult.status = "failed";
     targetResult.message = String(te);
+    targetResult.keyframesPreserved = false;
+    var timingMutated = true;
     try {
       targetResult.after = readLayerTimingFrames(t.layer, frameRate);
-    } catch (ae) {}
+      timingMutated = JSON.stringify(targetResult.after) !== JSON.stringify(before);
+    } catch (ae) {
+      timingMutated = true;
+    }
     opResult.targets.push(targetResult);
-    return { anyChanged: false, anyFailed: true, applyError: String(te) };
+    return { anyChanged: timingMutated, anyFailed: true, applyError: String(te) };
   }
 }
 
@@ -675,11 +1215,143 @@ function applySetLayerSwitches(plan, opResult) {
   } catch (se) {
     targetResult.status = "failed";
     targetResult.message = String(se);
+    var switchMutated = true;
     try {
       targetResult.after = readLayerSwitches(t.layer);
-    } catch (ae) {}
+      switchMutated = JSON.stringify(targetResult.after) !== JSON.stringify(before);
+    } catch (ae) {
+      switchMutated = true;
+    }
     opResult.targets.push(targetResult);
-    return { anyChanged: false, anyFailed: true, applyError: String(se) };
+    return { anyChanged: switchMutated, anyFailed: true, applyError: String(se) };
+  }
+}
+
+function applySetLayerTransform(plan, opResult) {
+  var t = plan.targets[0];
+  var op = plan.op;
+  var transform = op.transform || {};
+  var before = readLayerTransform(t.layer);
+  var targetResult = {
+    compId: t.comp.id,
+    layerId: t.layer.id,
+    compName: t.comp.name,
+    layerName: t.layer.name,
+    status: "failed",
+    before: before
+  };
+  var writeKeys = orderedTransformWriteKeys(transform);
+  if (writeKeys.length === 0) {
+    targetResult.message = "No transform keys supplied";
+    opResult.targets.push(targetResult);
+    return { anyChanged: false, anyFailed: true, applyError: targetResult.message };
+  }
+  var i;
+  var key;
+  var prop;
+  var inapplicable = [];
+  var lengthMismatch = [];
+  var coerced = {};
+  for (i = 0; i < writeKeys.length; i++) {
+    key = writeKeys[i];
+    prop = getTransformProp(t.layer, key);
+    if (!prop || before[key] === undefined) {
+      inapplicable.push(key);
+      continue;
+    }
+    var want = transform[key];
+    var cur = before[key];
+    var wantArr = isAeArray(want);
+    var curArr = isAeArray(cur);
+    if (wantArr !== curArr) {
+      lengthMismatch.push(key);
+      continue;
+    }
+    if (wantArr && curArr) {
+      var coercedWant = coerceTransformArray(want, cur);
+      if (!isAeArray(coercedWant) || coercedWant.length !== cur.length) {
+        lengthMismatch.push(key);
+        continue;
+      }
+      coerced[key] = coercedWant;
+    } else {
+      coerced[key] = want;
+    }
+  }
+  if (inapplicable.length > 0) {
+    targetResult.after = before;
+    targetResult.message =
+      "Transform key(s) not applicable on this layer: " + inapplicable.join(", ");
+    opResult.targets.push(targetResult);
+    return { anyChanged: false, anyFailed: true, applyError: targetResult.message };
+  }
+  var keyframed = keyframedTransformKeys(t.layer, writeKeys);
+  if (keyframed.length > 0) {
+    targetResult.after = before;
+    targetResult.message =
+      "Refusing keyframed transform propert" +
+      (keyframed.length === 1 ? "y" : "ies") +
+      " (numKeys > 0): " +
+      keyframed.join(", ") +
+      "; clear keys first via reset_layer_surface (clearKeyframes)";
+    opResult.targets.push(targetResult);
+    return { anyChanged: false, anyFailed: true, applyError: targetResult.message };
+  }
+  if (lengthMismatch.length > 0) {
+    targetResult.after = before;
+    targetResult.message =
+      "Transform array length mismatch for: " + lengthMismatch.join(", ");
+    opResult.targets.push(targetResult);
+    return { anyChanged: false, anyFailed: true, applyError: targetResult.message };
+  }
+  var already = true;
+  for (i = 0; i < writeKeys.length; i++) {
+    key = writeKeys[i];
+    if (!transformValuesEqual(before[key], coerced[key])) {
+      already = false;
+      break;
+    }
+  }
+  if (already) {
+    targetResult.status = "already_satisfied";
+    targetResult.after = before;
+    opResult.targets.push(targetResult);
+    return { anyChanged: false, anyFailed: false, applyError: null };
+  }
+  try {
+    var written = writeAndVerifyTransforms(t.layer, coerced, writeKeys);
+    targetResult.after = written.after;
+    if (written.writeError) {
+      targetResult.status = "failed";
+      targetResult.message = written.writeError;
+      var xfMutated = JSON.stringify(written.after) !== JSON.stringify(before);
+      opResult.targets.push(targetResult);
+      return { anyChanged: xfMutated, anyFailed: true, applyError: targetResult.message };
+    }
+    if (written.mismatched.length === 0) {
+      targetResult.status = "changed";
+      opResult.targets.push(targetResult);
+      return { anyChanged: true, anyFailed: false, applyError: null };
+    }
+    targetResult.status = "failed";
+    targetResult.message =
+      "Post-condition failed: transform key(s) did not match request: " +
+      written.mismatched.join(", ");
+    opResult.targets.push(targetResult);
+    return { anyChanged: true, anyFailed: true, applyError: targetResult.message };
+  } catch (xe) {
+    targetResult.status = "failed";
+    targetResult.message = String(xe);
+    // Mid-loop AE errors may have already mutated some keys — mark mutated so batch undo runs.
+    var xfCatchMutated = true;
+    try {
+      targetResult.after = readLayerTransform(t.layer);
+      xfCatchMutated = JSON.stringify(targetResult.after) !== JSON.stringify(before);
+    } catch (ae) {
+      xfCatchMutated = true;
+    }
+    opResult.targets.push(targetResult);
+    return { anyChanged: xfCatchMutated, anyFailed: true, applyError: String(xe) };
   }
 }
 
@@ -780,6 +1452,13 @@ function applyResetLayerSurface(plan, opResult) {
     status: "failed",
     cleared: {}
   };
+  var transformBefore = null;
+  var desiredTransforms = null;
+  if (resetTransforms) {
+    transformBefore = readLayerTransform(t.layer);
+    targetResult.before = { transforms: transformBefore };
+    desiredTransforms = defaultLayerTransform(t.layer, t.comp);
+  }
   try {
     if (clearEffects) {
       try {
@@ -864,22 +1543,30 @@ function applyResetLayerSurface(plan, opResult) {
       if (clearKeyframes) targetResult.cleared.keyframes = true;
       if (clearExpressions) targetResult.cleared.expressions = true;
     }
+    var transformOk = true;
+    var transformMessage = null;
+    var transformWrite = null;
     if (resetTransforms) {
-      try {
-        var xf = t.layer.property("ADBE Transform Group");
-        if (xf) {
-          for (var ti = 1; ti <= xf.numProperties; ti++) {
-            var tp = xf.property(ti);
-            try {
-              if (tp.propertyType === PropertyType.PROPERTY && typeof tp.setValue === "function") {
-                // Best-effort: re-set current value to clear keys already done; skip if locked
-              }
-            } catch (te) {}
-          }
+      var keyframed = keyframedTransformKeys(t.layer);
+      if (keyframed.length > 0) {
+        transformOk = false;
+        transformMessage =
+          "resetTransforms refused: keyframed transform propert" +
+          (keyframed.length === 1 ? "y" : "ies") +
+          " remain (numKeys > 0): " +
+          keyframed.join(", ") +
+          "; enable clearKeyframes or clear keys first";
+      } else {
+        transformWrite = writeAndVerifyTransforms(t.layer, desiredTransforms);
+        if (transformWrite.writeError) {
+          transformOk = false;
+          transformMessage = "resetTransforms write failed: " + transformWrite.writeError;
+        } else if (transformWrite.mismatched.length > 0) {
+          transformOk = false;
+          transformMessage =
+            "Post-condition failed: resetTransforms did not match AE defaults: " +
+            transformWrite.mismatched.join(", ");
         }
-        targetResult.cleared.transforms = true;
-      } catch (xfe) {
-        targetResult.cleared.transforms = false;
       }
     }
     var after = {
@@ -899,6 +1586,15 @@ function applyResetLayerSurface(plan, opResult) {
     try {
       after.hasTrackMatte = !!t.layer.hasTrackMatte;
     } catch (hte) {}
+    if (resetTransforms) {
+      if (transformWrite) {
+        after.transforms = transformWrite.after;
+      } else {
+        try {
+          after.transforms = readLayerTransform(t.layer);
+        } catch (rte) {}
+      }
+    }
     targetResult.after = after;
     var ok = true;
     if (clearEffects && after.effectCount !== 0) ok = false;
@@ -906,18 +1602,29 @@ function applyResetLayerSurface(plan, opResult) {
     if (clearMarkers && after.markerCount !== 0) ok = false;
     if (clearParent && after.hasParent) ok = false;
     if (clearTrackMatte && after.hasTrackMatte) ok = false;
+    if (resetTransforms && !transformOk) ok = false;
     if (ok) {
       targetResult.status = "changed";
       opResult.targets.push(targetResult);
       return { anyChanged: true, anyFailed: false, applyError: null };
     }
     targetResult.status = "failed";
-    targetResult.message = "Post-condition failed: layer surface counts/flags not cleared";
+    if (resetTransforms && !transformOk && transformMessage) {
+      targetResult.message = transformMessage;
+    } else {
+      targetResult.message = "Post-condition failed: layer surface counts/flags not cleared";
+    }
     opResult.targets.push(targetResult);
     return { anyChanged: true, anyFailed: true, applyError: targetResult.message };
   } catch (rse) {
     targetResult.status = "failed";
     targetResult.message = String(rse);
+    if (resetTransforms) {
+      try {
+        if (!targetResult.after) targetResult.after = {};
+        targetResult.after.transforms = readLayerTransform(t.layer);
+      } catch (ae) {}
+    }
     opResult.targets.push(targetResult);
     return { anyChanged: false, anyFailed: true, applyError: String(rse) };
   }

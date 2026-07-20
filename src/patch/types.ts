@@ -97,6 +97,12 @@ export type LayerTimingFrames = {
   startFrame?: number;
   inFrame?: number;
   outFrame?: number;
+  /** Derived exclusive-end span: outFrame - inFrame. */
+  durationFrames?: number;
+  /** Raw AE layer seconds (diagnose off-grid edges). */
+  startTime?: number;
+  inPoint?: number;
+  outPoint?: number;
   stretch?: number;
 };
 
@@ -116,10 +122,22 @@ export type LayerSwitchesSnapshot = {
   timeRemapEnabled?: boolean;
 };
 
+/** Compact keyframe drift entry for `set_layer_timing` failure evidence. */
+export type KeyframeDriftEntry = {
+  matchNames: string[];
+  beforeTime: number | null;
+  afterTime: number | null;
+};
+
 /** `set_layer_timing` target evidence. */
 export type SetLayerTimingTargetResult = LayerTargetBase & {
   before?: LayerTimingFrames;
   after?: LayerTimingFrames;
+  /** True when key times/values match pre-write snapshot (or layer had no keys). */
+  keyframesPreserved?: boolean;
+  /** Present when preservation failed; capped list of drifted keys. */
+  keyframeDrift?: KeyframeDriftEntry[];
+  keyframeDriftTruncated?: boolean;
 };
 
 /** `set_layer_switches` target evidence (full switch snapshot before/after). */
@@ -160,6 +178,21 @@ export type SetPropertyExpressionTargetResult = LayerTargetBase & {
   after?: { expression: string; expressionEnabled: boolean };
 };
 
+/** Authored/pre-expression 2D Transform allowlist snapshot. */
+export type LayerTransformSnapshot = {
+  anchorPoint?: number[];
+  position?: number[];
+  scale?: number[];
+  rotation?: number;
+  opacity?: number;
+};
+
+/** `set_layer_transform` target evidence (full transform snapshot before/after). */
+export type SetLayerTransformTargetResult = LayerTargetBase & {
+  before?: LayerTransformSnapshot;
+  after?: LayerTransformSnapshot;
+};
+
 /** `reset_layer_surface` target evidence. */
 export type ResetLayerSurfaceTargetResult = LayerTargetBase & {
   cleared?: {
@@ -170,15 +203,18 @@ export type ResetLayerSurfaceTargetResult = LayerTargetBase & {
     markers?: boolean;
     trackMatte?: boolean;
     parent?: boolean;
-    transforms?: boolean;
     expressions?: boolean;
   };
+  /** Present when `resetTransforms` was requested (authored transform snapshot). */
+  before?: { transforms: LayerTransformSnapshot };
   after?: {
     effectCount?: number;
     maskCount?: number;
     markerCount?: number;
     hasParent?: boolean;
     hasTrackMatte?: boolean;
+    /** Present when `resetTransforms` was requested (authored transform snapshot). */
+    transforms?: LayerTransformSnapshot;
   };
 };
 
@@ -215,6 +251,7 @@ export type PatchTargetResult =
   | SetLayerSwitchesTargetResult
   | SetCompSettingsTargetResult
   | SetPropertyExpressionTargetResult
+  | SetLayerTransformTargetResult
   | ResetLayerSurfaceTargetResult
   | DeleteLayerTargetResult;
 

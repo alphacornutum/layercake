@@ -287,6 +287,11 @@ describe("patchProjectInputSchema", () => {
           expressionEnabled: true,
         },
         {
+          op: "set_layer_transform",
+          target: { compId: 1, layerId: 2 },
+          transform: { position: [300, 550], anchorPoint: [300, 550] },
+        },
+        {
           op: "reset_layer_surface",
           target: { compId: 1, layerId: 2 },
           clearExpressions: true,
@@ -307,6 +312,7 @@ describe("patchProjectInputSchema", () => {
       "set_layer_switches",
       "set_comp_settings",
       "set_property_expression",
+      "set_layer_transform",
       "reset_layer_surface",
       "delete_layer",
       "safe_delete_project_item",
@@ -442,6 +448,92 @@ describe("patchProjectInputSchema", () => {
       ],
     });
     expect(unknown.success).toBe(false);
+  });
+
+  it("accepts set_layer_transform by ids and by unique names", () => {
+    const byIds = patchProjectInputSchema.parse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "set_layer_transform",
+          target: { compId: 12, layerId: 3 },
+          transform: { position: [300, 550], opacity: 50 },
+        },
+      ],
+    });
+    expect(byIds.operations[0]).toMatchObject({
+      op: "set_layer_transform",
+      target: { compId: 12, layerId: 3 },
+      transform: { position: [300, 550], opacity: 50 },
+    });
+    expect(byIds.operations[0]).not.toHaveProperty("expected");
+
+    const byNames = patchProjectInputSchema.parse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "set_layer_transform",
+          target: { compName: "main", layerName: "Logo" },
+          transform: { anchorPoint: [100, 200, 0], scale: [50, 50, 50], rotation: 15 },
+        },
+      ],
+    });
+    expect(byNames.operations[0]).toMatchObject({
+      op: "set_layer_transform",
+      target: { compName: "main", layerName: "Logo" },
+      transform: { anchorPoint: [100, 200, 0], scale: [50, 50, 50], rotation: 15 },
+    });
+  });
+
+  it("rejects empty/unknown set_layer_transform bags and expected field", () => {
+    const empty = patchProjectInputSchema.safeParse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "set_layer_transform",
+          target: { compId: 1, layerId: 2 },
+          transform: {},
+        },
+      ],
+    });
+    expect(empty.success).toBe(false);
+
+    const unknown = patchProjectInputSchema.safeParse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "set_layer_transform",
+          target: { compId: 1, layerId: 2 },
+          transform: { position: [0, 0], orientation: [0, 0, 0] },
+        },
+      ],
+    });
+    expect(unknown.success).toBe(false);
+
+    const badLen = patchProjectInputSchema.safeParse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "set_layer_transform",
+          target: { compId: 1, layerId: 2 },
+          transform: { position: [1] },
+        },
+      ],
+    });
+    expect(badLen.success).toBe(false);
+
+    const withExpected = patchProjectInputSchema.safeParse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "set_layer_transform",
+          target: { compId: 1, layerId: 2 },
+          transform: { opacity: 50 },
+          expected: { opacity: 100 },
+        },
+      ],
+    });
+    expect(withExpected.success).toBe(false);
   });
 
   it("rejects timeRemapEnabled on set_layer_timing", () => {
@@ -624,11 +716,36 @@ describe("buildPatchApplyScript", () => {
     );
     expect(script).toContain("function timeToFrame");
     expect(script).toContain("function frameToTime");
+    expect(script).toContain("function isOnGridFrame");
+    expect(script).toContain("function layerTimingFrames");
     expect(script).toContain("function collectItemRefs");
     expect(script).toContain("applyCreateSolid");
     expect(script).toContain("applyReplaceLayerSource");
     expect(script).toContain("applySetLayerTiming");
+    expect(script).toContain("layerTimingPostConditionError");
+    expect(script).toContain("timing edge off-grid or frames did not match request");
+    expect(script).toContain("implies exact durationFrames");
+    expect(script).toContain("durationFrames: outFrame - inFrame");
+    expect(script).toContain("startTime: startTime");
+    expect(script).toContain("inPoint: inPoint");
+    expect(script).toContain("outPoint: outPoint");
+    expect(script).toContain("function snapshotLayerKeyframes");
+    expect(script).toContain("function restoreLayerKeyframes");
+    expect(script).toContain("function collectKeyframeDrift");
+    expect(script).toContain("keyframes not preserved after timing write");
+    expect(script).toContain("keyframesPreserved");
     expect(script).toContain("applySetLayerSwitches");
+    expect(script).toContain("applySetLayerTransform");
+    expect(script).toContain("function readLayerTransform");
+    expect(script).toContain("function writeAndVerifyTransforms");
+    expect(script).toContain("function keyframedTransformKeys");
+    expect(script).toContain("function isAeArray");
+    expect(script).toContain("function transformMatchName");
+    expect(script).toContain("function isCoreTransformMatchName");
+    expect(script).toContain("TRANSFORM_EPSILON");
+    expect(script).toContain("defaultLayerTransform");
+    expect(script).toContain("anyChanged: xfMutated");
+    expect(script).toContain("anyChanged: xfCatchMutated");
     expect(script).toContain("applySetCompSettings");
     expect(script).toContain("readCompSettingsSnapshot");
     expect(script).toContain("clampWorkAreaToDuration");
@@ -761,6 +878,79 @@ describe("parsePatchApplyResult", () => {
     });
   });
 
+  it("shapes set_layer_timing evidence with frames, seconds, durationFrames, and keyframe drift", () => {
+    const timing = {
+      startFrame: 0,
+      inFrame: 518,
+      outFrame: 637,
+      durationFrames: 119,
+      startTime: 0,
+      inPoint: 518 / 29.97,
+      outPoint: 637 / 29.97,
+      stretch: 100,
+    };
+    const parsed = parsePatchApplyResult(
+      JSON.stringify({
+        ok: false,
+        error: "Post-condition failed: keyframes not preserved after timing write",
+        code: "apply_failed",
+        results: [
+          {
+            index: 0,
+            op: "set_layer_timing",
+            status: "failed",
+            targets: [
+              {
+                compId: 1,
+                layerId: 2,
+                status: "failed",
+                before: timing,
+                after: timing,
+                keyframesPreserved: false,
+                keyframeDrift: [
+                  {
+                    matchNames: ["ADBE Transform Group", "ADBE Scale"],
+                    beforeTime: 23,
+                    afterTime: 23.02,
+                  },
+                ],
+                message: "Post-condition failed: keyframes not preserved after timing write",
+              },
+            ],
+          },
+        ],
+        rollback: { attempted: true, completed: true },
+      }),
+    );
+    expect(parsed.ok).toBe(false);
+    if (parsed.ok) return;
+    expect(parsed.results?.[0]?.targets[0]).toMatchObject({
+      status: "failed",
+      keyframesPreserved: false,
+      keyframeDrift: [
+        {
+          matchNames: ["ADBE Transform Group", "ADBE Scale"],
+          beforeTime: 23,
+          afterTime: 23.02,
+        },
+      ],
+      before: {
+        startFrame: 0,
+        inFrame: 518,
+        outFrame: 637,
+        durationFrames: 119,
+        startTime: 0,
+        stretch: 100,
+      },
+      after: {
+        inFrame: 518,
+        outFrame: 637,
+        durationFrames: 119,
+      },
+      message: expect.stringMatching(/keyframes not preserved/i),
+    });
+  });
+
   it("shapes rename post-condition failure with actual after (not overall success)", () => {
     const parsed = parsePatchApplyResult(
       JSON.stringify({
@@ -794,6 +984,112 @@ describe("parsePatchApplyResult", () => {
       status: "failed",
       after: { name: "A" },
     });
+  });
+
+  it("shapes set_layer_transform evidence with authored numeric before/after", () => {
+    const snap = {
+      anchorPoint: [300, 550],
+      position: [960, 540],
+      scale: [100, 100],
+      rotation: 0,
+      opacity: 100,
+    };
+    const parsed = parsePatchApplyResult(
+      JSON.stringify({
+        ok: true,
+        results: [
+          {
+            index: 0,
+            op: "set_layer_transform",
+            status: "changed",
+            targets: [
+              {
+                compId: 1,
+                layerId: 2,
+                status: "changed",
+                before: snap,
+                after: { ...snap, position: [300, 550] },
+              },
+            ],
+          },
+        ],
+        fingerprint: "rev:4|dirty:1|path:/tmp/Demo.aep",
+        dirty: true,
+        revision: 4,
+      }),
+    );
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.results[0]?.targets[0]).toMatchObject({
+      status: "changed",
+      before: { position: [960, 540], anchorPoint: [300, 550] },
+      after: { position: [300, 550], anchorPoint: [300, 550], opacity: 100 },
+    });
+  });
+
+  it("shapes resetTransforms evidence with numeric transforms and no cleared.transforms", () => {
+    const parsed = parsePatchApplyResult(
+      JSON.stringify({
+        ok: true,
+        results: [
+          {
+            index: 0,
+            op: "reset_layer_surface",
+            status: "changed",
+            targets: [
+              {
+                compId: 1,
+                layerId: 2,
+                status: "changed",
+                cleared: {
+                  keyframes: true,
+                  effects: true,
+                  masks: true,
+                  expressions: false,
+                },
+                before: {
+                  transforms: {
+                    anchorPoint: [100, 100],
+                    position: [10, 20],
+                    scale: [50, 50],
+                    rotation: 15,
+                    opacity: 40,
+                  },
+                },
+                after: {
+                  effectCount: 0,
+                  maskCount: 0,
+                  markerCount: 0,
+                  hasParent: false,
+                  hasTrackMatte: false,
+                  transforms: {
+                    anchorPoint: [960, 540],
+                    position: [960, 540],
+                    scale: [100, 100],
+                    rotation: 0,
+                    opacity: 100,
+                  },
+                },
+              },
+            ],
+          },
+        ],
+        fingerprint: "rev:5|dirty:1|path:/tmp/Demo.aep",
+        dirty: true,
+        revision: 5,
+      }),
+    );
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    const target = parsed.results[0]?.targets[0] as {
+      cleared?: Record<string, unknown>;
+      before?: { transforms?: { position?: number[] } };
+      after?: { transforms?: { position?: number[]; opacity?: number } };
+    };
+    expect(target.cleared).not.toHaveProperty("transforms");
+    expect(target.before?.transforms?.position).toEqual([10, 20]);
+    expect(target.after?.transforms?.position).toEqual([960, 540]);
+    expect(target.after?.transforms?.opacity).toBe(100);
   });
 
   it("shapes panel op evidence (create / move / delete impact)", () => {

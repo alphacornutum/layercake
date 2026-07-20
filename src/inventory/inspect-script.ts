@@ -152,17 +152,13 @@ function hasExpressionText(prop) {
 /** Transform leaf matchNames that commonly carry Cover/Contain expressions. */
 function isTransformSampleMatchName(matchName) {
   return (
-    matchName === "ADBE Anchor Point" ||
-    matchName === "ADBE Position" ||
+    isCoreTransformMatchName(matchName) ||
     matchName === "ADBE Position_0" ||
     matchName === "ADBE Position_1" ||
     matchName === "ADBE Position_2" ||
-    matchName === "ADBE Scale" ||
-    matchName === "ADBE Rotate Z" ||
     matchName === "ADBE Rotate X" ||
     matchName === "ADBE Rotate Y" ||
-    matchName === "ADBE Orientation" ||
-    matchName === "ADBE Opacity"
+    matchName === "ADBE Orientation"
   );
 }
 
