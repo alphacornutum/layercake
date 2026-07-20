@@ -148,4 +148,5 @@ Agents that support MCP skill discovery can load these instructions directly. Wh
 ## See also
 
 - [Setup and connection](setup.md)
+- [Related projects and choosing an After Effects MCP](related-projects.md)
 - [Troubleshooting](troubleshooting.md)

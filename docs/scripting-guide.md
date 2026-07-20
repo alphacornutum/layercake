@@ -34,3 +34,4 @@ You can also use [Context7’s packaging](https://context7.com/docsforadobe/afte
 
 - [Setup and connection](setup.md)
 - [Troubleshooting](troubleshooting.md)
+- [Related projects and choosing an After Effects MCP](related-projects.md)
