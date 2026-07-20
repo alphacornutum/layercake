@@ -28,6 +28,12 @@ Ask the agent:
 
 > Use `ae_host_status` and show me the resolved configuration.
 
+## After Effects steals focus on every tool call
+
+On macOS, LayerCake soft-attaches to an already-running After Effects session: inventory, patch, and eval use AppleScript `DoScriptFile` without `activate`, so the previous frontmost app should stay focused.
+
+If AE still jumps forward on every call, you are likely on an older LayerCake build, or a cold start just launched AE (the first launch may still surface the app once). Opening a project can also bring AE forward depending on the OS and AE version; steady-state evals should not.
+
 ## Scripts run but no result returns
 
 In After Effects, enable:

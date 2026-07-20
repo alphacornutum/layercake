@@ -87,6 +87,20 @@ The product skill MUST document `set_layer_switches` as the typed `ae_patch_proj
 - **WHEN** an agent reads the product skill after `set_layer_switches` ships
 - **THEN** the skill MUST mention `set_layer_switches`, MUST note omit-to-preserve semantics and full switch evidence, and MUST state that `timeRemapEnabled` belongs on switches rather than timing
 
+### Requirement: Document set_layer_timing source-slip vs drag
+
+The product skill MUST document `set_layer_timing` as frame-exact start/in/out/stretch only, and MUST state that the op does not move keyframes (composition-absolute key times stay put). The skill MUST teach **source slip**: to keep the same parent in/out window while changing which source frames play (typical nested-comp case), supply the new `startFrame` together with the unchanged `inFrame` and `outFrame` in one op—not `startFrame` alone. The skill MUST contrast that with **drag layer in time** (move keys with the layer bar), which is not a typed op today; agents MUST use `ae_eval_script` for that until a dedicated op exists. The skill MUST note that slip via `startFrame` assumes time remapping is off (`timeRemapEnabled` remains on `set_layer_switches`).
+
+#### Scenario: Skill teaches slip payload and keyframe non-mutation
+
+- **WHEN** an agent reads `skills/drive-after-effects/SKILL.md` (or the equivalent MCP `skill://drive-after-effects/SKILL.md` resource)
+- **THEN** the skill MUST state that `set_layer_timing` does not move keyframes and MUST document the start+preserved-in/out slip recipe
+
+#### Scenario: Skill contrasts drag-with-keys as out of scope
+
+- **WHEN** an agent reads the product skill for layer timing
+- **THEN** the skill MUST state that UI-equivalent drag-with-keys is not typed on `set_layer_timing` and MUST point agents at `ae_eval_script` for that intent
+
 ### Requirement: Document guarded editing workflow
 
 The product skill MUST document the safe mutation workflow: host check → open → `ae_project_context` bind → optional summary → inventory as needed → optional `ae_save_project` `create_backup` → `ae_patch_project` apply → use returned fingerprint (or re-bind context if another mutator may have run) → `ae_save_project` `save_copy`. The skill MUST state that agents MAY `save_copy` (or otherwise work on a copy) before mutating when the original project file must remain pristine. The skill MUST state that `ae_eval_script` bypasses typed safety and MUST warn not to open over another project without an explicit `ae_close_project` (or save) first. The skill MUST tell agents to prefer typed patch over raw eval for routine text-style fixes, layer renames (`rename_layer`), layer switch toggles (`set_layer_switches`), and Project panel create/move/delete (`create_folder`, `move_project_item`, `delete_project_item`). The skill MUST state that **all** layer-targeting patch ops (`rename_layer`, `set_layer_switches`, other control-plane layer `target` ops, and `set_text_style` layer/comp selectors) accept id or unique name with the same ambiguity rules as inspect, that ambiguous names refuse with candidates, and that agents SHOULD prefer stable ids when names may collide — with no ids-only exceptions for new ops. Panel item ops remain `Item.id`-based. The skill MUST note that delete follows After Effects defaults (recursive folder remove; in-use items may be deleted), that impact evidence includes nested counts and full `usedInCompIds`, that patch mutates authored / pre-expression project state without rewriting expression strings as a side effect of panel ops, and that successful patch targets include post-condition-verified before/after evidence. The skill MUST state that `set_text_style` evidence uses authored `fonts` for post-condition success and may include `evaluatedFonts` (post-expression); when authored matches but evaluated still differs, agents SHOULD patch expression source layers (for example a `{font}` controller) before or with consumers so on-screen results update.

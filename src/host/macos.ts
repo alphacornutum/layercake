@@ -13,17 +13,54 @@ import type { AeHost, EvalResult, HostStatus, OpenProjectResult } from "./types.
 
 const execFileAsync = promisify(execFile);
 
+/** Max wait after `launch` for the app to report as running. */
+const LAUNCH_READY_TIMEOUT_MS = 30_000;
+
+export type ExecFileFn = (
+  file: string,
+  args: readonly string[],
+  options?: { timeout?: number },
+) => Promise<{ stdout: string; stderr: string }>;
+
+export type MacOsAeHostDeps = {
+  execFile?: ExecFileFn;
+  platform?: NodeJS.Platform;
+  sleep?: (ms: number) => Promise<void>;
+  now?: () => number;
+};
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function escapeAppleScriptString(value: string): string {
   return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
+function parseIsRunningStdout(stdout: string): boolean {
+  return stdout.trim().toLowerCase() === "true";
+}
+
 export class MacOsAeHost implements AeHost {
-  constructor(private readonly config: AeConfig) {}
+  private readonly execFile: ExecFileFn;
+  private readonly platform: NodeJS.Platform;
+  private readonly sleep: (ms: number) => Promise<void>;
+  private readonly now: () => number;
+
+  constructor(
+    private readonly config: AeConfig,
+    deps: MacOsAeHostDeps = {},
+  ) {
+    this.execFile = deps.execFile ?? execFileAsync;
+    this.platform = deps.platform ?? process.platform;
+    this.sleep = deps.sleep ?? sleep;
+    this.now = deps.now ?? Date.now;
+  }
 
   async status(): Promise<HostStatus> {
-    if (process.platform !== "darwin") {
+    if (this.platform !== "darwin") {
       return {
-        platform: process.platform,
+        platform: this.platform,
         available: false,
         appName: this.config.appName,
         executable: this.config.executable,
@@ -34,7 +71,7 @@ export class MacOsAeHost implements AeHost {
     try {
       const { appName, executable } = assertHostConfigured(this.config, "darwin");
       return {
-        platform: process.platform,
+        platform: this.platform,
         available: true,
         appName,
         executable,
@@ -43,7 +80,7 @@ export class MacOsAeHost implements AeHost {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return {
-        platform: process.platform,
+        platform: this.platform,
         available: false,
         appName: this.config.appName,
         executable: this.config.executable,
@@ -58,14 +95,34 @@ export class MacOsAeHost implements AeHost {
     if (!appName) {
       throw new ConfigError("Could not resolve AppleScript application name.");
     }
-    const script = `tell application "${escapeAppleScriptString(appName)}" to activate`;
+
+    const label = `${appName}${executable ? `, ${executable}` : ""}`;
+
     try {
-      await execFileAsync("osascript", ["-e", script], { timeout: 120_000 });
-    } catch (err) {
-      const detail = err instanceof Error ? err.message : String(err);
+      if (await this.isApplicationRunning(appName)) {
+        return;
+      }
+
+      const launch = `tell application "${escapeAppleScriptString(appName)}" to launch`;
+      await this.execFile("osascript", ["-e", launch], { timeout: 120_000 });
+
+      const deadline = this.now() + LAUNCH_READY_TIMEOUT_MS;
+      while (this.now() < deadline) {
+        if (await this.isApplicationRunning(appName)) {
+          return;
+        }
+        await this.sleep(250);
+      }
+
       throw new ConfigError(
-        `Failed to launch or attach After Effects (${appName}${executable ? `, ${executable}` : ""}): ${detail}`,
+        `After Effects did not become ready after launch (${label}). Is AE_APP_NAME / AE_EXECUTABLE correct?`,
       );
+    } catch (err) {
+      if (err instanceof ConfigError) {
+        throw err;
+      }
+      const detail = err instanceof Error ? err.message : String(err);
+      throw new ConfigError(`Failed to launch or attach After Effects (${label}): ${detail}`);
     }
   }
 
@@ -80,11 +137,10 @@ export class MacOsAeHost implements AeHost {
     await this.ensureSession();
     const script = `
 tell application "${escapeAppleScriptString(appName)}"
-  activate
   open POSIX file "${escapeAppleScriptString(absolutePath)}"
 end tell
 `;
-    await execFileAsync("osascript", ["-e", script], { timeout: 120_000 });
+    await this.execFile("osascript", ["-e", script], { timeout: 120_000 });
     return { path: absolutePath, opened: true };
   }
 
@@ -110,7 +166,7 @@ tell application "${escapeAppleScriptString(appName)}"
 end tell
 `;
       try {
-        await execFileAsync("osascript", ["-e", apple], { timeout: timeoutMs });
+        await this.execFile("osascript", ["-e", apple], { timeout: timeoutMs });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         if (/ETIMEDOUT|timed out|timeout/i.test(msg)) {
@@ -144,8 +200,14 @@ end tell
     }
   }
 
+  private async isApplicationRunning(appName: string): Promise<boolean> {
+    const script = `application "${escapeAppleScriptString(appName)}" is running`;
+    const { stdout } = await this.execFile("osascript", ["-e", script], { timeout: 10_000 });
+    return parseIsRunningStdout(stdout);
+  }
+
   private requireDarwin(): void {
-    if (process.platform !== "darwin") {
+    if (this.platform !== "darwin") {
       throw new ConfigError("After Effects host operations require macOS (darwin).");
     }
   }
