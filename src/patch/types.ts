@@ -14,10 +14,10 @@ type LayerTargetBase = {
   message?: string;
 };
 
-/** Text-style target evidence (`set_text_style`). */
+/** Text-style target evidence (`set_text_style`). `fonts` = authored / pre-expression. */
 export type TextStyleTargetResult = LayerTargetBase & {
-  before?: { fonts: string[] };
-  after?: { fonts: string[] };
+  before?: { fonts: string[]; evaluatedFonts?: string[] };
+  after?: { fonts: string[]; evaluatedFonts?: string[] };
 };
 
 /** `rename_layer` target evidence (verified before/after names). */
