@@ -1,4 +1,5 @@
 import type { CompSwitchesSnapshot } from "../inventory/comp-switches.js";
+import type { TextStyleBag } from "./schema.js";
 
 export type PatchOpStatus =
   | "changed"
@@ -16,10 +17,26 @@ type LayerTargetBase = {
   message?: string;
 };
 
-/** Text-style target evidence (`set_text_style`). `fonts` = authored / pre-expression. */
+/** Allowlisted TextDocument style snapshot (+ read-only box/point flags). */
+export type TextStyleSnapshot = TextStyleBag & {
+  boxText?: boolean;
+  pointText?: boolean;
+};
+
+/** Text-style target evidence (`set_text_style`). `fonts` / `style` = authored / pre-expression. */
 export type TextStyleTargetResult = LayerTargetBase & {
-  before?: { fonts: string[]; evaluatedFonts?: string[] };
-  after?: { fonts: string[]; evaluatedFonts?: string[] };
+  before?: {
+    fonts?: string[];
+    evaluatedFonts?: string[];
+    style?: TextStyleSnapshot;
+    evaluatedStyle?: TextStyleSnapshot;
+  };
+  after?: {
+    fonts?: string[];
+    evaluatedFonts?: string[];
+    style?: TextStyleSnapshot;
+    evaluatedStyle?: TextStyleSnapshot;
+  };
 };
 
 /** `rename_layer` target evidence (verified before/after names). */

@@ -180,7 +180,9 @@ export function createServer(
       description:
         "Apply-only typed mutations against the open project (no preview/plan tokens, no implicit save). " +
         "Requires project.path + project.fingerprint guards from ae_project_context. " +
-        "Ops: set_text_style; rename_layer; rename_project_item; set_layer_index; create_solid (always-create); " +
+        "Ops: set_text_style (partial TextDocument style bag — font, size, leading/autoLeading, fill/stroke, " +
+        "justification, text, box geometry, …; omit key = preserve; authored + evaluatedStyle evidence); " +
+        "rename_layer; rename_project_item; set_layer_index; create_solid (always-create); " +
         "replace_layer_source; set_layer_timing (integer frames only); set_layer_switches " +
         "(partial switches bag; full switch snapshot evidence; timeRemapEnabled lives here); " +
         "set_comp_settings (target.compId|compName + partial settings bag; integer-frame evidence; " +
@@ -478,9 +480,10 @@ export function createServer(
         'detail defaults to "overview": skeleton fields plus numKeys/hasExpression/expressionEnabled — no expression bodies, keyframe arrays, or sampled values. ' +
         'Use detail "extended" or "full" (and/or matchNames) to retrieve full expression text, sampled values at atTime (default composition CTI), and keyframe timelines. ' +
         "preExpression defaults to true (authored/keyframed values); pass false for post-expression on-screen values — the value field always follows that flag. " +
-        "On extended/full, Transform properties with keys or expressions also include authoredValue (pre-expression) and evaluatedValue (post-expression). " +
+        "On extended/full, Transform and SourceText (TEXT_DOCUMENT) properties with keys or expressions also include authoredValue (pre-expression) and evaluatedValue (post-expression). " +
         "Wrapper purity / normalization MUST use authoredValue (or value with preExpression true), not evaluatedValue alone. " +
-        "Unsupported value types are flagged { unserializable: true, propertyValueType }. " +
+        'TEXT_DOCUMENT values are projected as { kind: "textDocument", style: {…}, boxText?, pointText? } (same style keys as set_text_style). ' +
+        "Other unsupported value types are flagged { unserializable: true, propertyValueType }. " +
         "Success JSON larger than AE_INSPECT_MAX_BYTES (default 512 KiB) is a hard error — narrow with leaner detail / matchNames. " +
         "Layer.id ≠ Item.id; join layer.source.id to ae_list_sources / comps.",
       inputSchema: getLayerInputSchema,

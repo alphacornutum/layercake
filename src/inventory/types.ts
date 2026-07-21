@@ -211,9 +211,9 @@ export type InspectPropertyNode = {
   expression?: string;
   /** Sample under caller's `preExpression` flag. */
   value?: unknown;
-  /** Pre-expression sample (`valueAtTime(..., true)`); Transform dual-sample fields. */
+  /** Pre-expression sample (`valueAtTime(..., true)`); Transform / TextDocument dual-sample fields. */
   authoredValue?: unknown;
-  /** Post-expression sample (`valueAtTime(..., false)`); Transform dual-sample fields. */
+  /** Post-expression sample (`valueAtTime(..., false)`); Transform / TextDocument dual-sample fields. */
   evaluatedValue?: unknown;
   keyframes?: InspectKeyframe[];
   properties?: InspectPropertyNode[];

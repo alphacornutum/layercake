@@ -48,11 +48,13 @@ For follow-up work, prefer IDs over names or indexes. Names can be duplicated; i
 
 ### `ae_get_layer` dual samples
 
-On `detail` `extended` / `full`, Transform properties that have keyframes or expressions include:
+On `detail` `extended` / `full`, Transform and SourceText (`TEXT_DOCUMENT`) properties that have keyframes or expressions include:
 
 - `value` — sample under the caller's `preExpression` flag (default `true`)
 - `authoredValue` — pre-expression (`valueAtTime(..., true)`)
 - `evaluatedValue` — post-expression (`valueAtTime(..., false)`)
+
+`TEXT_DOCUMENT` values are projected as `{ kind: "textDocument", style: {…}, boxText?, pointText? }` using the same allowlisted style keys as `set_text_style` (not a raw DOM dump). Shape and other unsupported types remain `{ unserializable: true, propertyValueType }`.
 
 Wrapper purity / normalization checks MUST use `authoredValue` (or `value` with `preExpression: true`), not post-expression Scale alone.
 
@@ -62,25 +64,25 @@ Read-only inbound references for one `itemId` (`Item.id`): `used_in_comp`, `laye
 
 ### `ae_patch_project` ops
 
-| Op                         | Purpose                                                                                                                                      |
-| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `set_text_style`           | Set authored TextDocument/CharacterRange font strings (exact string; no synonym mapping)                                                     |
-| `rename_layer`             | Rename exactly one timeline layer per op (`target` id\|name + desired `layerName`)                                                           |
-| `rename_project_item`      | Rename a Project panel item by `itemId`                                                                                                      |
-| `set_layer_index`          | Reorder one layer to a 1-based `index`                                                                                                       |
-| `create_solid`             | Always create a new Solid FootageItem (name, dims, pixelAspect, color; optional folder)                                                      |
-| `replace_layer_source`     | Replace AVLayer source; evidence reports `layerIdPreserved` / `newLayerId`                                                                   |
-| `set_layer_timing`         | Set start/in/out via **integer frames** (+ optional stretch); on-grid + exact `durationFrames`; verified keyframe preservation; see notes below |
-| `set_layer_switches`       | Set timeline/layer switch booleans (`enabled`, `audioEnabled`, `timeRemapEnabled`, …); omit=preserve; full switch snapshot evidence          |
-| `set_comp_settings`        | Set composition settings via nested `target` + partial `settings` bag (dims/rate/frames/work area/renderer/switches); see below              |
-| `set_property_expression`  | Set/clear expression on one PropertyBase — exactly one of `matchNames` \| nexrender `propertyPath`                                           |
-| `set_layer_transform`      | Set authored 2D Transform values (`anchorPoint`/`position`/`scale`/`rotation`/`opacity`); omit=preserve; numeric snapshot evidence           |
+| Op                         | Purpose                                                                                                                                               |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `set_text_style`           | Partial authored TextDocument style bag (font, size, leading/autoLeading, fill/stroke, justification, text, box size/pos, …); omit=preserve           |
+| `rename_layer`             | Rename exactly one timeline layer per op (`target` id\|name + desired `layerName`)                                                                    |
+| `rename_project_item`      | Rename a Project panel item by `itemId`                                                                                                               |
+| `set_layer_index`          | Reorder one layer to a 1-based `index`                                                                                                                |
+| `create_solid`             | Always create a new Solid FootageItem (name, dims, pixelAspect, color; optional folder)                                                               |
+| `replace_layer_source`     | Replace AVLayer source; evidence reports `layerIdPreserved` / `newLayerId`                                                                            |
+| `set_layer_timing`         | Set start/in/out via **integer frames** (+ optional stretch); on-grid + exact `durationFrames`; verified keyframe preservation; see notes below       |
+| `set_layer_switches`       | Set timeline/layer switch booleans (`enabled`, `audioEnabled`, `timeRemapEnabled`, …); omit=preserve; full switch snapshot evidence                   |
+| `set_comp_settings`        | Set composition settings via nested `target` + partial `settings` bag (dims/rate/frames/work area/renderer/switches); see below                       |
+| `set_property_expression`  | Set/clear expression on one PropertyBase — exactly one of `matchNames` \| nexrender `propertyPath`                                                    |
+| `set_layer_transform`      | Set authored 2D Transform values (`anchorPoint`/`position`/`scale`/`rotation`/`opacity`); omit=preserve; numeric snapshot evidence                    |
 | `reset_layer_surface`      | Clear keys/effects/masks/styles/markers/matte/parent (flags); `resetTransforms` verifies AE defaults with value evidence; `clearExpressions` separate |
-| `delete_layer`             | Delete one timeline layer by `target`                                                                                                        |
-| `create_folder`            | Create a `FolderItem` under `parentFolderId` (real inventory root id, never a magic `0`)                                                     |
-| `move_project_item`        | Move items by `selector.kind: "items"` + `itemIds` into `destinationFolderId`                                                                |
-| `delete_project_item`      | Permissive AE `Item.remove()`; refuses root; may delete in-use items / recurse folders                                                       |
-| `safe_delete_project_item` | Delete only when inbound refs are empty and `unknownRefsPossible` is false; empty folders only                                               |
+| `delete_layer`             | Delete one timeline layer by `target`                                                                                                                 |
+| `create_folder`            | Create a `FolderItem` under `parentFolderId` (real inventory root id, never a magic `0`)                                                              |
+| `move_project_item`        | Move items by `selector.kind: "items"` + `itemIds` into `destinationFolderId`                                                                         |
+| `delete_project_item`      | Permissive AE `Item.remove()`; refuses root; may delete in-use items / recurse folders                                                                |
+| `safe_delete_project_item` | Delete only when inbound refs are empty and `unknownRefsPossible` is false; empty folders only                                                        |
 
 Successful targets include **post-condition-verified** before/after evidence (apply re-reads live state after the write; `changed` only when it matches the request). See [ADR 0003](adr/0003-patch-targeting-and-post-conditions.md). Nested `target` + op-specific bags (`settings` / `switches` / `style` / `transform`) follow [ADR 0004](adr/0004-patch-op-target-and-settings-bags.md). Prefer `matchNames` from `ae_get_layer` for `set_property_expression` (locale-stable); `propertyPath` splits on `->` when present, otherwise `.`.
 
@@ -179,7 +181,22 @@ Partial `settings` bag (omit key = preserve): `width`, `height`, `pixelAspect`, 
 }
 ```
 
-Patch mutates **authored / pre-expression** project state: fonts, layer names, and panel structure. Panel ops select by stable `Item.id` only and do **not** read or write `Property.expression` (they do not use `valueAtTime`). For `set_text_style`, apply reads/writes/verifies fonts from the pre-expression `TextDocument` (`valueAtTime(comp.time, true)` when the property has keys or an expression). Target evidence: `fonts` = authored (post-condition source); optional `evaluatedFonts` = post-expression / on-screen sample at composition time. If `after.fonts` matches the request but `after.evaluatedFonts` still differs, an expression (or other live override) is still driving appearance — patch expression source layers (for example a `{font}` controller) next. Deleting an item that owns layers removes those properties with the item; deleting in-use footage may leave expression strings intact while later evaluation fails / sources go missing.
+Partial `style` bag (omit key = preserve; at least one key required; `font` is optional when another key is supplied): `font`, `fontSize`, `fillColor` / `applyFill`, `strokeColor` / `applyStroke` / `strokeWidth`, `tracking`, `baselineShift`, `fauxBold` / `fauxItalic`, `allCaps` / `smallCaps`, `horizontalScale` / `verticalScale`, `autoLeading`, `leading`, `justification` (`LEFT_JUSTIFY` | `RIGHT_JUSTIFY` | `CENTER_JUSTIFY` | `FULL_JUSTIFY_LASTLINE_*`), `text`, `boxTextSize` / `boxTextPos` (box text only). Plan by reading Source Text via `ae_get_layer` (`extended` / `full`). Apply writes the authored / pre-expression `TextDocument` and does not clear Source Text expressions. Fixed `leading` forces `autoLeading` off (refuses `leading` + `autoLeading: true`). Evidence: authored `style` (+ `fonts` for font-list workflows when readable) and optional `evaluatedStyle` / `evaluatedFonts`. Post-condition success depends only on authored values for **supplied** keys (`style.font` is enough when the `fonts` array is unreadable). If authored matches but evaluated still differs, patch expression sources or use `set_property_expression`. Stale-project refuse uses `project.fingerprint` only (no op-level expected-current bag).
+
+#### Auto-leading example
+
+```json
+{
+  "op": "set_text_style",
+  "selector": {
+    "kind": "layers",
+    "layers": [{ "compId": 12, "layerId": 34 }]
+  },
+  "style": { "autoLeading": true }
+}
+```
+
+Patch mutates **authored / pre-expression** project state: text style, layer names, and panel structure. Panel ops select by stable `Item.id` only and do **not** read or write `Property.expression` (they do not use `valueAtTime`). Deleting an item that owns layers removes those properties with the item; deleting in-use footage may leave expression strings intact while later evaluation fails / sources go missing.
 
 Delete follows After Effects defaults: folders recursively remove contents; in-use footage/comps may be removed. Evidence includes `nestedItemCount` (folders) and the full `usedInCompIds` list (+ count) for AVItems. Disk media files are never deleted. On success, agents MAY reuse the returned `fingerprint` / `dirty` / `revision` for the next `ae_save_project` or patch without an immediate `ae_project_context` re-poll when no other mutator (human UI, `ae_eval_script`, another tool) intervened.
 

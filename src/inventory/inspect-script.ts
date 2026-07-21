@@ -1,4 +1,5 @@
 import { SHARED_RESOLVE_HELPERS } from "./resolve-script.js";
+import { SHARED_TEXT_DOCUMENT_HELPERS } from "./text-document-script.js";
 
 /**
  * Shared ExtendScript helpers for inspect tools (lookup, property walk, value serialize).
@@ -62,6 +63,9 @@ function isSerializableValueType(pvt) {
 }
 
 function serializeAeValue(value, pvt) {
+  if (pvt === PropertyValueType.TEXT_DOCUMENT) {
+    return projectTextDocument(value);
+  }
   if (!isSerializableValueType(pvt)) {
     return { unserializable: true, propertyValueType: propertyValueTypeName(pvt) };
   }
@@ -234,9 +238,9 @@ function walkProperty(prop, detail, atTime, preExpression, matchSet, inMatch) {
     if (prop.numKeys > 0) {
       node.keyframes = serializeKeyframes(prop, detail);
     }
-    // Dual authored/evaluated samples for Transform props when keys or expressions apply.
+    // Dual authored/evaluated samples for Transform and TextDocument when keys or expressions apply.
     if (
-      isTransformSampleMatchName(matchName) &&
+      (isTransformSampleMatchName(matchName) || pvt === PropertyValueType.TEXT_DOCUMENT) &&
       (node.hasExpression || prop.numKeys > 0)
     ) {
       node.authoredValue = samplePropertyValue(prop, atTime, true);
@@ -345,5 +349,6 @@ function serializeInterpretFull(src, kind) {
 export const SHARED_INSPECT_HELPERS = [
   SHARED_INSPECT_PREFIX,
   SHARED_RESOLVE_HELPERS,
+  SHARED_TEXT_DOCUMENT_HELPERS,
   SHARED_INSPECT_SUFFIX,
 ].join("\n\n");

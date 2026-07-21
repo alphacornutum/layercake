@@ -29,6 +29,52 @@ describe("patchProjectInputSchema", () => {
     expect(parsed.allowBroadTargetSet).toBe(false);
   });
 
+  it("accepts set_text_style with autoLeading-only style bag", () => {
+    const parsed = patchProjectInputSchema.parse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "set_text_style",
+          selector: { kind: "layers", layers: [{ compId: 1, layerId: 2 }] },
+          style: { autoLeading: true },
+        },
+      ],
+    });
+    const op = parsed.operations[0];
+    expect(op?.op).toBe("set_text_style");
+    if (op?.op === "set_text_style") {
+      expect(op.style.autoLeading).toBe(true);
+      expect(op.style.font).toBeUndefined();
+    }
+  });
+
+  it("rejects empty or unknown set_text_style style keys", () => {
+    expect(() =>
+      patchProjectInputSchema.parse({
+        project: guardedProject(),
+        operations: [
+          {
+            op: "set_text_style",
+            selector: { kind: "all_text_layers" },
+            style: {},
+          },
+        ],
+      }),
+    ).toThrow();
+    expect(() =>
+      patchProjectInputSchema.parse({
+        project: guardedProject(),
+        operations: [
+          {
+            op: "set_text_style",
+            selector: { kind: "all_text_layers" },
+            style: { font: "ArialMT", unknownKey: true } as { font: string },
+          },
+        ],
+      }),
+    ).toThrow();
+  });
+
   it("accepts panel ops create_folder / move_project_item / delete_project_item", () => {
     const parsed = patchProjectInputSchema.parse({
       project: guardedProject(),
@@ -654,6 +700,12 @@ describe("buildPatchApplyScript", () => {
     expect(script).toContain("valueAtTime");
     expect(script).toContain("valueAtTime(comp.time, true)");
     expect(script).toContain("evaluatedFonts");
+    expect(script).toContain("evaluatedStyle");
+    expect(script).toContain("projectTextDocument");
+    expect(script).toContain("styleSnapshotFromProjection");
+    expect(script).toContain("applyStyleToDoc");
+    expect(script).toContain("Cannot set leading with autoLeading: true");
+    expect(script).toContain("attachEvaluatedTextEvidence");
     expect(script).toContain("readAuthoredTextDocument");
     expect(script).toContain("readEvaluatedTextDocument");
     expect(script).not.toContain("planToken");
