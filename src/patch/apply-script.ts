@@ -1,6 +1,7 @@
 import { SHARED_ITEM_REFS_HELPERS } from "../inventory/item-refs-script.js";
 import { SHARED_COMP_LAYER_RESOLVE_HELPERS } from "../inventory/resolve-script.js";
 import { SHARED_INVENTORY_HELPERS } from "../inventory/shared-script.js";
+import { SHARED_TEXT_DOCUMENT_HELPERS } from "../inventory/text-document-script.js";
 import { CONTROL_PLANE_APPLY_HELPERS } from "./apply-control-plane-script.js";
 import { PATCH_MAX_TARGETS, PATCH_UNDO_GROUP_NAME } from "./constants.js";
 
@@ -30,6 +31,8 @@ ${SHARED_INVENTORY_HELPERS}
 ${SHARED_ITEM_REFS_HELPERS}
 
 ${SHARED_COMP_LAYER_RESOLVE_HELPERS}
+
+${SHARED_TEXT_DOCUMENT_HELPERS}
 
 ${CONTROL_PLANE_APPLY_HELPERS}
 
@@ -327,27 +330,25 @@ function readFonts(doc, allStyleRuns) {
   return fonts;
 }
 
-function attachEvaluatedFonts(evidence, textProp, comp, allStyleRuns) {
+function styleSnapshotFromDoc(doc) {
+  return styleSnapshotFromProjection(projectTextDocument(doc));
+}
+
+function attachEvaluatedTextEvidence(evidence, textProp, comp, allStyleRuns) {
   try {
     var evalDoc = readEvaluatedTextDocument(textProp, comp);
     if (!evalDoc) return;
     var evalFonts = readFonts(evalDoc, allStyleRuns);
     if (evalFonts) evidence.evaluatedFonts = evalFonts;
+    var evalSnap = styleSnapshotFromDoc(evalDoc);
+    if (evalSnap) evidence.evaluatedStyle = evalSnap;
   } catch (e) {}
 }
 
-function applyFontToDoc(doc, font, allStyleRuns) {
-  if (allStyleRuns) {
-    try {
-      if (typeof doc.characterRange === "function" && doc.text && doc.text.length > 0) {
-        var cr = doc.characterRange(0, doc.text.length);
-        cr.font = font;
-        return true;
-      }
-    } catch (e) {}
-  }
-  doc.font = font;
-  return true;
+function fillTextStyleEvidence(slot, styleSnap, fonts, textProp, comp, allStyleRuns) {
+  slot.style = styleSnap;
+  if (fonts) slot.fonts = fonts;
+  attachEvaluatedTextEvidence(slot, textProp, comp, allStyleRuns);
 }
 
 function fontsAllMatch(fonts, font) {
@@ -358,8 +359,17 @@ function fontsAllMatch(fonts, font) {
   return true;
 }
 
+function authoredStyleSatisfied(styleSnap, fonts, style) {
+  if (!suppliedStyleMatches(styleSnap, style)) return false;
+  // fonts is additive evidence; when unreadable, style.font from the projection is enough
+  if (style.font !== undefined && fonts && fonts.length > 0 && !fontsAllMatch(fonts, style.font)) {
+    return false;
+  }
+  return true;
+}
+
 function applySetTextStyle(plan, opResult) {
-  var font = plan.op.style.font;
+  var style = plan.op.style || {};
   var allStyleRuns = plan.op.allStyleRuns !== false;
   var anyChanged = false;
   var anyFailed = false;
@@ -386,46 +396,63 @@ function applySetTextStyle(plan, opResult) {
       var doc = readAuthoredTextDocument(textProp, t.comp);
       if (!doc) {
         targetResult.status = "unsupported";
-        targetResult.message = "Could not read TextDocument.font / CharacterRange";
+        targetResult.message = "Could not read TextDocument";
         anyFailed = true;
         opResult.targets.push(targetResult);
         continue;
       }
+      var beforeStyle = styleSnapshotFromDoc(doc);
       var beforeFonts = readFonts(doc, allStyleRuns);
-      if (!beforeFonts) {
-        targetResult.status = "unsupported";
-        targetResult.message = "Could not read TextDocument.font / CharacterRange";
+      targetResult.before = {};
+      fillTextStyleEvidence(
+        targetResult.before,
+        beforeStyle,
+        beforeFonts,
+        textProp,
+        t.comp,
+        allStyleRuns
+      );
+      if (authoredStyleSatisfied(beforeStyle, beforeFonts, style)) {
+        targetResult.status = "already_satisfied";
+        targetResult.after = targetResult.before;
+        opResult.targets.push(targetResult);
+        continue;
+      }
+      var writeErr = applyStyleToDoc(doc, style, allStyleRuns);
+      if (writeErr) {
+        targetResult.status = "failed";
+        targetResult.message = writeErr;
+        targetResult.after = { style: beforeStyle };
+        if (beforeFonts) targetResult.after.fonts = beforeFonts;
         anyFailed = true;
         opResult.targets.push(targetResult);
-        continue;
+        applyError = writeErr;
+        break;
       }
-      targetResult.before = { fonts: beforeFonts };
-      attachEvaluatedFonts(targetResult.before, textProp, t.comp, allStyleRuns);
-      if (fontsAllMatch(beforeFonts, font)) {
-        targetResult.status = "already_satisfied";
-        targetResult.after = { fonts: beforeFonts };
-        attachEvaluatedFonts(targetResult.after, textProp, t.comp, allStyleRuns);
-        opResult.targets.push(targetResult);
-        continue;
-      }
-      applyFontToDoc(doc, font, allStyleRuns);
       textProp.setValue(doc);
       anyChanged = true;
       var afterDoc = readAuthoredTextDocument(textProp, t.comp);
+      var afterStyle = afterDoc ? styleSnapshotFromDoc(afterDoc) : null;
       var afterFonts = afterDoc ? readFonts(afterDoc, allStyleRuns) : null;
-      if (afterFonts) {
-        targetResult.after = { fonts: afterFonts };
-        attachEvaluatedFonts(targetResult.after, textProp, t.comp, allStyleRuns);
+      if (afterStyle) {
+        targetResult.after = {};
+        fillTextStyleEvidence(
+          targetResult.after,
+          afterStyle,
+          afterFonts,
+          textProp,
+          t.comp,
+          allStyleRuns
+        );
       }
-      if (afterFonts && fontsAllMatch(afterFonts, font)) {
+      if (afterStyle && authoredStyleSatisfied(afterStyle, afterFonts, style)) {
         targetResult.status = "changed";
         opResult.targets.push(targetResult);
       } else {
         targetResult.status = "failed";
-        targetResult.message =
-          afterFonts
-            ? "Post-condition failed: font did not match after write"
-            : "Post-condition failed: could not re-read fonts after write";
+        targetResult.message = afterStyle
+          ? "Post-condition failed: authored style did not match supplied keys after write"
+          : "Post-condition failed: could not re-read TextDocument style after write";
         anyFailed = true;
         opResult.targets.push(targetResult);
         applyError = targetResult.message;
@@ -438,10 +465,18 @@ function applySetTextStyle(plan, opResult) {
         var failProp = t.layer.property("Source Text");
         if (failProp) {
           var failDoc = readAuthoredTextDocument(failProp, t.comp);
+          var failStyle = failDoc ? styleSnapshotFromDoc(failDoc) : null;
           var failFonts = failDoc ? readFonts(failDoc, allStyleRuns) : null;
-          if (failFonts) {
-            targetResult.after = { fonts: failFonts };
-            attachEvaluatedFonts(targetResult.after, failProp, t.comp, allStyleRuns);
+          if (failStyle) {
+            targetResult.after = {};
+            fillTextStyleEvidence(
+              targetResult.after,
+              failStyle,
+              failFonts,
+              failProp,
+              t.comp,
+              allStyleRuns
+            );
           }
         }
       } catch (re) {}

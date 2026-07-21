@@ -312,6 +312,57 @@ describe("parseLayerInspect", () => {
     const shape = props[1]!;
     expect(shape.value).toEqual({ unserializable: true, propertyValueType: "SHAPE" });
   });
+
+  it("parses TEXT_DOCUMENT style projection and keeps shape unserializable", () => {
+    const withText: LayerInspectResult = {
+      ...extendedSample,
+      layer: {
+        ...extendedSample.layer,
+        type: "text",
+        properties: [
+          {
+            name: "Source Text",
+            matchName: "ADBE Text Document",
+            propertyIndex: 1,
+            isGroup: false,
+            propertyValueType: "TEXT_DOCUMENT",
+            numKeys: 0,
+            hasExpression: false,
+            expressionEnabled: false,
+            value: {
+              kind: "textDocument",
+              style: { font: "ArialMT", fontSize: 48, autoLeading: true },
+              boxText: false,
+              pointText: true,
+            },
+          },
+          {
+            name: "Path",
+            matchName: "ADBE Vector Shape",
+            propertyIndex: 2,
+            isGroup: false,
+            propertyValueType: "SHAPE",
+            numKeys: 0,
+            hasExpression: false,
+            expressionEnabled: false,
+            value: { unserializable: true, propertyValueType: "SHAPE" },
+          },
+        ],
+      },
+    };
+    const parsed = parseLayerInspect(JSON.stringify(withText));
+    const textVal = parsed.layer.properties[0]!.value as {
+      kind: string;
+      style: { font: string; autoLeading: boolean };
+    };
+    expect(textVal.kind).toBe("textDocument");
+    expect(textVal.style.font).toBe("ArialMT");
+    expect(textVal.style.autoLeading).toBe(true);
+    expect(parsed.layer.properties[1]!.value).toEqual({
+      unserializable: true,
+      propertyValueType: "SHAPE",
+    });
+  });
 });
 
 describe("parseSourceInspect", () => {
@@ -378,6 +429,9 @@ describe("inspect scripts", () => {
     expect(layerScript).toContain("authoredValue");
     expect(layerScript).toContain("evaluatedValue");
     expect(layerScript).toContain("ADBE Scale");
+    expect(layerScript).toContain("projectTextDocument");
+    expect(layerScript).toContain("TEXT_DOCUMENT");
+    expect(layerScript).toContain('kind: "textDocument"');
 
     const sourceScript = buildGetSourceScript({ sourceId: 55, detail: "full" });
     expect(sourceScript).toContain("resolveFootage");

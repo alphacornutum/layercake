@@ -10,6 +10,7 @@ import { createAeHost } from "../src/host/create-host.js";
 import { closeProject, openProjectGuarded, SessionError } from "../src/host/session.js";
 import type { AeHost } from "../src/host/types.js";
 import { getItemRefs } from "../src/inventory/get-item-refs.js";
+import { getLayer } from "../src/inventory/get-layer.js";
 import { listComps } from "../src/inventory/list-comps.js";
 import { listFolders } from "../src/inventory/list-folders.js";
 import { listProjectContext } from "../src/inventory/list-project-context.js";
@@ -529,6 +530,92 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
     expect(byCompNames.ok).toBe(true);
     if (!byCompNames.ok) return;
     expect(byCompNames.results[0]?.targets[0]?.status).toBe("already_satisfied");
+  });
+
+  it("set_text_style autoLeading + inspect SourceText projection", async (ctx) => {
+    if (!aeReady) {
+      ctx.skip();
+      return;
+    }
+    await openWorkCopy(host, true);
+    const before = await listProjectContext(host, config.scriptTimeoutMs);
+    const { main, textLayer } = await mainTextLayer(host);
+
+    const patch = await applyProjectPatch(
+      host,
+      {
+        project: { path: before.projectPath!, fingerprint: before.fingerprint },
+        operations: [
+          {
+            op: "set_text_style",
+            selector: {
+              kind: "layers",
+              layers: [{ compId: main.id, layerId: textLayer.id }],
+            },
+            style: { autoLeading: true },
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(patch.ok).toBe(true);
+    if (!patch.ok) return;
+    const target = patch.results[0]?.targets[0] as TextStyleTargetResult | undefined;
+    expect(target?.status).toMatch(/^(changed|already_satisfied)$/);
+    expect(target?.after?.style?.autoLeading).toBe(true);
+
+    const inspect = await getLayer(
+      host,
+      {
+        compId: main.id,
+        layerId: textLayer.id,
+        detail: "extended",
+        matchNames: ["ADBE Text Properties", "ADBE Text Document"],
+      },
+      config.scriptTimeoutMs,
+      config.inspectMaxBytes,
+    );
+    const findTextDoc = (
+      nodes: typeof inspect.layer.properties,
+    ): { kind?: string; style?: { autoLeading?: boolean } } | null => {
+      for (const n of nodes) {
+        if (n.propertyValueType === "TEXT_DOCUMENT" && n.value && typeof n.value === "object") {
+          return n.value as { kind?: string; style?: { autoLeading?: boolean } };
+        }
+        if (n.properties) {
+          const nested = findTextDoc(n.properties);
+          if (nested) return nested;
+        }
+      }
+      return null;
+    };
+    const projected = findTextDoc(inspect.layer.properties);
+    expect(projected?.kind).toBe("textDocument");
+    expect(projected?.style?.autoLeading).toBe(true);
+
+    const mid = await listProjectContext(host, config.scriptTimeoutMs);
+    const fontOnly = await applyProjectPatch(
+      host,
+      {
+        project: { path: mid.projectPath!, fingerprint: mid.fingerprint },
+        operations: [
+          {
+            op: "set_text_style",
+            selector: {
+              kind: "layers",
+              layers: [{ compId: main.id, layerId: textLayer.id }],
+            },
+            style: { font: "ArialMT" },
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(fontOnly.ok).toBe(true);
+    if (!fontOnly.ok) return;
+    const fontTarget = fontOnly.results[0]?.targets[0] as TextStyleTargetResult | undefined;
+    expect(fontTarget?.status).toMatch(/^(changed|already_satisfied)$/);
+    expect(fontTarget?.after?.fonts).toBeTruthy();
   });
 
   it("rename_layer by id and unique name; opaque mustache; no implicit save", async (ctx) => {

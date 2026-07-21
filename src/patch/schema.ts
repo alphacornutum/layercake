@@ -47,12 +47,57 @@ const itemsSelectorSchema = z.object({
 // array of schemas, which Codex rejects when building MCP tool specs.
 const rgbColorSchema = z.array(z.number()).length(3).describe("RGB color in [0..1] per channel");
 
+const vec2Schema = z.array(z.number()).length(2).describe("2D vector [x, y] or [width, height]");
+
+export const TEXT_JUSTIFICATION_VALUES = [
+  "LEFT_JUSTIFY",
+  "RIGHT_JUSTIFY",
+  "CENTER_JUSTIFY",
+  "FULL_JUSTIFY_LASTLINE_LEFT",
+  "FULL_JUSTIFY_LASTLINE_RIGHT",
+  "FULL_JUSTIFY_LASTLINE_CENTER",
+  "FULL_JUSTIFY_LASTLINE_FULL",
+] as const;
+
+const textStyleBagSchema = z
+  .object({
+    font: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("Exact ExtendScript TextDocument/CharacterRange font string"),
+    fontSize: z.number().optional(),
+    fillColor: rgbColorSchema.optional(),
+    applyFill: z.boolean().optional(),
+    strokeColor: rgbColorSchema.optional(),
+    applyStroke: z.boolean().optional(),
+    strokeWidth: z.number().optional(),
+    tracking: z.number().optional(),
+    baselineShift: z.number().optional(),
+    fauxBold: z.boolean().optional(),
+    fauxItalic: z.boolean().optional(),
+    allCaps: z.boolean().optional(),
+    smallCaps: z.boolean().optional(),
+    horizontalScale: z.number().optional(),
+    verticalScale: z.number().optional(),
+    autoLeading: z.boolean().optional(),
+    leading: z.number().optional(),
+    justification: z.enum(TEXT_JUSTIFICATION_VALUES).optional(),
+    text: z.string().optional(),
+    boxTextSize: vec2Schema.optional(),
+    boxTextPos: vec2Schema.optional(),
+  })
+  .strict()
+  .refine((v) => Object.keys(v).length > 0, {
+    message: "style requires at least one allowlisted key",
+  });
+
+export type TextStyleBag = z.infer<typeof textStyleBagSchema>;
+
 export const setTextStyleOpSchema = z.object({
   op: z.literal("set_text_style"),
   selector: textSelectorSchema,
-  style: z.object({
-    font: z.string().min(1).describe("Exact ExtendScript TextDocument/CharacterRange font string"),
-  }),
+  style: textStyleBagSchema,
   allStyleRuns: z.boolean().optional().default(true),
   preserveUnspecified: z.boolean().optional().default(true),
 });
