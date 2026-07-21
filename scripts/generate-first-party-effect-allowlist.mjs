@@ -6,6 +6,7 @@
  * Source: vendor/after-effects-scripting-guide/docs/matchnames/effects/firstparty.md
  * Invoked by docs:fetch and docs:allowlist.
  */
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -58,4 +59,13 @@ export const FIRST_PARTY_EFFECT_MATCH_NAMES: readonly string[] = ${JSON.stringif
 `;
 
 writeFileSync(outTs, body, "utf8");
+
+// Match repo fmt gate — oxfmt may rewrite JSON.stringify layout (trailing commas, etc.).
+const oxfmtBin = join(root, "node_modules", ".bin", "oxfmt");
+if (!existsSync(oxfmtBin)) {
+  console.error(`Missing ${oxfmtBin}; run npm install so docs:allowlist can format the output.`);
+  process.exit(1);
+}
+execFileSync(oxfmtBin, [outTs], { stdio: "inherit", cwd: root });
+
 console.error(`Wrote ${sorted.length} first-party effect match names → ${outTs}`);
