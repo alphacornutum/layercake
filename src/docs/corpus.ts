@@ -55,9 +55,7 @@ function makeExcerpt(content: string, max = 240): string {
 
 export async function loadDocsCorpus(root: string): Promise<DocsCorpus> {
   if (!existsSync(root)) {
-    throw new DocsError(
-      `Docs corpus path does not exist: ${root}. Run \`npm run docs:fetch\` or set AE_DOCS_PATH.`,
-    );
+    throw new DocsError(`Docs corpus path does not exist: ${root}. Run \`npm run docs:fetch\`.`);
   }
 
   const files = await walkMarkdown(root);

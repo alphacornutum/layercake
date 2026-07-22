@@ -19,7 +19,7 @@ flowchart LR
   Patch -->|evalScript| Host
   Host -->|darwin: osascript DoScriptFile| AE[After Effects]
   Host -->|win32: AfterFX.exe -r| AE
-  Docs --> Corpus[vendor/.../docs]
+  Docs --> Corpus[package vendor/.../docs]
   Skills --> SkillTree[skills/drive-after-effects]
 ```
 
@@ -54,7 +54,7 @@ Thin MCP tools compose over a single host bridge. Inventory, context, patch, sav
 4. **Eval** — `ae_eval_script` validates source, wraps with JSON polyfill + result-file protocol, runs via AppleScript `DoScriptFile` (macOS) or `AfterFX.exe -r` (Windows), parses `OK`/`ERR`.
 5. **Inventory / inspect** — tool builds or selects an ExtendScript string → `host.evalScript` → parse JSON → optional filter → MCP text result (inspect tools also enforce `AE_INSPECT_MAX_BYTES`).
 6. **Patch / save** — `ae_patch_project` validates typed ops (text style, rename layer/item, panel create/move/delete, control-plane mutators including solids/source replace/timing/layer switches/composition settings/expressions/`set_layer_transform`/reset/layer delete/`safe_delete_project_item`), guards path+fingerprint, applies in one undo group with post-condition-verified before/after evidence (no implicit save). Layer targets accept id or unique name (inspect parity); comps-only ops use nested `target` + `settings`. `ae_get_item_refs` shares inbound-ref collection with `safe_delete_project_item`. `ae_save_project` persists via `save_copy` (AE Save As) or `create_backup` (filesystem copy of the `.aep` only — not Collect Files) under `AE_ARTIFACT_DIR` / caller path.
-7. **Docs** — `ae_docs_search` / `ae_docs_get` and `ae://docs/...` resources read the vendored corpus (no AE).
+7. **Docs** — `ae_docs_search` / `ae_docs_get` and `ae://docs/...` resources read the package-local vendored corpus (no AE; path independent of process cwd).
 8. **Product skill** — when `skills/drive-after-effects` loads, serve `skill://…` resources + `skill://index.json`, set server `instructions`, and advertise `io.modelcontextprotocol/skills`.
 
 ## Capability map

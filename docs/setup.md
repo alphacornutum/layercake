@@ -11,7 +11,7 @@ npm install
 npm run docs:fetch
 ```
 
-`npm run docs:fetch` downloads a local copy of the After Effects Scripting Guide so agents can search it offline. See [scripting-guide.md](scripting-guide.md).
+`npm run docs:fetch` downloads a local copy of the After Effects Scripting Guide so agents can search it offline (also shipped under `vendor/` in the npm package). See [scripting-guide.md](scripting-guide.md).
 
 ### Environment file
 

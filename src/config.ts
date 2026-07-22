@@ -5,7 +5,6 @@ import { isAbsolute, join, resolve } from "node:path";
 export type AeConfig = {
   executable: string | undefined;
   appName: string | undefined;
-  docsPath: string;
   scriptTimeoutMs: number;
   /** UTF-8 byte ceiling for ae_get_layer / ae_get_source success JSON. */
   inspectMaxBytes: number;
@@ -82,13 +81,6 @@ export function loadConfig(
     appName = appNameFromExecutable(executable);
   }
 
-  const docsRaw = env.AE_DOCS_PATH?.trim();
-  const docsPath = docsRaw
-    ? isAbsolute(docsRaw)
-      ? docsRaw
-      : resolve(cwd, docsRaw)
-    : resolve(cwd, "vendor/after-effects-scripting-guide/docs");
-
   const artifactRaw = env.AE_ARTIFACT_DIR?.trim();
   let artifactDir: string;
   if (artifactRaw) {
@@ -100,7 +92,6 @@ export function loadConfig(
   return {
     executable,
     appName,
-    docsPath,
     scriptTimeoutMs: parseTimeout(env.AE_SCRIPT_TIMEOUT_MS),
     inspectMaxBytes: parseInspectMaxBytes(env.AE_INSPECT_MAX_BYTES),
     artifactDir,

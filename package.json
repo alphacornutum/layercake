@@ -24,7 +24,8 @@
   },
   "files": [
     "dist",
-    "skills"
+    "skills",
+    "vendor/after-effects-scripting-guide"
   ],
   "type": "module",
   "main": "./dist/index.js",

@@ -10,7 +10,7 @@ Machine IDs stay lowercase `layercake` (npm package, MCP config key, `serverInfo
 - **MCP:** `@modelcontextprotocol/sdk` + Zod tool schemas in `src/server.ts`
 - **Host bridge:** platform factory in `src/host/create-host.ts` — AppleScript `DoScriptFile` (`macos.ts` on darwin), `AfterFX.exe -r` (`windows.ts` on win32); other platforms get an unavailable stub
 - **ExtendScript:** ES3 host; `JSON` comes from the `extendscript-json` polyfill injected by `wrapExtendScript` — do not assume modern JS in AE scripts
-- **Docs corpus:** `vendor/after-effects-scripting-guide/docs` (populate with `npm run docs:fetch`)
+- **Docs corpus:** `vendor/after-effects-scripting-guide/docs` under the package root (shipped with the npm package; refresh with `npm run docs:fetch`)
 - **Quality:** Vitest, oxlint, oxfmt
 - **Planning:** OpenSpec under `openspec/` (specs + changes)
 - **ADRs:** `docs/adr/` for hard-to-reverse, surprising design trade-offs (see rules `docs-adr`)
@@ -62,7 +62,7 @@ agentsync check # full QA: generated agent outputs match .ai/src/ (Cursor: Shell
 ## Boundaries
 
 - Host bridge is macOS (AppleScript) + Windows (`AfterFX.exe -r`); do not invent Linux or COM transports without an explicit change.
-- Treat `vendor/` as fetched corpus + attribution — regenerate via `docs:fetch`, do not hand-author guide pages.
+- Treat `vendor/` as fetched corpus + attribution — regenerate via `docs:fetch`, do not hand-author guide pages; load from package root (ships in the npm package).
 - Preserve the eval result protocol in `script-wrapper.ts` (`OK|ERR` file payload).
 - Public tool names (`ae_*`) and their JSON shapes are contracts — change them through OpenSpec when possible.
 - Keep root `ARCHITECTURE.md` accurate — it is part of the agent orientation contract.
