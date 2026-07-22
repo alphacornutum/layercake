@@ -44,9 +44,9 @@ LayerCake uses a result file to receive values from scripts running inside After
 Set the application name and/or full `.app` path:
 
 ```bash
-export AE_APP_NAME="Adobe After Effects 2025"
+export AE_APP_NAME="Adobe After Effects 2026"
 # optional:
-# export AE_EXECUTABLE="/Applications/Adobe After Effects 2025/Adobe After Effects 2025.app"
+# export AE_EXECUTABLE="/Applications/Adobe After Effects 2026/Adobe After Effects 2026.app"
 ```
 
 Find the installed name:
@@ -62,13 +62,13 @@ The year in the name must match your install.
 Set the path to `AfterFX.exe` (required):
 
 ```powershell
-$env:AE_EXECUTABLE = "C:\Program Files\Adobe\Adobe After Effects 2025\Support Files\AfterFX.exe"
+$env:AE_EXECUTABLE = "C:\Program Files\Adobe\Adobe After Effects 2026\Support Files\AfterFX.exe"
 ```
 
 Or in `cmd.exe`:
 
 ```bat
-set AE_EXECUTABLE=C:\Program Files\Adobe\Adobe After Effects 2025\Support Files\AfterFX.exe
+set AE_EXECUTABLE=C:\Program Files\Adobe\Adobe After Effects 2026\Support Files\AfterFX.exe
 ```
 
 The version/year folder may differ. The path should point into the `Support Files` directory.
@@ -116,8 +116,8 @@ After changing MCP config, restart the agent or reload its MCP servers.
       "command": "node",
       "args": ["/absolute/path/to/layercake/dist/index.js"],
       "env": {
-        "AE_APP_NAME": "Adobe After Effects 2025",
-        "AE_EXECUTABLE": "/Applications/Adobe After Effects 2025/Adobe After Effects 2025.app"
+        "AE_APP_NAME": "Adobe After Effects 2026",
+        "AE_EXECUTABLE": "/Applications/Adobe After Effects 2026/Adobe After Effects 2026.app"
       }
     }
   }
@@ -133,7 +133,7 @@ After changing MCP config, restart the agent or reload its MCP servers.
       "command": "node",
       "args": ["C:\\absolute\\path\\to\\layercake\\dist\\index.js"],
       "env": {
-        "AE_EXECUTABLE": "C:\\Program Files\\Adobe\\Adobe After Effects 2025\\Support Files\\AfterFX.exe"
+        "AE_EXECUTABLE": "C:\\Program Files\\Adobe\\Adobe After Effects 2026\\Support Files\\AfterFX.exe"
       }
     }
   }
@@ -153,7 +153,7 @@ Run `npm run build` first so `dist/index.js` exists.
       "command": "npx",
       "args": ["tsx", "/absolute/path/to/layercake/src/index.ts"],
       "env": {
-        "AE_APP_NAME": "Adobe After Effects 2025"
+        "AE_APP_NAME": "Adobe After Effects 2026"
       }
     }
   }
@@ -169,7 +169,7 @@ Run `npm run build` first so `dist/index.js` exists.
       "command": "npx",
       "args": ["tsx", "C:\\absolute\\path\\to\\layercake\\src\\index.ts"],
       "env": {
-        "AE_EXECUTABLE": "C:\\Program Files\\Adobe\\Adobe After Effects 2025\\Support Files\\AfterFX.exe"
+        "AE_EXECUTABLE": "C:\\Program Files\\Adobe\\Adobe After Effects 2026\\Support Files\\AfterFX.exe"
       }
     }
   }

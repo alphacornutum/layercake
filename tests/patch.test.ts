@@ -48,6 +48,37 @@ describe("patchProjectInputSchema", () => {
     }
   });
 
+  it("accepts set_text_style caps booleans and rejects fontCapsOption", () => {
+    const parsed = patchProjectInputSchema.parse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "set_text_style",
+          selector: { kind: "layers", layers: [{ compId: 1, layerId: 2 }] },
+          style: { allCaps: true, smallCaps: false },
+        },
+      ],
+    });
+    const op = parsed.operations[0];
+    expect(op?.op).toBe("set_text_style");
+    if (op?.op === "set_text_style") {
+      expect(op.style.allCaps).toBe(true);
+      expect(op.style.smallCaps).toBe(false);
+    }
+    expect(() =>
+      patchProjectInputSchema.parse({
+        project: guardedProject(),
+        operations: [
+          {
+            op: "set_text_style",
+            selector: { kind: "all_text_layers" },
+            style: { fontCapsOption: "FONT_ALL_CAPS" } as { fontCapsOption: string },
+          },
+        ],
+      }),
+    ).toThrow();
+  });
+
   it("rejects empty or unknown set_text_style style keys", () => {
     expect(() =>
       patchProjectInputSchema.parse({
@@ -705,6 +736,17 @@ describe("buildPatchApplyScript", () => {
     expect(script).toContain("styleSnapshotFromProjection");
     expect(script).toContain("applyStyleToDoc");
     expect(script).toContain("Cannot set leading with autoLeading: true");
+    expect(script).toContain("fontCapsOption");
+    expect(script).toContain("FONT_ALL_SMALL_CAPS");
+    expect(script).toContain("capsBooleansFromDoc");
+    expect(script).toContain("preservedCaps");
+    expect(script).toContain('charWriteTarget("allCaps")');
+    expect(script).not.toContain("fontCapsOptionFromBooleans");
+    const preserveAt = script.indexOf("preservedCaps = capsBooleansFromDoc");
+    const docOrderAt = script.indexOf("for (di = 0; di < TEXT_STYLE_DOC_ORDER.length");
+    expect(preserveAt).toBeGreaterThan(-1);
+    expect(docOrderAt).toBeGreaterThan(-1);
+    expect(preserveAt).toBeLessThan(docOrderAt);
     expect(script).toContain("attachEvaluatedTextEvidence");
     expect(script).toContain("readAuthoredTextDocument");
     expect(script).toContain("readEvaluatedTextDocument");

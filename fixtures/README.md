@@ -24,15 +24,15 @@ Configure the host via `.env` (or the environment), then run the suite.
 ### macOS
 
 ```bash
-export AE_APP_NAME="Adobe After Effects 2025"   # match your install
+export AE_APP_NAME="Adobe After Effects 2026"   # match your install
 # optional:
-# export AE_EXECUTABLE="/Applications/Adobe After Effects 2025/Adobe After Effects 2025.app"
+# export AE_EXECUTABLE="/Applications/Adobe After Effects 2026/Adobe After Effects 2026.app"
 ```
 
 ### Windows
 
 ```bat
-set AE_EXECUTABLE=C:\Program Files\Adobe\Adobe After Effects 2025\Support Files\AfterFX.exe
+set AE_EXECUTABLE=C:\Program Files\Adobe\Adobe After Effects 2026\Support Files\AfterFX.exe
 ```
 
 In After Effects, enable **Preferences → Scripting & Expressions → Allow Scripts To Write Files And Access Network**.

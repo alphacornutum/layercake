@@ -25,7 +25,7 @@ describe("loadConfig", () => {
     const cfg = loadConfig(
       {
         AE_EXECUTABLE: "Apps/AE.app",
-        AE_APP_NAME: "Adobe After Effects 2025",
+        AE_APP_NAME: "Adobe After Effects 2026",
         AE_SCRIPT_TIMEOUT_MS: "12000",
         AE_INSPECT_MAX_BYTES: "1048576",
         AE_ARTIFACT_DIR: "/var/layercake-artifacts",
@@ -33,7 +33,7 @@ describe("loadConfig", () => {
       "/repo",
     );
     expect(cfg.executable).toBe("/repo/Apps/AE.app");
-    expect(cfg.appName).toBe("Adobe After Effects 2025");
+    expect(cfg.appName).toBe("Adobe After Effects 2026");
     expect(cfg.scriptTimeoutMs).toBe(12_000);
     expect(cfg.inspectMaxBytes).toBe(1_048_576);
     expect(cfg.artifactDir).toBe("/var/layercake-artifacts");
@@ -61,8 +61,8 @@ describe("loadConfig", () => {
 
 describe("appNameFromExecutable", () => {
   it("parses .app bundle name", () => {
-    expect(appNameFromExecutable("/Applications/Adobe After Effects 2025.app")).toBe(
-      "Adobe After Effects 2025",
+    expect(appNameFromExecutable("/Applications/Adobe After Effects 2026.app")).toBe(
+      "Adobe After Effects 2026",
     );
   });
 });
@@ -76,10 +76,10 @@ describe("assertHostConfigured", () => {
 
   it("accepts app name only on macOS", () => {
     const resolved = assertHostConfigured(
-      loadConfig({ AE_APP_NAME: "Adobe After Effects 2025" }, "/repo"),
+      loadConfig({ AE_APP_NAME: "Adobe After Effects 2026" }, "/repo"),
       "darwin",
     );
-    expect(resolved.appName).toBe("Adobe After Effects 2025");
+    expect(resolved.appName).toBe("Adobe After Effects 2026");
   });
 
   it("accepts existing executable only on Windows without AE_APP_NAME", () => {

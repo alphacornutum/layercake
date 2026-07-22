@@ -109,6 +109,43 @@ async function mainTextLayer(
   return { main: main!, textLayer: textLayer! };
 }
 
+type SetTextStyleBag = Extract<
+  PatchProjectInput["operations"][number],
+  { op: "set_text_style" }
+>["style"];
+
+/** Apply set_text_style to the fixture main text layer; returns patch + typed target. */
+async function patchMainTextStyle(
+  host: AeHost,
+  projectPath: string,
+  fingerprint: string,
+  main: InventoryComposition,
+  textLayer: InventoryLayer,
+  style: SetTextStyleBag,
+) {
+  const patch = await applyProjectPatch(
+    host,
+    {
+      project: { path: projectPath, fingerprint },
+      operations: [
+        {
+          op: "set_text_style",
+          selector: {
+            kind: "layers",
+            layers: [{ compId: main.id, layerId: textLayer.id }],
+          },
+          style,
+        },
+      ],
+    },
+    config.scriptTimeoutMs,
+  );
+  const target = patch.ok
+    ? (patch.results[0]?.targets[0] as TextStyleTargetResult | undefined)
+    : undefined;
+  return { patch, target };
+}
+
 describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () => {
   const host = hasHost ? createAeHost(config) : (null as unknown as AeHost);
 
@@ -616,6 +653,99 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
     const fontTarget = fontOnly.results[0]?.targets[0] as TextStyleTargetResult | undefined;
     expect(fontTarget?.status).toMatch(/^(changed|already_satisfied)$/);
     expect(fontTarget?.after?.fonts).toBeTruthy();
+  });
+
+  it("set_text_style allCaps / smallCaps via fontCapsOption round-trip", async (ctx) => {
+    if (!aeReady) {
+      ctx.skip();
+      return;
+    }
+    await openWorkCopy(host, true);
+    const before = await listProjectContext(host, config.scriptTimeoutMs);
+    const { main, textLayer } = await mainTextLayer(host);
+    const projectPath = before.projectPath!;
+
+    const modes: Array<{
+      style: { allCaps: boolean; smallCaps: boolean };
+      label: string;
+    }> = [
+      { style: { allCaps: true, smallCaps: false }, label: "all caps" },
+      { style: { allCaps: false, smallCaps: true }, label: "small caps" },
+      { style: { allCaps: true, smallCaps: true }, label: "all small caps" },
+      { style: { allCaps: false, smallCaps: false }, label: "normal caps" },
+    ];
+
+    let fingerprint = before.fingerprint;
+    for (const mode of modes) {
+      const { patch, target } = await patchMainTextStyle(
+        host,
+        projectPath,
+        fingerprint,
+        main,
+        textLayer,
+        mode.style,
+      );
+      expect(patch.ok, mode.label).toBe(true);
+      if (!patch.ok) return;
+      fingerprint = patch.fingerprint;
+      expect(target?.status, mode.label).toMatch(/^(changed|already_satisfied)$/);
+      expect(target?.after?.style?.allCaps, mode.label).toBe(mode.style.allCaps);
+      expect(target?.after?.style?.smallCaps, mode.label).toBe(mode.style.smallCaps);
+    }
+
+    // Partial from normal caps: only smallCaps true → preserve allCaps false.
+    {
+      const { patch, target } = await patchMainTextStyle(
+        host,
+        projectPath,
+        fingerprint,
+        main,
+        textLayer,
+        { smallCaps: true },
+      );
+      expect(patch.ok).toBe(true);
+      if (!patch.ok) return;
+      fingerprint = patch.fingerprint;
+      expect(target?.status).toMatch(/^(changed|already_satisfied)$/);
+      expect(target?.after?.style?.allCaps).toBe(false);
+      expect(target?.after?.style?.smallCaps).toBe(true);
+    }
+
+    // Partial merge: only allCaps true while smallCaps on → ALL_SMALL_CAPS.
+    {
+      const { patch, target } = await patchMainTextStyle(
+        host,
+        projectPath,
+        fingerprint,
+        main,
+        textLayer,
+        { allCaps: true },
+      );
+      expect(patch.ok).toBe(true);
+      if (!patch.ok) return;
+      fingerprint = patch.fingerprint;
+      expect(target?.status).toMatch(/^(changed|already_satisfied)$/);
+      expect(target?.after?.style?.allCaps).toBe(true);
+      expect(target?.after?.style?.smallCaps).toBe(true);
+    }
+
+    // text + partial caps: merge sibling from pre-text state (not AE reset after text write).
+    {
+      const { patch, target } = await patchMainTextStyle(
+        host,
+        projectPath,
+        fingerprint,
+        main,
+        textLayer,
+        { text: "Caps Merge Probe", allCaps: false },
+      );
+      expect(patch.ok).toBe(true);
+      if (!patch.ok) return;
+      expect(target?.status).toMatch(/^(changed|already_satisfied)$/);
+      expect(target?.after?.style?.allCaps).toBe(false);
+      expect(target?.after?.style?.smallCaps).toBe(true);
+      expect(target?.after?.style?.text).toBe("Caps Merge Probe");
+    }
   });
 
   it("rename_layer by id and unique name; opaque mustache; no implicit save", async (ctx) => {

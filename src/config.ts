@@ -127,7 +127,7 @@ export function assertHostConfigured(
   const appName = config.appName ?? appNameFromExecutable(config.executable!);
   if (!appName) {
     throw new ConfigError(
-      'Could not resolve AppleScript application name. Set AE_APP_NAME (e.g. "Adobe After Effects 2025").',
+      'Could not resolve AppleScript application name. Set AE_APP_NAME (e.g. "Adobe After Effects 2026").',
     );
   }
   if (config.executable && !existsSync(config.executable)) {

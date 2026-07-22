@@ -1,6 +1,7 @@
 # LayerCake
 
 [![CI](https://img.shields.io/badge/CI-GitHub%20Actions-2088FF?logo=github-actions&logoColor=white)](https://github.com/alphacornutum/layercake/actions)
+[![After Effects 26+](https://img.shields.io/badge/After%20Effects-26%2B-997B66)](docs/setup.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 **Use professionally designed After Effects projects as agent-ready video templates.**
@@ -129,7 +130,7 @@ LayerCake drives After Effects through:
 
 ## Requirements
 
-- Adobe After Effects installed locally
+- Adobe After Effects **26+** (supported baseline; older versions may work but are unsupported)
 - Node.js 20 or newer
 - An MCP-compatible agent or client
 - macOS or Windows
@@ -165,13 +166,13 @@ Configure the local After Effects installation.
 On macOS:
 
 ```bash
-AE_APP_NAME="Adobe After Effects 2025"
+AE_APP_NAME="Adobe After Effects 2026"
 ```
 
 On Windows:
 
 ```text
-AE_EXECUTABLE=C:\Program Files\Adobe\Adobe After Effects 2025\Support Files\AfterFX.exe
+AE_EXECUTABLE=C:\Program Files\Adobe\Adobe After Effects 2026\Support Files\AfterFX.exe
 ```
 
 Add LayerCake as a stdio MCP server.
@@ -185,7 +186,7 @@ Add LayerCake as a stdio MCP server.
       "command": "node",
       "args": ["/absolute/path/to/layercake/dist/index.js"],
       "env": {
-        "AE_APP_NAME": "Adobe After Effects 2025"
+        "AE_APP_NAME": "Adobe After Effects 2026"
       }
     }
   }
@@ -201,7 +202,7 @@ Add LayerCake as a stdio MCP server.
       "command": "node",
       "args": ["C:\\absolute\\path\\to\\layercake\\dist\\index.js"],
       "env": {
-        "AE_EXECUTABLE": "C:\\Program Files\\Adobe\\Adobe After Effects 2025\\Support Files\\AfterFX.exe"
+        "AE_EXECUTABLE": "C:\\Program Files\\Adobe\\Adobe After Effects 2026\\Support Files\\AfterFX.exe"
       }
     }
   }

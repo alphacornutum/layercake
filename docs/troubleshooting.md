@@ -111,7 +111,7 @@ The After Effects host bridge supports macOS and Windows. Documentation tools ma
 
 | Variable               | Description                                                                                                    |
 | ---------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `AE_APP_NAME`          | macOS AppleScript application name, for example `Adobe After Effects 2025`. Optional display value on Windows. |
+| `AE_APP_NAME`          | macOS AppleScript application name, for example `Adobe After Effects 2026`. Optional display value on Windows. |
 | `AE_EXECUTABLE`        | macOS path to the `.app`; required Windows path to `AfterFX.exe`.                                              |
 | `AE_SCRIPT_TIMEOUT_MS` | ExtendScript timeout in milliseconds. Default: `60000`.                                                        |
 | `AE_INSPECT_MAX_BYTES` | Maximum UTF-8 size for successful `ae_get_layer` and `ae_get_source` JSON. Default: `524288`.                  |
