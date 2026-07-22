@@ -40,9 +40,7 @@ export function main(): string {
   const comp = resolveComp(__args.compId, __args.compName, inspectFail);
   const layer = resolveLayer(comp, __args.layerId, __args.layerName, inspectFail);
   if (layer.id === undefined || layer.id === null)
-    throw new Error(
-      "Layer.id is unavailable. After Effects 22 (2022) or newer is required for ae_get_layer.",
-    );
+    throw new Error("Layer.id is unavailable. After Effects 24.6+ is required for ae_get_layer.");
   const detail = __args.detail || "overview";
   const preExpression = __args.preExpression !== false;
   const atTime = __args.atTime === undefined || __args.atTime === null ? comp.time : __args.atTime;

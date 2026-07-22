@@ -67,7 +67,7 @@ function layerById(comp, layerId) {
 - **Drag layer in time** (UI: move the layer bar and its keys together) is **not** a typed op — use `ae_eval_script` until a dedicated op exists. Do not expect `set_layer_timing` to shift keys.
 - Prefer `safe_delete_project_item` / `ae_get_item_refs` for cleanup; `delete_project_item` can recursively remove folder contents and delete in-use items.
 - `Layer.id` and `Item.id` are different spaces; join footage via `layer.source.id`.
-- Layer `index` changes when layers reorder; prefer `id` (AE 22+).
+- Layer `index` changes when layers reorder; prefer `id` (AE 24.6+ product floor).
 - Modal dialogs and missing fonts/footage prompts block until timeout — dismiss UI or increase `AE_SCRIPT_TIMEOUT_MS`.
 - `create_backup` is a project-file copy, not Collect Files — linked media stays at its stored paths; opening the backup from another folder can miss relative footage.
 - Timeline fold/twirl state is not available via scripting.

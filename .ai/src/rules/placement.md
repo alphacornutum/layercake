@@ -11,13 +11,13 @@ alwaysApply: true
 | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | MCP tool registration         | `src/server.ts`                                                                                                             |
 | Host bridge / wrap protocol   | `src/host/`                                                                                                                 |
-| Inventory tool                | `src/inventory/` — `list-<name>.ts`, thin `list-<name>-script.ts` loaders, types in `types.ts`, parse in `parse.js` |
-| First-party ExtendScript      | `src/ae-scripts/entries/` + `src/ae-scripts/shared/`; emit via `npm run build:ae-scripts`                             |
-| Shared ExtendScript helpers   | `src/ae-scripts/shared/` when two+ entries need the same helper; helper-only entries use `loadAeHelperScript`       |
-| Shared id\|name resolve       | `src/inventory/resolve-script.ts` (loader) + `src/ae-scripts/shared/resolve.ts` (inspect + patch)                   |
+| Inventory tool                | `src/inventory/` — `list-<name>.ts`, thin `list-<name>-script.ts` loaders, types in `types.ts`, parse in `parse.js`         |
+| First-party ExtendScript      | `src/ae-scripts/entries/` + `src/ae-scripts/shared/`; emit via `npm run build:ae-scripts`                                   |
+| Shared ExtendScript helpers   | `src/ae-scripts/shared/` when two+ entries need the same helper; helper-only entries use `loadAeHelperScript`               |
+| Shared id\|name resolve       | `src/ae-scripts/shared/resolve.ts` (imported by inspect + patch entries)                                                    |
 | Shared layer id\|name Zod     | `src/inventory/layer-target-schema.ts` (`compTargetSchema` / `layerTargetSchema` / `getLayerInputSchema`; patch re-exports) |
-| Comp switch key allowlist     | `src/inventory/comp-switches.ts` (`COMP_SWITCH_KEYS`; keep in sync with `src/ae-scripts/shared/inventory.ts`)       |
-| Typed patch ops               | `src/patch/` (`schema.ts`, `apply-script.ts` preamble + `patch-apply` entry, `types.ts`)                            |
+| Comp switch key allowlist     | `src/inventory/comp-switches.ts` (`COMP_SWITCH_KEYS`; keep in sync with `src/ae-scripts/shared/inventory.ts`)               |
+| Typed patch ops               | `src/patch/` (`schema.ts`, `apply-script.ts` preamble + `patch-apply` entry, `types.ts`)                                    |
 | Docs corpus/search            | `src/docs/`                                                                                                                 |
 | Unit / AE tests               | `tests/*.test.ts` / `tests/*.ae.test.ts`                                                                                    |
 | Doc fetch script              | `scripts/fetch-docs.mjs`                                                                                                    |

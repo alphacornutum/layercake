@@ -19,7 +19,7 @@ alwaysApply: true
 - `src/config.ts` — env loading and `ConfigError`; no AE I/O.
 - `src/host/` — `AeHost` interface, `createAeHost` factory, macOS AppleScript + Windows CLI bridges, script wrap/parse protocol, `loadAeScript` / `loadAeHelperScript`.
 - `src/ae-scripts/` — typed first-party ExtendScript (modern TS → emit); entries export `main(): string`.
-- `src/inventory/` — read-only project inventories: Node loaders + TS parse/filter; shared id\|name resolve loaders in `resolve-script.ts`; shared layer-target Zod in `layer-target-schema.ts`.
+- `src/inventory/` — read-only project inventories: Node loaders + TS parse/filter; shared layer-target Zod in `layer-target-schema.ts`.
 - `src/patch/` — typed apply-only mutations, broad-gate, save helpers; compose with inventory context (never mega-tools that hide patch+save).
 - `src/docs/` — local corpus load/search; URIs use `ae://docs/...`.
 
@@ -27,7 +27,7 @@ alwaysApply: true
 
 - `server` → `host` / `inventory` / `patch` / `docs` / `config`.
 - `inventory` → `host` (via `AeHost.evalScript` + `loadAeScript`) and local parse/filter — not the reverse.
-- `patch` → `host` / shared resolve helpers from inventory — not the reverse.
+- `patch` → `host` (and shared AE resolve via bundled `src/ae-scripts/`) — not the reverse.
 - Keep host-evaluated bodies under `src/ae-scripts/`; TypeScript owns filtering, validation, and MCP shaping.
 - New host capabilities go on `AeHost` + platform implementations (`macos.ts` / `windows.ts`); tools stay thin wrappers.
 

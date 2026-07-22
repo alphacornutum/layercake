@@ -314,7 +314,7 @@ export function createServer(
         COMP_SWITCH_KEYS.join("/") +
         "); " +
         "seconds duration is kept for compatibility. " +
-        "Each layer includes a stable id (AE Layer.id, persists across reorder/rename/save; AE 22+) — prefer id over ephemeral index for follow-up scripts. " +
+        "Each layer includes a stable id (AE Layer.id, persists across reorder/rename/save; AE 24.6+) — prefer id over ephemeral index for follow-up scripts. " +
         "Layers with an AVLayer.source include a compact source object whose id is the source Item.id (join key to ae_list_sources / comps; distinct from Layer.id); " +
         'solids report source.footageKind "solid". ' +
         "Control-plane fields: startTime + integer startFrame/inFrame/outFrame/durationFrames (nearest frame via containing-comp frameRate; seconds inPoint/outPoint/duration kept), " +
