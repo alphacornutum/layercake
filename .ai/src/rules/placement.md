@@ -11,12 +11,13 @@ alwaysApply: true
 | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | MCP tool registration         | `src/server.ts`                                                                                                             |
 | Host bridge / wrap protocol   | `src/host/`                                                                                                                 |
-| Inventory tool                | `src/inventory/` — `list-<name>.ts`, `list-<name>-script.ts`, types in `types.ts`, parse in `parse.js`                      |
-| Shared ExtendScript helpers   | `src/inventory/shared-script.ts` when two+ inventory scripts need the same helper                                           |
-| Shared id\|name resolve       | `src/inventory/resolve-script.ts` (inspect + patch; callers define `resolveFail`)                                           |
+| Inventory tool                | `src/inventory/` — `list-<name>.ts`, thin `list-<name>-script.ts` loaders, types in `types.ts`, parse in `parse.js` |
+| First-party ExtendScript      | `src/ae-scripts/entries/` + `src/ae-scripts/shared/`; emit via `npm run build:ae-scripts`                             |
+| Shared ExtendScript helpers   | `src/ae-scripts/shared/` when two+ entries need the same helper; helper-only entries use `loadAeHelperScript`       |
+| Shared id\|name resolve       | `src/inventory/resolve-script.ts` (loader) + `src/ae-scripts/shared/resolve.ts` (inspect + patch)                   |
 | Shared layer id\|name Zod     | `src/inventory/layer-target-schema.ts` (`compTargetSchema` / `layerTargetSchema` / `getLayerInputSchema`; patch re-exports) |
-| Comp switch key allowlist     | `src/inventory/comp-switches.ts` (`COMP_SWITCH_KEYS`; drives Zod, parse, ExtendScript `compSwitchKeys`)                     |
-| Typed patch ops               | `src/patch/` (`schema.ts`, `apply-script.ts`, `types.ts`)                                                                   |
+| Comp switch key allowlist     | `src/inventory/comp-switches.ts` (`COMP_SWITCH_KEYS`; keep in sync with `src/ae-scripts/shared/inventory.ts`)       |
+| Typed patch ops               | `src/patch/` (`schema.ts`, `apply-script.ts` preamble + `patch-apply` entry, `types.ts`)                            |
 | Docs corpus/search            | `src/docs/`                                                                                                                 |
 | Unit / AE tests               | `tests/*.test.ts` / `tests/*.ae.test.ts`                                                                                    |
 | Doc fetch script              | `scripts/fetch-docs.mjs`                                                                                                    |
@@ -27,8 +28,8 @@ alwaysApply: true
 
 ## Extract vs edit in place
 
-- Edit in place when the change is local to one tool’s script or parser.
-- Move helpers into `shared-script.ts` when the same ExtendScript function appears in a second inventory script.
+- Edit in place when the change is local to one AE entry or its Node loader/parser.
+- Move helpers into `src/ae-scripts/shared/` when the same ExtendScript function appears in a second entry.
 - Add a new `src/` top-level package only for a new subsystem (do not invent `src/utils/` for one helper).
 
 ## Naming

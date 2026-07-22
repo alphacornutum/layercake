@@ -33,7 +33,8 @@ Thin MCP tools compose over a single host bridge. Inventory, context, patch, sav
 | `src/config.ts`  | Env loading (`AE_*`, including `AE_ARTIFACT_DIR`) and platform-aware `ConfigError` / `assertHostConfigured` |
 | `src/server.ts`  | Register MCP tools/resources; call host/inventory/patch/docs/skills; return `textResult` / `isError`        |
 | `src/host/`      | `AeHost` interface, factory, macOS/Windows bridges, wrap/parse (`OK`/`ERR`), session open/close guards      |
-| `src/inventory/` | Read-only inventories, inspect, and lean `ae_project_context` (fingerprint)                                 |
+| `src/inventory/` | Read-only inventories, inspect, and lean `ae_project_context` (fingerprint); Node loaders for emitted AE scripts |
+| `src/ae-scripts/` | Typed first-party ExtendScript (modern TS → ES5/ES3-compatible emit via `build:ae-scripts`)                      |
 | `src/patch/`     | Typed apply-only patch schemas/scripts, broad-gate, `ae_save_project` helpers                               |
 | `src/docs/`      | Local corpus load/search; URIs use `ae://docs/...`                                                          |
 | `src/skills/`    | Load packaged Agent Skill from `skills/`; URIs use `skill://...` (SEP-2640)                                 |
@@ -43,7 +44,8 @@ Thin MCP tools compose over a single host bridge. Inventory, context, patch, sav
 - `server` → `host` / `inventory` / `patch` / `docs` / `skills` / `config`
 - `inventory` → `host` (via `AeHost.evalScript`) and local parse/filter — not the reverse
 - `patch` → `host` / `inventory` (context + fingerprint) — not the reverse
-- ExtendScript bodies live in `*-script.ts` (or shared helpers); TypeScript owns filtering, validation, and MCP shaping
+- First-party ExtendScript is authored under `src/ae-scripts/` (typed against Types-for-Adobe 24.6), emitted to `dist/ae-scripts/`, and loaded by Node; TypeScript owns filtering, validation, and MCP shaping
+- Types-for-Adobe is not Scripting Guide authority — see [ADR 0005](docs/adr/0005-typed-extendscript-authoring.md)
 - Context / close / save / patch compose over `evalScript`; do not grow `AeHost` for those. Open gains a pre-open session guard, then delegates to `host.openProject`.
 
 ## Runtime flow
@@ -64,6 +66,7 @@ Specs under `openspec/specs/<capability>/spec.md` are the behavior contracts. Co
 | Capability                | MCP surface                                                                    | Primary code                                                                                      |
 | ------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
 | `product-identity`        | npm/bin/MCP name `layercake`; product **LayerCake**                            | `package.json`, `src/server.ts`, `README.md`, `docs/`                                             |
+| `typed-extendscript-authoring` | (authoring/build; not an MCP tool)                                        | `src/ae-scripts/`, `tsconfig.ae.json`, `scripts/build-ae-scripts.mjs`, `src/host/load-ae-script.ts` |
 | `ae-host`                 | `ae_host_status`, `ae_open_project`; `AE_ARTIFACT_DIR`                         | `src/host/`, `src/config.ts`                                                                      |
 | `ae-project-session`      | `ae_close_project`; open refuse / same-path no-op                              | `src/host/session.ts`                                                                             |
 | `ae-project-context`      | `ae_project_context`                                                           | `src/inventory/list-project-context*.ts`, `fingerprint.ts`                                        |
@@ -80,7 +83,7 @@ Specs under `openspec/specs/<capability>/spec.md` are the behavior contracts. Co
 | `ae-source-inspect`       | `ae_get_source`                                                                | `src/inventory/get-source*.ts`, `inspect-*.ts`                                                    |
 | `ae-product-skill`        | `skill://drive-after-effects/...`, `skill://index.json`, server `instructions` | `src/skills/`, `skills/drive-after-effects/`                                                      |
 
-Shared inventory helpers: `shared-script.ts`, `text-document-script.ts` (TextDocument style projection for `ae_get_layer` + `set_text_style`), `item-refs-script.ts` (inbound-ref collect for `ae_get_item_refs` + `safe_delete_project_item`), `resolve-script.ts` (id\|name resolve for inspect + patch), `layer-target-schema.ts` (shared layer / comps-only `compTargetSchema` Zod for inspect + patch), `parse.ts`, `types.ts`, `filter.ts`, `inspect-limit.ts`.
+Shared AE DOM helpers live under `src/ae-scripts/shared/`; Node inventory/patch modules load emitted `.jsx` via `loadAeScript` / `loadAeHelperScript`. Inventory still owns parse/filter/Zod: `layer-target-schema.ts`, `parse.ts`, `types.ts`, `filter.ts`, `inspect-limit.ts`, `comp-switches.ts`.
 
 Product skill files live at top-level `skills/` (shipped with the npm package). They are independent of contributor AgentSync under `.ai/src/`.
 
@@ -91,9 +94,9 @@ Product skill files live at top-level `skills/` (shipped with the npm package). 
 - **Guarded session** — open/close are session transitions; patch/save verify path+fingerprint and never open. Fingerprint = `rev:{n}\|dirty:{0\|1}\|path:{absolute\|unsaved}` (see [ADR 0002](docs/adr/0002-guarded-session-revision-fingerprint.md)). Assume 1:1 agent↔AE (no mutex).
 - **Typed patch first** — prefer `ae_patch_project` for routine text-style (partial TextDocument `style` bag including boolean `allCaps`/`smallCaps` written via AE `fontCapsOption`; authored/`evaluatedStyle` evidence; SourceText readable via `ae_get_layer`), rename, control-plane mutators (solids/source/timing/layer switches/`set_comp_settings`/expressions/`set_layer_transform`/reset/layer delete/`safe_delete_project_item`), and Project panel create/move/delete; `ae_eval_script` remains the escape hatch (bypasses guards). New ops use semantic verbs + op-specific fields; layer selectors are id-or-name with recoverable ambiguity errors; mutating targets report verified before/after (see [ADR 0003](docs/adr/0003-patch-targeting-and-post-conditions.md)). Large/heterogeneous partial mutators and comps-only ops use nested `target` + op-specific bags (`settings` / `switches` / `style` / `transform`), not a shared `value` bag (see [ADR 0004](docs/adr/0004-patch-op-target-and-settings-bags.md)). `timeRemapEnabled` is owned by `set_layer_switches`, not `set_layer_timing`.
 - **Explicit save** — patch/context/inventory/eval must not persist; compose optional copy-first + patch + `ae_save_project` (`save_copy` / `create_backup` only in v1). `create_backup` copies the project file only and does not collect linked footage.
-- **ES3 ExtendScript** — no modern JS in AE script bodies; `JSON` comes from the injected polyfill.
+- **ES3-compatible ExtendScript at runtime** — author modern TS under `src/ae-scripts/`; `build:ae-scripts` emits ES5/`var` payloads AE can run; `JSON` comes from the injected polyfill.
 - **Contracts** — public `ae_*` names/schemas/JSON shapes, `AeHost`, and the eval result-file protocol change through OpenSpec when possible (prefer additive).
-- **After Effects 26+** — supported host floor (older versions may work but are unsupported).
+- **After Effects 24.6+** — supported host floor (newer hosts including 26+ work as supersets; older than 24.6 may work but are unsupported).
 - **macOS + Windows host** — `darwin` uses AppleScript and soft-attaches without `activate` when AE is already running (`launch` on cold start); `win32` uses `AfterFX.exe -r`; other platforms report host unavailable without attempting unsupported automation.
 - **Agent guidance** — end-user product skill lives under `skills/`; contributor AgentSync guidance is edited under `.ai/src/` only, then `agentsync sync`.
 

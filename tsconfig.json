@@ -13,5 +13,5 @@
     "types": ["node"]
   },
   "include": ["src/**/*.ts", "tests/**/*.ts"],
-  "exclude": ["dist", "node_modules", "vendor"]
+  "exclude": ["dist", "node_modules", "vendor", "src/ae-scripts"]
 }

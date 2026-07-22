@@ -1,8 +1,23 @@
-/**
- * ExtendScript helpers + apply functions for control-plane patch ops.
- * Concatenated into buildPatchApplyScript after shared inventory/refs helpers.
- */
-export const CONTROL_PLANE_APPLY_HELPERS = `
+// @ts-nocheck
+import {
+  compSwitchKeys,
+  frameToTime,
+  footageKindOf,
+  isOnGridFrame,
+  isRootFolder,
+  itemById,
+  itemTypeName,
+  layerTimingFrames,
+  readCompSwitches,
+  readDisplayStartFrame,
+  timeToFrame,
+  isCoreTransformMatchName,
+  transformMatchName,
+  parentFolderInfo,
+} from "./inventory";
+import { collectItemRefs } from "./item-refs";
+
+/** Control-plane patch helpers, bundled into patch-apply. */
 function parsePropertyPathSegments(propertyPath) {
   var s = String(propertyPath || "");
   if (s.indexOf("->") >= 0) {
@@ -26,14 +41,14 @@ function resolvePropertySegments(layer, segments) {
       return {
         error: "Property not found for segment: " + seg,
         prop: null,
-        matchNames: resolved
+        matchNames: resolved,
       };
     }
     if (!next) {
       return {
         error: "Property not found for segment: " + seg,
         prop: null,
-        matchNames: resolved
+        matchNames: resolved,
       };
     }
     try {
@@ -49,7 +64,7 @@ function resolvePropertySegments(layer, segments) {
   return {
     error: "Resolved path is not a PropertyBase leaf (PropertyType.PROPERTY)",
     prop: null,
-    matchNames: resolved
+    matchNames: resolved,
   };
 }
 
@@ -60,7 +75,11 @@ function resolvePropertySelector(layer, op) {
   } else if (op.propertyPath) {
     segments = parsePropertyPathSegments(op.propertyPath);
   } else {
-    return { error: "Provide exactly one of matchNames or propertyPath", prop: null, matchNames: [] };
+    return {
+      error: "Provide exactly one of matchNames or propertyPath",
+      prop: null,
+      matchNames: [],
+    };
   }
   return resolvePropertySegments(layer, segments);
 }
@@ -176,7 +195,7 @@ function orderedSwitchWriteKeys(switches) {
     "collapseTransformation",
     "frameBlending",
     "motionBlur",
-    "timeRemapEnabled"
+    "timeRemapEnabled",
   ];
   var supplied = [];
   var i;
@@ -212,7 +231,7 @@ function isAeArray(v) {
 
 function getTransformProp(layer, key) {
   var matchName = transformMatchName(key);
-  if (!matchName) return null;
+  if (!matchName || !isCoreTransformMatchName(matchName)) return null;
   try {
     var xf = layer.property("ADBE Transform Group");
     if (!xf) return null;
@@ -454,14 +473,14 @@ function walkClearKeysAndExpressions(prop, clearKeys, clearExprs) {
   }
 }
 
-function applyRenameProjectItem(plan, opResult) {
+export function applyRenameProjectItem(plan, opResult) {
   var item = plan.item;
   var desired = String(plan.op.name);
   var targetResult = {
     itemId: item.id,
     itemName: String(item.name || ""),
     itemType: itemTypeName(item),
-    status: "failed"
+    status: "failed",
   };
   var beforeName = String(item.name || "");
   targetResult.before = { name: beforeName };
@@ -493,7 +512,7 @@ function applyRenameProjectItem(plan, opResult) {
   }
 }
 
-function applySetLayerIndex(plan, opResult) {
+export function applySetLayerIndex(plan, opResult) {
   var t = plan.targets[0];
   var desired = plan.op.index;
   var targetResult = {
@@ -502,7 +521,7 @@ function applySetLayerIndex(plan, opResult) {
     compName: t.comp.name,
     layerName: t.layer.name,
     status: "failed",
-    before: { index: t.layer.index }
+    before: { index: t.layer.index },
   };
   if (t.layer.index === desired) {
     targetResult.status = "already_satisfied";
@@ -543,7 +562,8 @@ function applySetLayerIndex(plan, opResult) {
       return { anyChanged: true, anyFailed: false, applyError: null };
     }
     targetResult.status = "failed";
-    targetResult.message = "Post-condition failed: layer index is " + afterIndex + ", expected " + desired;
+    targetResult.message =
+      "Post-condition failed: layer index is " + afterIndex + ", expected " + desired;
     opResult.targets.push(targetResult);
     return { anyChanged: true, anyFailed: true, applyError: targetResult.message };
   } catch (ie) {
@@ -557,14 +577,14 @@ function applySetLayerIndex(plan, opResult) {
   }
 }
 
-function applyCreateSolid(plan, opResult) {
+export function applyCreateSolid(plan, opResult) {
   var op = plan.op;
   var parent = plan.parentFolder;
   var targetResult = {
     itemId: -1,
     itemName: String(op.name),
     itemType: "footage",
-    status: "failed"
+    status: "failed",
   };
   var createdItem = null;
   var tempComp = null;
@@ -577,7 +597,7 @@ function applyCreateSolid(plan, opResult) {
       op.height,
       op.pixelAspect,
       1,
-      30
+      30,
     );
     solidLayer = tempComp.layers.addSolid(
       op.color,
@@ -585,7 +605,7 @@ function applyCreateSolid(plan, opResult) {
       op.width,
       op.height,
       op.pixelAspect,
-      1
+      1,
     );
     createdItem = solidLayer.source;
     solidLayer.remove();
@@ -606,7 +626,7 @@ function applyCreateSolid(plan, opResult) {
       height: createdItem.height,
       pixelAspect: createdItem.pixelAspect,
       color: [color[0], color[1], color[2]],
-      parentFolderId: parentInfo.id
+      parentFolderId: parentInfo.id,
     };
     if (
       footageKindOf(createdItem) === "solid" &&
@@ -624,10 +644,14 @@ function applyCreateSolid(plan, opResult) {
   } catch (ce) {
     targetResult.message = String(ce);
     if (solidLayer) {
-      try { solidLayer.remove(); } catch (e1) {}
+      try {
+        solidLayer.remove();
+      } catch (e1) {}
     }
     if (tempComp) {
-      try { tempComp.remove(); } catch (e2) {}
+      try {
+        tempComp.remove();
+      } catch (e2) {}
     }
     if (createdItem) {
       try {
@@ -639,7 +663,7 @@ function applyCreateSolid(plan, opResult) {
   }
 }
 
-function applyReplaceLayerSource(plan, opResult) {
+export function applyReplaceLayerSource(plan, opResult) {
   var t = plan.targets[0];
   var sourceItem = plan.sourceItem;
   var fixExpressions = plan.op.fixExpressions !== false;
@@ -655,7 +679,7 @@ function applyReplaceLayerSource(plan, opResult) {
     compName: t.comp.name,
     layerName: layer.name,
     status: "failed",
-    before: { sourceItemId: beforeSourceId }
+    before: { sourceItemId: beforeSourceId },
   };
   if (beforeSourceId === sourceItem.id) {
     targetResult.status = "already_satisfied";
@@ -823,14 +847,14 @@ function keyValuesEqual(a, b) {
       return String(a.comment || "") === String(b.comment || "");
     }
   } catch (e3) {}
-  // Opaque values (TextDocument, Shape, …): times are the hard contract.
+  // Opaque values (TextDocument, Shape, ...): times are the hard contract.
   return true;
 }
 
 function snapshotKeyEntry(prop, keyIndex) {
   var entry = {
     time: prop.keyTime(keyIndex),
-    value: prop.keyValue(keyIndex)
+    value: prop.keyValue(keyIndex),
   };
   try {
     entry.inInterp = prop.keyInInterpolationType(keyIndex);
@@ -991,7 +1015,7 @@ function collectKeyframeDrift(layer, snapshot) {
       drift.push({
         matchNames: entry.matchNames,
         beforeTime: beforeTime,
-        afterTime: afterTime
+        afterTime: afterTime,
       });
     } else {
       truncated = true;
@@ -1066,7 +1090,7 @@ function restoreLayerKeyframes(layer, snapshot) {
   }
 }
 
-function applySetLayerTiming(plan, opResult) {
+export function applySetLayerTiming(plan, opResult) {
   var t = plan.targets[0];
   var op = plan.op;
   var frameRate = t.comp.frameRate;
@@ -1077,7 +1101,7 @@ function applySetLayerTiming(plan, opResult) {
     compName: t.comp.name,
     layerName: t.layer.name,
     status: "failed",
-    before: before
+    before: before,
   };
   if (layerTimingPostConditionError(op, before, before, frameRate) === null) {
     targetResult.status = "already_satisfied";
@@ -1109,7 +1133,8 @@ function applySetLayerTiming(plan, opResult) {
     if (postErr !== null) {
       targetResult.status = "failed";
       targetResult.message = postErr;
-      targetResult.keyframesPreserved = keySnapshot.length === 0 || layerKeysMatchSnapshot(t.layer, keySnapshot);
+      targetResult.keyframesPreserved =
+        keySnapshot.length === 0 || layerKeysMatchSnapshot(t.layer, keySnapshot);
       opResult.targets.push(targetResult);
       return { anyChanged: true, anyFailed: true, applyError: targetResult.message };
     }
@@ -1143,7 +1168,7 @@ function applySetLayerTiming(plan, opResult) {
   }
 }
 
-function applySetLayerSwitches(plan, opResult) {
+export function applySetLayerSwitches(plan, opResult) {
   var t = plan.targets[0];
   var op = plan.op;
   var switches = op.switches || {};
@@ -1154,7 +1179,7 @@ function applySetLayerSwitches(plan, opResult) {
     compName: t.comp.name,
     layerName: t.layer.name,
     status: "failed",
-    before: before
+    before: before,
   };
   var writeKeys = orderedSwitchWriteKeys(switches);
   if (writeKeys.length === 0) {
@@ -1171,8 +1196,7 @@ function applySetLayerSwitches(plan, opResult) {
   }
   if (inapplicable.length > 0) {
     targetResult.after = before;
-    targetResult.message =
-      "Switch key(s) not applicable on this layer: " + inapplicable.join(", ");
+    targetResult.message = "Switch key(s) not applicable on this layer: " + inapplicable.join(", ");
     opResult.targets.push(targetResult);
     return { anyChanged: false, anyFailed: true, applyError: targetResult.message };
   }
@@ -1227,7 +1251,7 @@ function applySetLayerSwitches(plan, opResult) {
   }
 }
 
-function applySetLayerTransform(plan, opResult) {
+export function applySetLayerTransform(plan, opResult) {
   var t = plan.targets[0];
   var op = plan.op;
   var transform = op.transform || {};
@@ -1238,7 +1262,7 @@ function applySetLayerTransform(plan, opResult) {
     compName: t.comp.name,
     layerName: t.layer.name,
     status: "failed",
-    before: before
+    before: before,
   };
   var writeKeys = orderedTransformWriteKeys(transform);
   if (writeKeys.length === 0) {
@@ -1299,8 +1323,7 @@ function applySetLayerTransform(plan, opResult) {
   }
   if (lengthMismatch.length > 0) {
     targetResult.after = before;
-    targetResult.message =
-      "Transform array length mismatch for: " + lengthMismatch.join(", ");
+    targetResult.message = "Transform array length mismatch for: " + lengthMismatch.join(", ");
     opResult.targets.push(targetResult);
     return { anyChanged: false, anyFailed: true, applyError: targetResult.message };
   }
@@ -1342,7 +1365,7 @@ function applySetLayerTransform(plan, opResult) {
   } catch (xe) {
     targetResult.status = "failed";
     targetResult.message = String(xe);
-    // Mid-loop AE errors may have already mutated some keys — mark mutated so batch undo runs.
+    // Mid-loop AE errors may have already mutated some keys -- mark mutated so batch undo runs.
     var xfCatchMutated = true;
     try {
       targetResult.after = readLayerTransform(t.layer);
@@ -1355,7 +1378,7 @@ function applySetLayerTransform(plan, opResult) {
   }
 }
 
-function applySetPropertyExpression(plan, opResult) {
+export function applySetPropertyExpression(plan, opResult) {
   var t = plan.targets[0];
   var op = plan.op;
   var targetResult = {
@@ -1364,7 +1387,7 @@ function applySetPropertyExpression(plan, opResult) {
     compName: t.comp.name,
     layerName: t.layer.name,
     status: "failed",
-    selector: {}
+    selector: {},
   };
   if (op.matchNames && op.matchNames.length > 0) {
     targetResult.selector.matchNames = op.matchNames;
@@ -1432,7 +1455,7 @@ function applySetPropertyExpression(plan, opResult) {
   }
 }
 
-function applyResetLayerSurface(plan, opResult) {
+export function applyResetLayerSurface(plan, opResult) {
   var t = plan.targets[0];
   var op = plan.op;
   var clearKeyframes = op.clearKeyframes !== false;
@@ -1450,7 +1473,7 @@ function applyResetLayerSurface(plan, opResult) {
     compName: t.comp.name,
     layerName: t.layer.name,
     status: "failed",
-    cleared: {}
+    cleared: {},
   };
   var transformBefore = null;
   var desiredTransforms = null;
@@ -1574,7 +1597,7 @@ function applyResetLayerSurface(plan, opResult) {
       maskCount: countGroupChildren(t.layer, "ADBE Mask Parade"),
       markerCount: 0,
       hasParent: false,
-      hasTrackMatte: false
+      hasTrackMatte: false,
     };
     try {
       var mk = t.layer.property("ADBE Marker");
@@ -1630,7 +1653,7 @@ function applyResetLayerSurface(plan, opResult) {
   }
 }
 
-function applyDeleteLayer(plan, opResult) {
+export function applyDeleteLayer(plan, opResult) {
   var t = plan.targets[0];
   var layerId = t.layer.id;
   var comp = t.comp;
@@ -1639,7 +1662,7 @@ function applyDeleteLayer(plan, opResult) {
     layerId: layerId,
     compName: comp.name,
     layerName: t.layer.name,
-    status: "failed"
+    status: "failed",
   };
   try {
     t.layer.remove();
@@ -1687,7 +1710,7 @@ function findNewlyMissingFootage(beforeIds) {
   return newly;
 }
 
-function applySafeDeleteProjectItem(plan, opResult) {
+export function applySafeDeleteProjectItem(plan, opResult) {
   var anyChanged = false;
   var anyFailed = false;
   var applyError = null;
@@ -1700,7 +1723,7 @@ function applySafeDeleteProjectItem(plan, opResult) {
       itemId: itemId,
       itemName: String(item.name || ""),
       itemType: itemTypeName(item),
-      status: "failed"
+      status: "failed",
     };
 
     if (isRootFolder(item)) {
@@ -1715,8 +1738,7 @@ function applySafeDeleteProjectItem(plan, opResult) {
     if (item instanceof FolderItem) {
       if (item.numItems > 0) {
         targetResult.status = "failed";
-        targetResult.message =
-          "Refusing to delete non-empty folder (safe_delete is non-recursive)";
+        targetResult.message = "Refusing to delete non-empty folder (safe_delete is non-recursive)";
         anyFailed = true;
         opResult.targets.push(targetResult);
         applyError = targetResult.message;
@@ -1727,14 +1749,13 @@ function applySafeDeleteProjectItem(plan, opResult) {
       targetResult.preDeleteRefs = {
         refs: collected.refs,
         unknownRefsPossible: collected.unknownRefsPossible,
-        incompleteReasons: collected.incompleteReasons
+        incompleteReasons: collected.incompleteReasons,
       };
       if (collected.refs.length > 0 || collected.unknownRefsPossible) {
         targetResult.status = "failed";
-        targetResult.message =
-          collected.unknownRefsPossible
-            ? "Refusing delete: unknownRefsPossible is true"
-            : "Refusing delete: item has known inbound refs (" + collected.refs.length + ")";
+        targetResult.message = collected.unknownRefsPossible
+          ? "Refusing delete: unknownRefsPossible is true"
+          : "Refusing delete: item has known inbound refs (" + collected.refs.length + ")";
         anyFailed = true;
         opResult.targets.push(targetResult);
         applyError = targetResult.message;
@@ -1795,7 +1816,7 @@ function readCompSettingsSnapshot(comp) {
     workAreaStartFrame: timeToFrame(comp.workAreaStart, frameRate),
     workAreaDurationFrames: timeToFrame(comp.workAreaDuration, frameRate),
     renderer: renderer,
-    switches: readCompSwitches(comp)
+    switches: readCompSwitches(comp),
   };
 }
 
@@ -1861,7 +1882,7 @@ function compSettingsMatchRequest(snapshot, settings) {
   return true;
 }
 
-function applySetCompSettings(plan, opResult) {
+export function applySetCompSettings(plan, opResult) {
   var comp = plan.comp;
   var settings = plan.op.settings;
   var before = readCompSettingsSnapshot(comp);
@@ -1869,7 +1890,7 @@ function applySetCompSettings(plan, opResult) {
     compId: comp.id,
     compName: comp.name,
     status: "failed",
-    before: before
+    before: before,
   };
   if (compSettingsMatchRequest(before, settings)) {
     targetResult.status = "already_satisfied";
@@ -1919,9 +1940,7 @@ function applySetCompSettings(plan, opResult) {
       try {
         comp.displayStartFrame = settings.displayStartFrame;
       } catch (dse) {
-        throw new Error(
-          "displayStartFrame is not writable on this host: " + String(dse)
-        );
+        throw new Error("displayStartFrame is not writable on this host: " + String(dse));
       }
     }
     if (settings.renderer !== undefined) {
@@ -1957,7 +1976,7 @@ function applySetCompSettings(plan, opResult) {
             (waStart + waDur) +
             " > " +
             durFrames +
-            " frames)"
+            " frames)",
         );
       }
       if (settings.workAreaStartFrame !== undefined) {
@@ -1992,4 +2011,5 @@ function applySetCompSettings(plan, opResult) {
     return { anyChanged: mutated, anyFailed: true, applyError: String(ce) };
   }
 }
-`.trim();
+
+export {};

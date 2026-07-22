@@ -901,7 +901,7 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
       },
       config.scriptTimeoutMs,
     );
-    expect(created.ok).toBe(true);
+    expect(created.ok, !created.ok ? created.error : undefined).toBe(true);
     if (!created.ok) return;
     const solidTarget = created.results[0]?.targets[0] as CreateSolidTargetResult;
     const solidId = solidTarget.created?.id ?? solidTarget.itemId;
@@ -1662,7 +1662,7 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
       },
       config.scriptTimeoutMs,
     );
-    expect(create.ok).toBe(true);
+    expect(create.ok, !create.ok ? create.error : undefined).toBe(true);
     if (!create.ok) return;
     const solidTarget = create.results[0]?.targets[0] as CreateSolidTargetResult;
     const solidId = solidTarget.created?.id ?? solidTarget.itemId;
@@ -1784,7 +1784,7 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
       config.scriptTimeoutMs,
     );
     if (!refsAfter.unknownRefsPossible && refsAfter.refs.length === 0) {
-      expect(safeDel.ok).toBe(true);
+      expect(safeDel.ok, !safeDel.ok ? safeDel.error : undefined).toBe(true);
     } else {
       // Heuristic incompleteness correctly blocks rather than false-allowing.
       expect(safeDel.ok).toBe(false);

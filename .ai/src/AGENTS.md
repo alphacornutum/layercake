@@ -9,7 +9,7 @@ Machine IDs stay lowercase `layercake` (npm package, MCP config key, `serverInfo
 - **Runtime:** Node.js 20+, TypeScript (`NodeNext` ESM), `tsx` for dev
 - **MCP:** `@modelcontextprotocol/sdk` + Zod tool schemas in `src/server.ts`
 - **Host bridge:** platform factory in `src/host/create-host.ts` — AppleScript `DoScriptFile` (`macos.ts` on darwin), `AfterFX.exe -r` (`windows.ts` on win32); other platforms get an unavailable stub
-- **ExtendScript:** ES3 host; `JSON` comes from the `extendscript-json` polyfill injected by `wrapExtendScript` — do not assume modern JS in AE scripts
+- **ExtendScript:** Author under `src/ae-scripts/` (Types-for-Adobe 24.6); emit ES5/`var` for the ES3 host; `JSON` from the `extendscript-json` polyfill in `wrapExtendScript` — typedefs are not Scripting Guide truth
 - **Docs corpus:** `vendor/after-effects-scripting-guide/docs` under the package root (shipped with the npm package; refresh with `npm run docs:fetch`)
 - **Quality:** Vitest, oxlint, oxfmt
 - **Planning:** OpenSpec under `openspec/` (specs + changes)
