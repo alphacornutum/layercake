@@ -4,24 +4,24 @@ Your agent discovers these tools automatically through MCP. Prefer inventory too
 
 ## Tools
 
-| Tool                 | Purpose                                                                                                                                |
-| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `ae_host_status`     | Resolved host config and availability                                                                                                  |
-| `ae_open_project`    | Open an absolute `.aep` / `.aet` path (refuses if another project is open at a different path)                                         |
-| `ae_close_project`   | Close with explicit `discard` or `save` policy (never prompts); optional fingerprint guard                                             |
-| `ae_project_context` | Cheap bind token: path, dirty, revision, fingerprint (poll before/after mutate)                                                        |
-| `ae_project_summary` | Heavier passport: counts, third-party effects, missing footage/fonts                                                                   |
-| `ae_list_comps`      | Read-only JSON inventory of compositions (settings + switches) and layers (switches, parent/matte, frame timing, Solid `footageKind`)  |
-| `ae_list_sources`    | Read-only JSON inventory of footage, solids, and placeholders                                                                          |
-| `ae_list_folders`    | Read-only nested JSON tree of the Project panel folder hierarchy                                                                       |
-| `ae_get_layer`       | Read-only deep dump of one layer property tree; dual authored/evaluated Transform samples on `extended`/`full`                         |
-| `ae_get_source`      | Read-only deep dump of one footage item and interpret settings (`overview` / `full`)                                                   |
-| `ae_get_item_refs`   | Read-only inbound references for one project item (`Item.id`) plus `unknownRefsPossible`                                               |
-| `ae_patch_project`   | Apply-only typed mutations (text, rename, panel + control-plane ops); verified before/after; path+fingerprint guards; no implicit save |
-| `ae_save_project`    | Explicit persist: `save_copy` or `create_backup` (no in-place `save_current`)                                                          |
-| `ae_eval_script`     | Execute ExtendScript inside After Effects (`script`, optional `timeoutMs`)                                                             |
-| `ae_docs_search`     | Search the local After Effects Scripting Guide (hits include `ae://docs/...` URIs)                                                     |
-| `ae_docs_get`        | Fetch a documentation section by URI or relative path                                                                                  |
+| Tool                 | Purpose                                                                                                                                            |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ae_host_status`     | Resolved host config and availability                                                                                                              |
+| `ae_open_project`    | Open an absolute `.aep` / `.aet` path (refuses if another project is open at a different path)                                                     |
+| `ae_close_project`   | Close with explicit `discard` or `save` policy (never prompts); optional fingerprint guard                                                         |
+| `ae_project_context` | Cheap bind token: path, dirty, revision, fingerprint (poll before/after mutate)                                                                    |
+| `ae_project_summary` | Heavier passport: counts, third-party effects, missing footage/fonts                                                                               |
+| `ae_list_comps`      | Read-only JSON inventory of compositions (settings + switches) and layers (switches, parent/matte, frame timing, Solid `footageKind`)              |
+| `ae_list_sources`    | Read-only JSON inventory of footage, solids, and placeholders                                                                                      |
+| `ae_list_folders`    | Read-only nested JSON tree of the Project panel folder hierarchy                                                                                   |
+| `ae_get_layer`       | Read-only deep dump of one layer property tree; dual authored/evaluated Transform samples on `extended`/`full`                                     |
+| `ae_get_source`      | Read-only deep dump of one footage item and interpret settings (`overview` / `full`)                                                               |
+| `ae_get_item_refs`   | Read-only inbound references for one project item (`Item.id`) plus `unknownRefsPossible`                                                           |
+| `ae_patch_project`   | Apply-only typed mutations (text, rename, panel + control-plane ops); verified before/after; path+fingerprint guards; no implicit save             |
+| `ae_save_project`    | Explicit persist: `save_copy` or `create_backup` (no in-place `save_current`)                                                                      |
+| `ae_eval_script`     | Execute ExtendScript inside After Effects (`script`, optional `timeoutMs`). ES3 dialect; modern JS refused before host — see skill reference below |
+| `ae_docs_search`     | Search the local After Effects Scripting Guide (hits include `ae://docs/...` URIs)                                                                 |
+| `ae_docs_get`        | Fetch a documentation section by URI or relative path                                                                                              |
 
 **Resources:** scripting guide under `ae://docs/{path}` (list + read); product skill under `skill://` (below).
 
@@ -32,7 +32,7 @@ Your agent discovers these tools automatically through MCP. Prefer inventory too
 | `save_copy`     | AE Save As to an absolute destination; the active project path switches to that file.                                                                                                                                                                                                                                                                              |
 | `create_backup` | Filesystem copy of the open `.aep` only (under `AE_ARTIFACT_DIR` or a caller path). Session stays on the original path. Requires a clean, saved project. **Does not** collect linked footage/media (not Collect Files) — opening the backup from a new folder can show missing footage unless those files are still reachable via the paths stored in the project. |
 
-Every evaluated script is prepended with [extendscript-json](https://github.com/theasci/extendscript-json) so `JSON.stringify` / `JSON.parse` work in After Effects’ ES3 host. Prefer scripts that `return` a value and avoid modal dialogs.
+Every evaluated script is prepended with [extendscript-json](https://github.com/theasci/extendscript-json) so `JSON.stringify` / `JSON.parse` work in After Effects’ ES3 host. Prefer scripts that `return` a value and avoid modal dialogs. `ae_eval_script` **pre-validates** source as ExtendScript/ES3 (refuses `const`/`let`, arrows, optional chaining, non-ASCII, etc.; strips trailing commas) before invoking After Effects. Common ES5+ helpers such as `Array.map` are not hard-refused alone but typically fail in AE — use `for` loops. Compact cheat sheet: `skill://drive-after-effects/references/extendscript.md`.
 
 For payload shape and architecture detail, see [`ARCHITECTURE.md`](../ARCHITECTURE.md).
 

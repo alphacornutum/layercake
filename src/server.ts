@@ -266,13 +266,17 @@ export function createServer(
       title: "Evaluate ExtendScript",
       description:
         "Evaluate ExtendScript in the active After Effects session and return the result. " +
+        "AE uses an ES3-like dialect: write var/function/for — not const/let, arrows, optional chaining, or ES5+ helpers like Array.map. " +
+        "Modern syntax is refused before the host runs; see skill://drive-after-effects/references/extendscript.md. " +
         "Prefer ae_list_* / ae_get_* first for inventory; use ae_patch_project for typed edits. " +
         "Look up comps/layers/items by stable id (not ephemeral index/name). Scripts can mutate the open project. " +
         "Prefer returning a value from the script body. Empty scripts are rejected. " +
         "JSON.stringify / JSON.parse are available (extendscript-json polyfill). " +
         "Bypasses patch fingerprint guards — use with care.",
       inputSchema: z.object({
-        script: z.string().describe("ExtendScript source to evaluate"),
+        script: z
+          .string()
+          .describe("ExtendScript (ES3 dialect) source to evaluate — not modern Node/browser JS"),
         timeoutMs: z
           .number()
           .int()
@@ -282,14 +286,15 @@ export function createServer(
       }),
     },
     async ({ script, timeoutMs }) => {
+      let validated: string;
       try {
-        validateScriptSource(script);
+        validated = validateScriptSource(script);
       } catch (err) {
         return textResult(errorText(err), true);
       }
       const timeout = timeoutMs ?? config.scriptTimeoutMs;
       try {
-        const result = await host.evalScript(script, timeout);
+        const result = await host.evalScript(validated, timeout);
         if (!result.ok) {
           const line = result.line !== undefined ? ` (line ${result.line})` : "";
           return textResult(`${result.error}${line}`, true);

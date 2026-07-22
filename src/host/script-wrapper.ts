@@ -1,3 +1,4 @@
+import { validateAgentExtendScript } from "./extendscript-compat.js";
 import { getExtendScriptJsonPolyfill } from "./extendscript-json.js";
 
 /**
@@ -45,12 +46,16 @@ function indentUserSource(source: string): string {
     .join("\n");
 }
 
+/**
+ * Validate and normalize ExtendScript before host eval.
+ * Returns comma-stripped ES3-compatible source, or throws with an actionable dialect error.
+ */
 export function validateScriptSource(source: string): string {
-  const trimmed = source.trim();
-  if (!trimmed) {
-    throw new Error("Script source is empty. Provide valid ExtendScript.");
+  const result = validateAgentExtendScript(source);
+  if (!result.ok) {
+    throw new Error(result.error);
   }
-  return trimmed;
+  return result.source;
 }
 
 export function parseScriptResultFile(raw: string): {
