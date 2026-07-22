@@ -6,6 +6,7 @@ import type { AeConfig } from "./config.js";
 import { ConfigError } from "./config.js";
 import { DOCS_ATTRIBUTION, DOCS_URI_PREFIX } from "./docs/attribution.js";
 import type { DocsCorpus } from "./docs/corpus.js";
+import { resolveDocsCorpusPath } from "./docs/paths.js";
 import { DocsError } from "./docs/corpus.js";
 import { getDoc, searchDocs } from "./docs/search.js";
 import { closeProject, openProjectGuarded, SessionError } from "./host/session.js";
@@ -553,7 +554,7 @@ export function createServer(
     async ({ query, limit }) => {
       if (!corpus) {
         return textResult(
-          `Docs corpus unavailable at ${config.docsPath}. Run npm run docs:fetch or set AE_DOCS_PATH.`,
+          `Docs corpus unavailable at ${resolveDocsCorpusPath()}. Run npm run docs:fetch.`,
           true,
         );
       }
@@ -587,7 +588,7 @@ export function createServer(
     async ({ id }) => {
       if (!corpus) {
         return textResult(
-          `Docs corpus unavailable at ${config.docsPath}. Run npm run docs:fetch or set AE_DOCS_PATH.`,
+          `Docs corpus unavailable at ${resolveDocsCorpusPath()}. Run npm run docs:fetch.`,
           true,
         );
       }

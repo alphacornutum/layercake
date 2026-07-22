@@ -1,7 +1,10 @@
 import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
-import { dirname, join, relative } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join, relative } from "node:path";
+
+import { resolvePackageRoot } from "../package-root.js";
+
+export { resolvePackageRoot };
 
 export const PRODUCT_SKILL_NAME = "drive-after-effects";
 export const SKILL_URI_SCHEME = "skill://";
@@ -34,13 +37,6 @@ export type SkillIndexEntry = {
 export type SkillIndex = {
   skills: SkillIndexEntry[];
 };
-
-/** Package root: parent of `src/` or `dist/` depending on runtime. */
-export function resolvePackageRoot(fromUrl: string = import.meta.url): string {
-  const here = dirname(fileURLToPath(fromUrl));
-  // src/skills or dist/skills → package root
-  return join(here, "..", "..");
-}
 
 export function resolveSkillsRoot(packageRoot: string = resolvePackageRoot()): string {
   return join(packageRoot, "skills");

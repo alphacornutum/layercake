@@ -3,6 +3,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 
 import { loadConfig } from "./config.js";
 import { loadDocsCorpus } from "./docs/corpus.js";
+import { resolveDocsCorpusPath } from "./docs/paths.js";
 import { createAeHost } from "./host/create-host.js";
 import { createServer } from "./server.js";
 import { loadProductSkill } from "./skills/load.js";
@@ -10,10 +11,11 @@ import { loadProductSkill } from "./skills/load.js";
 async function main(): Promise<void> {
   const config = loadConfig();
   const host = createAeHost(config);
+  const docsPath = resolveDocsCorpusPath();
 
   let corpus = null;
   try {
-    corpus = await loadDocsCorpus(config.docsPath);
+    corpus = await loadDocsCorpus(docsPath);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[layercake] Docs corpus not loaded: ${message}`);

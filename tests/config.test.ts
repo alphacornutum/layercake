@@ -18,7 +18,6 @@ describe("loadConfig", () => {
     expect(cfg.appName).toBeUndefined();
     expect(cfg.scriptTimeoutMs).toBe(60_000);
     expect(cfg.inspectMaxBytes).toBe(524_288);
-    expect(cfg.docsPath).toContain("vendor/after-effects-scripting-guide/docs");
     expect(cfg.artifactDir).toContain(`layercake-artifacts-${process.pid}`);
   });
 
@@ -27,7 +26,6 @@ describe("loadConfig", () => {
       {
         AE_EXECUTABLE: "Apps/AE.app",
         AE_APP_NAME: "Adobe After Effects 2025",
-        AE_DOCS_PATH: "/custom/docs",
         AE_SCRIPT_TIMEOUT_MS: "12000",
         AE_INSPECT_MAX_BYTES: "1048576",
         AE_ARTIFACT_DIR: "/var/layercake-artifacts",
@@ -36,7 +34,6 @@ describe("loadConfig", () => {
     );
     expect(cfg.executable).toBe("/repo/Apps/AE.app");
     expect(cfg.appName).toBe("Adobe After Effects 2025");
-    expect(cfg.docsPath).toBe("/custom/docs");
     expect(cfg.scriptTimeoutMs).toBe(12_000);
     expect(cfg.inspectMaxBytes).toBe(1_048_576);
     expect(cfg.artifactDir).toBe("/var/layercake-artifacts");

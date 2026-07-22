@@ -56,13 +56,13 @@ Long-running scripts, renders, and modal dialogs can still block completion.
 
 ## Documentation tools fail
 
-Fetch the local Scripting Guide corpus:
+Fetch the local Scripting Guide corpus (or ensure `vendor/after-effects-scripting-guide/docs` is present on the LayerCake package — it ships with the npm package):
 
 ```bash
 npm run docs:fetch
 ```
 
-Or point `AE_DOCS_PATH` at a directory containing the guide markdown. See [Scripting guide corpus](scripting-guide.md).
+See [Scripting guide corpus](scripting-guide.md).
 
 ## Inspection response too large
 
@@ -115,7 +115,6 @@ The After Effects host bridge supports macOS and Windows. Documentation tools ma
 | `AE_EXECUTABLE`        | macOS path to the `.app`; required Windows path to `AfterFX.exe`.                                              |
 | `AE_SCRIPT_TIMEOUT_MS` | ExtendScript timeout in milliseconds. Default: `60000`.                                                        |
 | `AE_INSPECT_MAX_BYTES` | Maximum UTF-8 size for successful `ae_get_layer` and `ae_get_source` JSON. Default: `524288`.                  |
-| `AE_DOCS_PATH`         | Override for the scripting-guide directory. Default: `vendor/after-effects-scripting-guide/docs`.              |
 | `AE_ARTIFACT_DIR`      | Absolute directory for backups and artifacts. Default: an OS temp directory named `layercake-artifacts-<pid>`. |
 
 See [.env.example](../.env.example).
