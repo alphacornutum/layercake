@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "ES5",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noImplicitAny": false,
+    "lib": ["ES5"],
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "noEmit": true,
+    "rootDir": "src/ae-scripts",
+    "types": []
+  },
+  "include": ["src/ae-scripts/**/*.ts"],
+  "files": [
+    "node_modules/types-for-adobe/AfterEffects/24.6/index.d.ts",
+    "src/ae-scripts/json-shim.d.ts"
+  ]
+}

@@ -7,13 +7,11 @@ import {
   DEFAULT_INSPECT_MAX_BYTES,
   InspectSizeError,
 } from "../src/inventory/inspect-limit.js";
-import { SHARED_INSPECT_HELPERS } from "../src/inventory/inspect-script.js";
 import {
   formatInspectScriptError,
   parseLayerInspect,
   parseSourceInspect,
 } from "../src/inventory/parse.js";
-import { SHARED_INVENTORY_HELPERS } from "../src/inventory/shared-script.js";
 import type { LayerInspectResult, SourceInspectResult } from "../src/inventory/types.js";
 
 const overviewSample: LayerInspectResult = {
@@ -420,10 +418,10 @@ describe("formatInspectScriptError", () => {
 describe("inspect scripts", () => {
   it("embed shared helpers and resolution probes", () => {
     const layerScript = buildGetLayerScript({ compId: 1, layerId: 2, detail: "extended" });
-    expect(layerScript).toContain(SHARED_INVENTORY_HELPERS);
-    expect(layerScript).toContain(SHARED_INSPECT_HELPERS);
+    expect(layerScript).toContain("function projectNameOf");
+    expect(layerScript).toContain("function serializeSourceRef");
+    expect(layerScript).toContain("function walkLayerProperties");
     expect(layerScript).toContain("resolveComp");
-    expect(layerScript).toContain("walkLayerProperties");
     expect(layerScript).toContain("unserializable");
     expect(layerScript).toContain('"detail":"extended"');
     expect(layerScript).toContain("authoredValue");

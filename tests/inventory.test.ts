@@ -550,7 +550,8 @@ describe("item refs script", () => {
     expect(SHARED_ITEM_REFS_HELPERS).toContain("function collectItemRefs");
     expect(SHARED_ITEM_REFS_HELPERS).toContain("unknownRefsPossible");
     const script = buildGetItemRefsScript(56);
-    expect(script).toContain(SHARED_INVENTORY_HELPERS);
+    expect(script).toContain("function projectNameOf");
+    expect(script).toContain("function serializeSourceRef");
     expect(script).toContain("collectItemRefs");
     expect(script).toContain('"itemId":56');
   });

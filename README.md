@@ -1,7 +1,7 @@
 # LayerCake
 
 [![CI](https://img.shields.io/badge/CI-GitHub%20Actions-2088FF?logo=github-actions&logoColor=white)](https://github.com/alphacornutum/layercake/actions)
-[![After Effects 26+](https://img.shields.io/badge/After%20Effects-26%2B-997B66)](docs/setup.md)
+[![After Effects 24.6+](https://img.shields.io/badge/After%20Effects-24.6%2B-997B66)](docs/setup.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 **Use professionally designed After Effects projects as agent-ready video templates.**
@@ -130,7 +130,7 @@ LayerCake drives After Effects through:
 
 ## Requirements
 
-- Adobe After Effects **26+** (supported baseline; older versions may work but are unsupported)
+- Adobe After Effects **24.6+** (supported baseline; newer hosts including 26+ work as supersets; older than 24.6 may work but are unsupported)
 - Node.js 20 or newer
 - An MCP-compatible agent or client
 - macOS or Windows
