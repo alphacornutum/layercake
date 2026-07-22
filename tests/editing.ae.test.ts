@@ -1316,7 +1316,7 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
         if (items[i] instanceof CompItem && items[i].name === "main") { comp = items[i]; break; }
       }
       if (!comp) throw new Error("main missing");
-      // Long enough for 23–24s keys under every fps we churn through.
+      // Long enough for 23-24s keys under every fps we churn through.
       comp.duration = 40;
       var solid = comp.layers.addSolid([0.2, 0.4, 0.8], "LC Timing Key Solid", 200, 200, 1);
       var scale = solid.property("ADBE Transform Group").property("ADBE Scale");
