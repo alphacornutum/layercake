@@ -113,7 +113,13 @@ export const renameLayerOpSchema = z.object({
 
 export const createFolderOpSchema = z.object({
   op: z.literal("create_folder"),
-  name: z.string().min(1).describe("Folder name in the Project panel"),
+  name: z
+    .string()
+    .min(1)
+    .optional()
+    .describe(
+      "Optional folder name (opaque). Omit = host default (placeholder Untitled Folder when AE requires a name). See ADR 0006.",
+    ),
   parentFolderId: z
     .number()
     .int()
@@ -148,13 +154,62 @@ export const setLayerIndexOpSchema = z.object({
 
 export const createSolidOpSchema = z.object({
   op: z.literal("create_solid"),
-  name: z.string().min(1),
+  name: z
+    .string()
+    .min(1)
+    .optional()
+    .describe(
+      "Optional solid name (opaque). Omit = host default (placeholder Solid when AE requires a name). See ADR 0006.",
+    ),
   width: z.number().int().min(4).max(30000),
   height: z.number().int().min(4).max(30000),
   pixelAspect: z.number().positive(),
   color: rgbColorSchema,
   parentFolderId: z.number().int().optional().describe("Optional FolderItem Item.id"),
 });
+
+const boxTextSizeSchema = z
+  .array(z.number())
+  .length(2)
+  .refine((v) => v[0]! >= 1 && v[1]! >= 1, {
+    message: "boxTextSize values must be at least 1",
+  })
+  .describe("Box text size [width, height] in pixels");
+
+export const createTextOpSchema = z
+  .object({
+    op: z.literal("create_text"),
+    target: compTargetSchema,
+    layout: z.enum(["point", "box"]).describe("Horizontal point text or paragraph (box) text"),
+    text: z.string().describe("Source text content (empty string allowed)"),
+    boxTextSize: boxTextSizeSchema.optional(),
+    name: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        "Optional layer name (opaque). Omit = AE default for addText/addBoxText. See ADR 0006.",
+      ),
+    style: textStyleBagSchema
+      .optional()
+      .describe("Optional partial TextDocument style bag (same allowlist as set_text_style)"),
+  })
+  .superRefine((v, ctx) => {
+    if (v.layout === "box" && v.boxTextSize === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "boxTextSize is required when layout is box",
+        path: ["boxTextSize"],
+      });
+    }
+    if (v.layout === "point" && v.boxTextSize !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "boxTextSize is not allowed when layout is point",
+        path: ["boxTextSize"],
+      });
+    }
+  });
 
 export const replaceLayerSourceOpSchema = z.object({
   op: z.literal("replace_layer_source"),
@@ -348,6 +403,7 @@ export const patchOperationSchema = z.union([
   renameProjectItemOpSchema,
   setLayerIndexOpSchema,
   createSolidOpSchema,
+  createTextOpSchema,
   replaceLayerSourceOpSchema,
   setLayerTimingOpSchema,
   setLayerSwitchesOpSchema,
@@ -380,6 +436,7 @@ export type DeleteProjectItemOp = z.infer<typeof deleteProjectItemOpSchema>;
 export type RenameProjectItemOp = z.infer<typeof renameProjectItemOpSchema>;
 export type SetLayerIndexOp = z.infer<typeof setLayerIndexOpSchema>;
 export type CreateSolidOp = z.infer<typeof createSolidOpSchema>;
+export type CreateTextOp = z.infer<typeof createTextOpSchema>;
 export type ReplaceLayerSourceOp = z.infer<typeof replaceLayerSourceOpSchema>;
 export type SetLayerTimingOp = z.infer<typeof setLayerTimingOpSchema>;
 export type SetLayerSwitchesOp = z.infer<typeof setLayerSwitchesOpSchema>;

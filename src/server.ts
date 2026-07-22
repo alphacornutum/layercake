@@ -183,7 +183,9 @@ export function createServer(
         "Requires project.path + project.fingerprint guards from ae_project_context. " +
         "Ops: set_text_style (partial TextDocument style bag — font, size, leading/autoLeading, fill/stroke, " +
         "justification, text, box geometry, …; omit key = preserve; authored + evaluatedStyle evidence); " +
-        "rename_layer; rename_project_item; set_layer_index; create_solid (always-create); " +
+        "rename_layer; rename_project_item; set_layer_index; create_solid (always-create; optional name); " +
+        "create_text (target.compId|compName + layout point|box + text; box requires boxTextSize; " +
+        "optional name/style; no in-place point↔box convert — recreate + delete_layer); " +
         "replace_layer_source; set_layer_timing (integer frames only); set_layer_switches " +
         "(partial switches bag; full switch snapshot evidence; timeRemapEnabled lives here); " +
         "set_comp_settings (target.compId|compName + partial settings bag; integer-frame evidence; " +
@@ -192,9 +194,10 @@ export function createServer(
         "set_layer_transform (partial transform bag; authored value evidence; fingerprint guards for stale apply); " +
         "reset_layer_surface (resetTransforms verifies AE defaults with value evidence; clearExpressions separate); " +
         "delete_layer; create_folder / move_project_item / delete_project_item " +
-        "(permissive AE remove); safe_delete_project_item (refuse in-use / unknownRefsPossible; empty folders only). " +
+        "(permissive AE remove; create_folder name optional); safe_delete_project_item (refuse in-use / unknownRefsPossible; empty folders only). " +
         "Layer targets accept id or unique name like ae_get_layer — ambiguous names refuse with candidates. " +
-        "Comp-only ops (set_comp_settings) use target.compId|compName the same way. " +
+        "Comp-only ops (set_comp_settings, create_text) use target.compId|compName the same way. " +
+        "Create ops may omit name (host/AE default; see ADR 0006); evidence returns the final name. " +
         "Panel item ops use Item.id (real rootFolder.id from ae_list_folders, never a magic 0). " +
         "Successful targets include post-condition-verified before/after evidence. " +
         "Prefer typed ops over ae_eval_script for these control-plane flows. " +
