@@ -618,6 +618,107 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
     expect(fontTarget?.after?.fonts).toBeTruthy();
   });
 
+  it("set_text_style allCaps / smallCaps via fontCapsOption round-trip", async (ctx) => {
+    if (!aeReady) {
+      ctx.skip();
+      return;
+    }
+    await openWorkCopy(host, true);
+    const before = await listProjectContext(host, config.scriptTimeoutMs);
+    const { main, textLayer } = await mainTextLayer(host);
+
+    const modes: Array<{
+      style: { allCaps: boolean; smallCaps: boolean };
+      label: string;
+    }> = [
+      { style: { allCaps: true, smallCaps: false }, label: "all caps" },
+      { style: { allCaps: false, smallCaps: true }, label: "small caps" },
+      { style: { allCaps: true, smallCaps: true }, label: "all small caps" },
+      { style: { allCaps: false, smallCaps: false }, label: "normal caps" },
+    ];
+
+    let fingerprint = before.fingerprint;
+    for (const mode of modes) {
+      const ctxNow = await listProjectContext(host, config.scriptTimeoutMs);
+      fingerprint = ctxNow.fingerprint;
+      const patch = await applyProjectPatch(
+        host,
+        {
+          project: { path: before.projectPath!, fingerprint },
+          operations: [
+            {
+              op: "set_text_style",
+              selector: {
+                kind: "layers",
+                layers: [{ compId: main.id, layerId: textLayer.id }],
+              },
+              style: mode.style,
+            },
+          ],
+        },
+        config.scriptTimeoutMs,
+      );
+      expect(patch.ok, mode.label).toBe(true);
+      if (!patch.ok) return;
+      fingerprint = patch.fingerprint;
+      const target = patch.results[0]?.targets[0] as TextStyleTargetResult | undefined;
+      expect(target?.status, mode.label).toMatch(/^(changed|already_satisfied)$/);
+      expect(target?.after?.style?.allCaps, mode.label).toBe(mode.style.allCaps);
+      expect(target?.after?.style?.smallCaps, mode.label).toBe(mode.style.smallCaps);
+    }
+
+    // Partial: only allCaps true while smallCaps was false → stay all-caps (not clear sibling).
+    const mid = await listProjectContext(host, config.scriptTimeoutMs);
+    const partial = await applyProjectPatch(
+      host,
+      {
+        project: { path: before.projectPath!, fingerprint: mid.fingerprint },
+        operations: [
+          {
+            op: "set_text_style",
+            selector: {
+              kind: "layers",
+              layers: [{ compId: main.id, layerId: textLayer.id }],
+            },
+            style: { smallCaps: true },
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(partial.ok).toBe(true);
+    if (!partial.ok) return;
+    const partialTarget = partial.results[0]?.targets[0] as TextStyleTargetResult | undefined;
+    expect(partialTarget?.status).toMatch(/^(changed|already_satisfied)$/);
+    expect(partialTarget?.after?.style?.allCaps).toBe(false);
+    expect(partialTarget?.after?.style?.smallCaps).toBe(true);
+
+    const mid2 = await listProjectContext(host, config.scriptTimeoutMs);
+    const mergeAll = await applyProjectPatch(
+      host,
+      {
+        project: { path: before.projectPath!, fingerprint: mid2.fingerprint },
+        operations: [
+          {
+            op: "set_text_style",
+            selector: {
+              kind: "layers",
+              layers: [{ compId: main.id, layerId: textLayer.id }],
+            },
+            style: { allCaps: true },
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(mergeAll.ok).toBe(true);
+    if (!mergeAll.ok) return;
+    const mergeTarget = mergeAll.results[0]?.targets[0] as TextStyleTargetResult | undefined;
+    expect(mergeTarget?.status).toMatch(/^(changed|already_satisfied)$/);
+    expect(mergeTarget?.after?.style?.allCaps).toBe(true);
+    expect(mergeTarget?.after?.style?.smallCaps).toBe(true);
+  });
+
   it("rename_layer by id and unique name; opaque mustache; no implicit save", async (ctx) => {
     if (!aeReady) {
       ctx.skip();
