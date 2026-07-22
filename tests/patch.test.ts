@@ -129,6 +129,99 @@ describe("patchProjectInputSchema", () => {
     ]);
   });
 
+  it("allows omitting name on create_folder and create_solid", () => {
+    const folder = patchProjectInputSchema.parse({
+      project: guardedProject(),
+      operations: [{ op: "create_folder", parentFolderId: 12 }],
+    });
+    expect(folder.operations[0]).toMatchObject({ op: "create_folder", parentFolderId: 12 });
+    expect((folder.operations[0] as { name?: string }).name).toBeUndefined();
+
+    const solid = patchProjectInputSchema.parse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "create_solid",
+          width: 100,
+          height: 100,
+          pixelAspect: 1,
+          color: [0, 0, 0],
+        },
+      ],
+    });
+    expect(solid.operations[0]?.op).toBe("create_solid");
+    expect((solid.operations[0] as { name?: string }).name).toBeUndefined();
+  });
+
+  it("accepts create_text point and box layouts with optional style", () => {
+    const point = patchProjectInputSchema.parse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "create_text",
+          target: { compId: 12 },
+          layout: "point",
+          text: "Hello",
+          style: { font: "ArialMT", fontSize: 48 },
+        },
+      ],
+    });
+    expect(point.operations[0]).toMatchObject({
+      op: "create_text",
+      layout: "point",
+      text: "Hello",
+    });
+
+    const box = patchProjectInputSchema.parse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "create_text",
+          target: { compName: "main" },
+          layout: "box",
+          text: "",
+          boxTextSize: [400, 200],
+          name: "Title",
+        },
+      ],
+    });
+    expect(box.operations[0]).toMatchObject({
+      op: "create_text",
+      layout: "box",
+      boxTextSize: [400, 200],
+      name: "Title",
+    });
+  });
+
+  it("refines create_text boxTextSize by layout", () => {
+    const missingSize = patchProjectInputSchema.safeParse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "create_text",
+          target: { compId: 1 },
+          layout: "box",
+          text: "x",
+        },
+      ],
+    });
+    expect(missingSize.success).toBe(false);
+
+    const pointWithSize = patchProjectInputSchema.safeParse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "create_text",
+          target: { compId: 1 },
+          layout: "point",
+          text: "x",
+          boxTextSize: [100, 50],
+        },
+      ],
+    });
+    expect(pointWithSize.success).toBe(false);
+  });
+
   it("rejects empty itemIds on move/delete", () => {
     const move = patchProjectInputSchema.safeParse({
       project: guardedProject(),
@@ -336,6 +429,12 @@ describe("patchProjectInputSchema", () => {
           parentFolderId: 12,
         },
         {
+          op: "create_text",
+          target: { compId: 1 },
+          layout: "point",
+          text: "Hi",
+        },
+        {
           op: "replace_layer_source",
           target: { compName: "main", layerName: "Logo" },
           sourceItemId: 56,
@@ -384,6 +483,7 @@ describe("patchProjectInputSchema", () => {
       "rename_project_item",
       "set_layer_index",
       "create_solid",
+      "create_text",
       "replace_layer_source",
       "set_layer_timing",
       "set_layer_switches",

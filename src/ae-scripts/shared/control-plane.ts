@@ -580,9 +580,12 @@ export function applySetLayerIndex(plan, opResult) {
 export function applyCreateSolid(plan, opResult) {
   var op = plan.op;
   var parent = plan.parentFolder;
+  var requestedName = op.name !== undefined && op.name !== null ? String(op.name) : null;
+  // AE addSolid requires a name argument; conventional placeholder when omitted (ADR 0006).
+  var createName = requestedName !== null ? requestedName : "Solid";
   var targetResult = {
     itemId: -1,
-    itemName: String(op.name),
+    itemName: createName,
     itemType: "footage",
     status: "failed",
   };
@@ -601,7 +604,7 @@ export function applyCreateSolid(plan, opResult) {
     );
     solidLayer = tempComp.layers.addSolid(
       op.color,
-      String(op.name),
+      createName,
       op.width,
       op.height,
       op.pixelAspect,
@@ -614,7 +617,9 @@ export function applyCreateSolid(plan, opResult) {
     if (parent && createdItem.parentFolder.id !== parent.id) {
       createdItem.parentFolder = parent;
     }
-    createdItem.name = String(op.name);
+    if (requestedName !== null) {
+      createdItem.name = requestedName;
+    }
     var parentInfo = parentFolderInfo(createdItem);
     var color = op.color;
     targetResult.itemId = createdItem.id;
@@ -628,9 +633,10 @@ export function applyCreateSolid(plan, opResult) {
       color: [color[0], color[1], color[2]],
       parentFolderId: parentInfo.id,
     };
+    var nameOk = requestedName === null || String(createdItem.name) === requestedName;
     if (
       footageKindOf(createdItem) === "solid" &&
-      String(createdItem.name) === String(op.name) &&
+      nameOk &&
       (!parent || parentInfo.id === parent.id)
     ) {
       targetResult.status = "changed";

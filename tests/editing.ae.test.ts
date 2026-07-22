@@ -22,6 +22,7 @@ import { saveProject } from "../src/patch/save.js";
 import type {
   CreateFolderTargetResult,
   CreateSolidTargetResult,
+  CreateTextTargetResult,
   DeleteProjectItemTargetResult,
   MoveProjectItemTargetResult,
   ReplaceLayerSourceTargetResult,
@@ -1628,6 +1629,103 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
     const reMain = relisted.compositions.find((c) => c.id === main.id);
     expect(reMain?.frameRate).toBeCloseTo(churn[churn.length - 1]!.frameRate, 3);
     await assertKeysPreserved("final");
+  });
+
+  it("create_text: point and box layouts with optional style; omit name", async (ctx) => {
+    if (!aeReady) {
+      ctx.skip();
+      return;
+    }
+    await openWorkCopy(host, true);
+    let ctxToken = await listProjectContext(host, config.scriptTimeoutMs);
+    const comps = await listComps(host, {}, config.scriptTimeoutMs);
+    const main = comps.compositions.find((c) => c.name === "main");
+    expect(main).toBeDefined();
+
+    const point = await applyProjectPatch(
+      host,
+      {
+        project: { path: ctxToken.projectPath!, fingerprint: ctxToken.fingerprint },
+        operations: [
+          {
+            op: "create_text",
+            target: { compId: main!.id },
+            layout: "point",
+            text: "LC Point",
+            style: { fontSize: 36 },
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(point.ok, !point.ok ? point.error : undefined).toBe(true);
+    if (!point.ok) return;
+    const pointTarget = point.results[0]?.targets[0] as CreateTextTargetResult;
+    expect(pointTarget.status).toBe("changed");
+    expect(pointTarget.created?.layout).toBe("point");
+    expect(pointTarget.created?.pointText).toBe(true);
+    expect(pointTarget.created?.text).toBe("LC Point");
+    expect(pointTarget.created?.layerId).toBeGreaterThan(0);
+    expect(pointTarget.created?.name?.length).toBeGreaterThan(0);
+    ctxToken = {
+      ...ctxToken,
+      fingerprint: point.fingerprint,
+      dirty: point.dirty,
+      revision: point.revision,
+    };
+
+    const box = await applyProjectPatch(
+      host,
+      {
+        project: { path: ctxToken.projectPath!, fingerprint: ctxToken.fingerprint },
+        operations: [
+          {
+            op: "create_text",
+            target: { compName: "main" },
+            layout: "box",
+            text: "LC Box",
+            boxTextSize: [320, 120],
+            name: "LC Box Title",
+            style: { fontSize: 40, justification: "CENTER_JUSTIFY" },
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(box.ok, !box.ok ? box.error : undefined).toBe(true);
+    if (!box.ok) return;
+    const boxTarget = box.results[0]?.targets[0] as CreateTextTargetResult;
+    expect(boxTarget.status).toBe("changed");
+    expect(boxTarget.created?.layout).toBe("box");
+    expect(boxTarget.created?.boxText).toBe(true);
+    expect(boxTarget.created?.name).toBe("LC Box Title");
+    expect(boxTarget.created?.boxTextSize?.[0]).toBeCloseTo(320, 0);
+    expect(boxTarget.created?.boxTextSize?.[1]).toBeCloseTo(120, 0);
+    ctxToken = {
+      ...ctxToken,
+      fingerprint: box.fingerprint,
+      dirty: box.dirty,
+      revision: box.revision,
+    };
+
+    const badStyle = await applyProjectPatch(
+      host,
+      {
+        project: { path: ctxToken.projectPath!, fingerprint: ctxToken.fingerprint },
+        operations: [
+          {
+            op: "create_text",
+            target: { compId: main!.id },
+            layout: "box",
+            text: "orphan",
+            boxTextSize: [100, 50],
+            style: { leading: 20, autoLeading: true },
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(badStyle.ok).toBe(false);
   });
 
   it("control-plane: create_solid → replace → timing/index/expression → reset → delete_layer → safe_delete", async (ctx) => {

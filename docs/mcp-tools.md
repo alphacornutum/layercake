@@ -64,33 +64,50 @@ Read-only inbound references for one `itemId` (`Item.id`): `used_in_comp`, `laye
 
 ### `ae_patch_project` ops
 
-| Op                         | Purpose                                                                                                                                               |
-| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `set_text_style`           | Partial authored TextDocument style bag (font, size, leading/autoLeading, fill/stroke, justification, text, box size/pos, …); omit=preserve           |
-| `rename_layer`             | Rename exactly one timeline layer per op (`target` id\|name + desired `layerName`)                                                                    |
-| `rename_project_item`      | Rename a Project panel item by `itemId`                                                                                                               |
-| `set_layer_index`          | Reorder one layer to a 1-based `index`                                                                                                                |
-| `create_solid`             | Always create a new Solid FootageItem (name, dims, pixelAspect, color; optional folder)                                                               |
-| `replace_layer_source`     | Replace AVLayer source; evidence reports `layerIdPreserved` / `newLayerId`                                                                            |
-| `set_layer_timing`         | Set start/in/out via **integer frames** (+ optional stretch); on-grid + exact `durationFrames`; verified keyframe preservation; see notes below       |
-| `set_layer_switches`       | Set timeline/layer switch booleans (`enabled`, `audioEnabled`, `timeRemapEnabled`, …); omit=preserve; full switch snapshot evidence                   |
-| `set_comp_settings`        | Set composition settings via nested `target` + partial `settings` bag (dims/rate/frames/work area/renderer/switches); see below                       |
-| `set_property_expression`  | Set/clear expression on one PropertyBase — exactly one of `matchNames` \| nexrender `propertyPath`                                                    |
-| `set_layer_transform`      | Set authored 2D Transform values (`anchorPoint`/`position`/`scale`/`rotation`/`opacity`); omit=preserve; numeric snapshot evidence                    |
-| `reset_layer_surface`      | Clear keys/effects/masks/styles/markers/matte/parent (flags); `resetTransforms` verifies AE defaults with value evidence; `clearExpressions` separate |
-| `delete_layer`             | Delete one timeline layer by `target`                                                                                                                 |
-| `create_folder`            | Create a `FolderItem` under `parentFolderId` (real inventory root id, never a magic `0`)                                                              |
-| `move_project_item`        | Move items by `selector.kind: "items"` + `itemIds` into `destinationFolderId`                                                                         |
-| `delete_project_item`      | Permissive AE `Item.remove()`; refuses root; may delete in-use items / recurse folders                                                                |
-| `safe_delete_project_item` | Delete only when inbound refs are empty and `unknownRefsPossible` is false; empty folders only                                                        |
+| Op                         | Purpose                                                                                                                                                                        |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `set_text_style`           | Partial authored TextDocument style bag (font, size, leading/autoLeading, fill/stroke, justification, text, box size/pos, …); omit=preserve                                    |
+| `rename_layer`             | Rename exactly one timeline layer per op (`target` id\|name + desired `layerName`)                                                                                             |
+| `rename_project_item`      | Rename a Project panel item by `itemId`                                                                                                                                        |
+| `set_layer_index`          | Reorder one layer to a 1-based `index`                                                                                                                                         |
+| `create_solid`             | Always create a new Solid FootageItem (dims, pixelAspect, color; optional `name` / folder; omit name → host default, see [ADR 0006](adr/0006-optional-create-names.md))        |
+| `create_text`              | Create horizontal point or box text in a comp (`target` + `layout` + `text`; box requires `boxTextSize`; optional `name` / `style`)                                            |
+| `replace_layer_source`     | Replace AVLayer source; evidence reports `layerIdPreserved` / `newLayerId`                                                                                                     |
+| `set_layer_timing`         | Set start/in/out via **integer frames** (+ optional stretch); on-grid + exact `durationFrames`; verified keyframe preservation; see notes below                                |
+| `set_layer_switches`       | Set timeline/layer switch booleans (`enabled`, `audioEnabled`, `timeRemapEnabled`, …); omit=preserve; full switch snapshot evidence                                            |
+| `set_comp_settings`        | Set composition settings via nested `target` + partial `settings` bag (dims/rate/frames/work area/renderer/switches); see below                                                |
+| `set_property_expression`  | Set/clear expression on one PropertyBase — exactly one of `matchNames` \| nexrender `propertyPath`                                                                             |
+| `set_layer_transform`      | Set authored 2D Transform values (`anchorPoint`/`position`/`scale`/`rotation`/`opacity`); omit=preserve; numeric snapshot evidence                                             |
+| `reset_layer_surface`      | Clear keys/effects/masks/styles/markers/matte/parent (flags); `resetTransforms` verifies AE defaults with value evidence; `clearExpressions` separate                          |
+| `delete_layer`             | Delete one timeline layer by `target`                                                                                                                                          |
+| `create_folder`            | Create a `FolderItem` under `parentFolderId` (optional `name`; omit → host default — [ADR 0006](adr/0006-optional-create-names.md); real inventory root id, never a magic `0`) |
+| `move_project_item`        | Move items by `selector.kind: "items"` + `itemIds` into `destinationFolderId`                                                                                                  |
+| `delete_project_item`      | Permissive AE `Item.remove()`; refuses root; may delete in-use items / recurse folders                                                                                         |
+| `safe_delete_project_item` | Delete only when inbound refs are empty and `unknownRefsPossible` is false; empty folders only                                                                                 |
 
-Successful targets include **post-condition-verified** before/after evidence (apply re-reads live state after the write; `changed` only when it matches the request). See [ADR 0003](adr/0003-patch-targeting-and-post-conditions.md). Nested `target` + op-specific bags (`settings` / `switches` / `style` / `transform`) follow [ADR 0004](adr/0004-patch-op-target-and-settings-bags.md). Prefer `matchNames` from `ae_get_layer` for `set_property_expression` (locale-stable); `propertyPath` splits on `->` when present, otherwise `.`.
+Successful targets include **post-condition-verified** before/after evidence (apply re-reads live state after the write; `changed` only when it matches the request). See [ADR 0003](adr/0003-patch-targeting-and-post-conditions.md). Nested `target` + op-specific bags (`settings` / `switches` / `style` / `transform`) follow [ADR 0004](adr/0004-patch-op-target-and-settings-bags.md). Typed **create** ops treat `name` as optional ([ADR 0006](adr/0006-optional-create-names.md)): omit keeps the host/AE default (placeholders `Solid` / `Untitled Folder` when the AE API requires a name argument); evidence always returns the final `name`. Prefer `matchNames` from `ae_get_layer` for `set_property_expression` (locale-stable); `propertyPath` splits on `->` when present, otherwise `.`.
 
 #### Layer targeting (id or unique name)
 
 Layer-targeting control-plane ops (`rename_layer`, `set_layer_index`, `replace_layer_source`, `set_layer_timing`, `set_layer_switches`, `set_property_expression`, `set_layer_transform`, `reset_layer_surface`, `delete_layer`) and each `set_text_style` `selector.kind: "layers"` entry use the same shape as `ae_get_layer`: exactly one of `compId` \| `compName`, exactly one of `layerId` \| `layerName` (case-sensitive exact match). Ambiguous names refuse before mutation with candidate lists. Prefer ids when names may collide. There is no ids-only exception for new layer-targeting ops.
 
-`set_comp_settings` uses comps-only `target` (`compId` XOR `compName`) with the same ambiguity rules. `set_text_style` `selector.kind: "comps"` accepts `compIds` and/or `compNames` (union; at least one non-empty). Existing `{ compIds: [...] }` and `{ compId, layerId }` payloads remain valid. `all_text_layers` is unchanged. Panel item ops stay on `Item.id`.
+`set_comp_settings` and `create_text` use comps-only `target` (`compId` XOR `compName`) with the same ambiguity rules. `set_text_style` `selector.kind: "comps"` accepts `compIds` and/or `compNames` (union; at least one non-empty). Existing `{ compIds: [...] }` and `{ compId, layerId }` payloads remain valid. `all_text_layers` is unchanged. Panel item ops stay on `Item.id`.
+
+#### `create_text` example
+
+```json
+{
+  "op": "create_text",
+  "target": { "compName": "main" },
+  "layout": "box",
+  "text": "Headline",
+  "boxTextSize": [800, 200],
+  "name": "Title",
+  "style": { "font": "ArialMT", "fontSize": 72 }
+}
+```
+
+`layout` is `"point"` or `"box"` (horizontal only). Box requires `boxTextSize` `[width, height]` (≥ 1). Optional `style` uses the same allowlist as `set_text_style`. AE marks `boxText` / `pointText` read-only — there is no typed in-place convert; recreate with the other `layout`, copy transform/timing/switches as needed, then `delete_layer` the old layer (new `Layer.id`).
 
 #### `rename_layer` example
 

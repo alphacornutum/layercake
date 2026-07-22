@@ -512,19 +512,25 @@ function applyRenameLayer(plan, opResult) {
 
 function applyCreateFolder(plan, opResult) {
   var parent = plan.parentFolder;
-  var name = String(plan.op.name);
+  var requestedName =
+    plan.op.name !== undefined && plan.op.name !== null ? String(plan.op.name) : null;
+  // AE addFolder requires a name argument; conventional placeholder when omitted (ADR 0006).
+  var createName = requestedName !== null ? requestedName : "Untitled Folder";
   var targetResult = {
     itemId: -1,
-    itemName: name,
+    itemName: createName,
     itemType: "folder",
     status: "failed",
   };
   // Track addFolder success so mid-step failures still set anyChanged and trigger undo.
   var created = null;
   try {
-    created = app.project.items.addFolder(name);
+    created = app.project.items.addFolder(createName);
     if (created.parentFolder.id !== parent.id) {
       created.parentFolder = parent;
+    }
+    if (requestedName !== null) {
+      created.name = requestedName;
     }
     var parentInfo = parentFolderInfo(created);
     targetResult.itemId = created.id;
@@ -538,7 +544,8 @@ function applyCreateFolder(plan, opResult) {
       parentFolderId: parentInfo.id,
       parentFolderName: parentInfo.name,
     };
-    if (String(created.name) === name && parentInfo.id === parent.id) {
+    var nameOk = requestedName === null || String(created.name) === requestedName;
+    if (nameOk && parentInfo.id === parent.id) {
       targetResult.status = "changed";
       opResult.targets.push(targetResult);
       return { anyChanged: true, anyFailed: false, applyError: null };
@@ -553,7 +560,7 @@ function applyCreateFolder(plan, opResult) {
     if (created) {
       try {
         targetResult.itemId = created.id;
-        targetResult.itemName = String(created.name || name);
+        targetResult.itemName = String(created.name || createName);
         var failParent = parentFolderInfo(created);
         targetResult.after = {
           parentFolderId: failParent.id,
@@ -561,13 +568,187 @@ function applyCreateFolder(plan, opResult) {
         };
         targetResult.created = {
           id: created.id,
-          name: String(created.name || name),
+          name: String(created.name || createName),
           parentFolderId: failParent.id,
         };
       } catch (ne) {}
     }
     opResult.targets.push(targetResult);
     return { anyChanged: !!created, anyFailed: true, applyError: String(ce) };
+  }
+}
+
+function vec2Close(a, b) {
+  if (!a || !b || a.length !== 2 || b.length !== 2) return false;
+  return Math.abs(a[0] - b[0]) <= 1e-4 && Math.abs(a[1] - b[1]) <= 1e-4;
+}
+
+function applyCreateText(plan, opResult) {
+  var op = plan.op;
+  var comp = plan.comp;
+  var layout = op.layout;
+  var requestedText = String(op.text);
+  var requestedName = op.name !== undefined && op.name !== null ? String(op.name) : null;
+  var style = op.style || null;
+  var allStyleRuns = true;
+  var targetResult = {
+    compId: comp.id,
+    layerId: -1,
+    compName: String(comp.name),
+    layerName: requestedName || "",
+    status: "failed",
+  };
+  var layer = null;
+  try {
+    if (layout === "box") {
+      layer = comp.layers.addBoxText(op.boxTextSize);
+    } else {
+      layer = comp.layers.addText(requestedText);
+    }
+    var textProp = layer.property("Source Text");
+    if (!textProp) {
+      try {
+        layer.remove();
+      } catch (re0) {}
+      targetResult.message = "Created layer has no Source Text property";
+      opResult.targets.push(targetResult);
+      return { anyChanged: false, anyFailed: true, applyError: targetResult.message };
+    }
+    var doc = readAuthoredTextDocument(textProp, comp);
+    if (!doc) {
+      try {
+        layer.remove();
+      } catch (re1) {}
+      targetResult.message = "Could not read TextDocument after create";
+      opResult.targets.push(targetResult);
+      return { anyChanged: false, anyFailed: true, applyError: targetResult.message };
+    }
+    try {
+      doc.text = requestedText;
+    } catch (te) {
+      try {
+        layer.remove();
+      } catch (re2) {}
+      targetResult.message = "Failed to set text: " + String(te);
+      opResult.targets.push(targetResult);
+      return { anyChanged: false, anyFailed: true, applyError: targetResult.message };
+    }
+    if (style) {
+      var writeErr = applyStyleToDoc(doc, style, allStyleRuns);
+      if (writeErr) {
+        try {
+          layer.remove();
+        } catch (re3) {}
+        targetResult.message = writeErr;
+        opResult.targets.push(targetResult);
+        return { anyChanged: false, anyFailed: true, applyError: writeErr };
+      }
+    }
+    textProp.setValue(doc);
+    if (requestedName !== null) {
+      layer.name = requestedName;
+    }
+    var afterDoc = readAuthoredTextDocument(textProp, comp);
+    if (!afterDoc) {
+      try {
+        layer.remove();
+      } catch (re4) {}
+      targetResult.message = "Post-condition failed: could not re-read TextDocument after create";
+      opResult.targets.push(targetResult);
+      return { anyChanged: false, anyFailed: true, applyError: targetResult.message };
+    }
+    var afterStyle = styleSnapshotFromDoc(afterDoc);
+    var afterFonts = readFonts(afterDoc, allStyleRuns);
+    var pointText = false;
+    var boxText = false;
+    try {
+      pointText = !!afterDoc.pointText;
+    } catch (eP) {}
+    try {
+      boxText = !!afterDoc.boxText;
+    } catch (eB) {}
+    var actualText = "";
+    try {
+      actualText = String(afterDoc.text);
+    } catch (eT) {
+      actualText = "";
+    }
+    var actualBoxSize = null;
+    if (layout === "box") {
+      try {
+        actualBoxSize = [afterDoc.boxTextSize[0], afterDoc.boxTextSize[1]];
+      } catch (eS) {
+        actualBoxSize = null;
+      }
+    }
+    targetResult.layerId = layer.id;
+    targetResult.layerName = String(layer.name);
+    targetResult.created = {
+      layerId: layer.id,
+      name: String(layer.name),
+      layout: layout,
+      text: actualText,
+      boxText: boxText,
+      pointText: pointText,
+    };
+    if (actualBoxSize) targetResult.created.boxTextSize = actualBoxSize;
+    if (afterStyle) {
+      targetResult.after = {};
+      fillTextStyleEvidence(
+        targetResult.after,
+        afterStyle,
+        afterFonts,
+        textProp,
+        comp,
+        allStyleRuns,
+      );
+    }
+    var layoutOk =
+      layout === "box"
+        ? boxText === true && pointText === false
+        : pointText === true && boxText === false;
+    var textOk = actualText === requestedText;
+    if (style && style.text !== undefined) {
+      textOk = actualText === String(style.text);
+    }
+    var nameOk = requestedName === null || String(layer.name) === requestedName;
+    var expectedBoxSize = layout === "box" ? op.boxTextSize : null;
+    if (layout === "box" && style && style.boxTextSize !== undefined) {
+      expectedBoxSize = style.boxTextSize;
+    }
+    var sizeOk =
+      layout !== "box" ||
+      (actualBoxSize && expectedBoxSize && vec2Close(actualBoxSize, expectedBoxSize));
+    var styleOk = !style || (afterStyle && authoredStyleSatisfied(afterStyle, afterFonts, style));
+    if (layoutOk && textOk && nameOk && sizeOk && styleOk) {
+      targetResult.status = "changed";
+      opResult.targets.push(targetResult);
+      return { anyChanged: true, anyFailed: false, applyError: null };
+    }
+    var failMsg = "Post-condition failed: created text layer did not match request";
+    if (!layoutOk) failMsg = "Post-condition failed: layout flags did not match " + layout;
+    else if (!textOk) failMsg = "Post-condition failed: text content did not match";
+    else if (!nameOk) failMsg = "Post-condition failed: layer name did not match";
+    else if (!sizeOk) failMsg = "Post-condition failed: boxTextSize did not match";
+    else if (!styleOk)
+      failMsg = "Post-condition failed: authored style did not match supplied keys";
+    try {
+      layer.remove();
+    } catch (re5) {}
+    targetResult.status = "failed";
+    targetResult.message = failMsg;
+    targetResult.layerId = -1;
+    opResult.targets.push(targetResult);
+    return { anyChanged: false, anyFailed: true, applyError: failMsg };
+  } catch (ce) {
+    if (layer) {
+      try {
+        layer.remove();
+      } catch (re6) {}
+    }
+    targetResult.message = String(ce);
+    opResult.targets.push(targetResult);
+    return { anyChanged: false, anyFailed: true, applyError: String(ce) };
   }
 }
 
@@ -826,6 +1007,18 @@ function resolveOp(op) {
       targetCount: 1,
     };
   }
+  if (op.op === "create_text") {
+    var textComp;
+    try {
+      textComp = resolveComp(op.target.compId, op.target.compName, resolveFail);
+    } catch (ctre) {
+      return { error: formatResolveError(ctre) };
+    }
+    return {
+      plan: { op: op, kind: "create_text", comp: textComp },
+      targetCount: 1,
+    };
+  }
   if (op.op === "replace_layer_source") {
     var replacePair;
     try {
@@ -958,6 +1151,7 @@ function applyPlan(plan, opResult) {
   if (plan.kind === "rename_project_item") return applyRenameProjectItem(plan, opResult);
   if (plan.kind === "set_layer_index") return applySetLayerIndex(plan, opResult);
   if (plan.kind === "create_solid") return applyCreateSolid(plan, opResult);
+  if (plan.kind === "create_text") return applyCreateText(plan, opResult);
   if (plan.kind === "replace_layer_source") return applyReplaceLayerSource(plan, opResult);
   if (plan.kind === "set_layer_timing") return applySetLayerTiming(plan, opResult);
   if (plan.kind === "set_layer_switches") return applySetLayerSwitches(plan, opResult);

@@ -102,6 +102,29 @@ export type CreateSolidTargetResult = PanelItemTargetBase & {
   };
 };
 
+/** `create_text` target evidence. */
+export type CreateTextTargetResult = {
+  compId: number;
+  layerId: number;
+  compName?: string;
+  layerName?: string;
+  status: PatchOpStatus;
+  message?: string;
+  created?: {
+    layerId: number;
+    name: string;
+    layout: "point" | "box";
+    text: string;
+    boxText?: boolean;
+    pointText?: boolean;
+    boxTextSize?: [number, number];
+  };
+  after?: {
+    style?: Record<string, unknown>;
+    fonts?: string[];
+  };
+};
+
 /** `replace_layer_source` target evidence. */
 export type ReplaceLayerSourceTargetResult = LayerTargetBase & {
   layerIdPreserved?: boolean;
@@ -263,6 +286,7 @@ export type PatchTargetResult =
   | RenameLayerTargetResult
   | PanelTargetResult
   | SetLayerIndexTargetResult
+  | CreateTextTargetResult
   | ReplaceLayerSourceTargetResult
   | SetLayerTimingTargetResult
   | SetLayerSwitchesTargetResult
