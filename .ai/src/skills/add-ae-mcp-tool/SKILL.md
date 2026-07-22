@@ -22,12 +22,12 @@ Follow the inventory pattern already used for comps, sources, and folders.
    - For new/changed agent-facing behavior, create or update an OpenSpec change and specs under `openspec/specs/` before or alongside implementation (see `openspec-propose` / `openspec-apply-change`).
 
 3. **ExtendScript source**
-   - Add `src/inventory/list-<name>-script.ts` exporting a string built as `` `${SHARED_INVENTORY_HELPERS}\n${BODY}` `` when folder/source helpers apply.
-   - ES3 only; end by `return JSON.stringify(...)`.
+   - Add a typed entry under `src/ae-scripts/entries/` that exports `main(): string` (JSON payload). Import shared helpers from `src/ae-scripts/shared/` (e.g. inventory) instead of copying `folderPlacement` / `serializeSourceRef`.
+   - Emit via `npm run build:ae-scripts`; Node loaders use `loadAeScript("<entry>")` (self-contained). Do **not** prepend `loadAeHelperScript` blobs onto entries that already bundle those helpers.
    - Require an open project; throw a clear Error if `!app.project`.
-   - Reuse `SHARED_INVENTORY_HELPERS` from `shared-script.ts` instead of copying `folderPlacement` / `serializeSourceRef`.
 
 4. **TypeScript orchestration**
+   - Add `list-<name>-script.ts` that exports `loadAeScript("list-<name>")` (plus any intentional parameter preamble only).
    - Add `list-<name>.ts`: `host.evalScript(SCRIPT, timeoutMs)` → parse → optional filter in TS.
    - Extend `src/inventory/types.ts` and `parse.ts` with strict runtime checks (throw on malformed JSON/shape).
 

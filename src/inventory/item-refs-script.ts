@@ -1,16 +1,11 @@
-import { loadAeHelperScript, loadAeScript } from "../host/load-ae-script.js";
-import { SHARED_INVENTORY_HELPERS } from "./shared-script.js";
+import { loadAeScript } from "../host/load-ae-script.js";
 
 /**
- * Shared ExtendScript for inbound project-item reference collection.
- * Used by ae_get_item_refs and safe_delete_project_item.
+ * Build the eval payload for ae_get_item_refs.
+ * The emitted get-item-refs entry is self-contained; only inject __itemId.
  */
-export const SHARED_ITEM_REFS_HELPERS = loadAeHelperScript("helpers-item-refs");
-
 export function buildGetItemRefsScript(itemId: number): string {
-  return [
-    SHARED_INVENTORY_HELPERS,
-    `var __itemId = ${itemId}; // {"itemId":${itemId}}`,
-    loadAeScript("get-item-refs"),
-  ].join("\n\n");
+  return [`var __itemId = ${itemId}; // {"itemId":${itemId}}`, loadAeScript("get-item-refs")].join(
+    "\n\n",
+  );
 }

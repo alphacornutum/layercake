@@ -2,6 +2,12 @@
 
 Install LayerCake, point it at Adobe After Effects, and connect it to an MCP-compatible agent.
 
+## Requirements
+
+- Adobe After Effects **24.6+** (supported baseline; newer hosts including 26+ work as supersets; older than 24.6 may work but are unsupported)
+- Node.js 20+
+- macOS or Windows (host control is not available on Linux)
+
 ## Install
 
 ```bash

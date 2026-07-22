@@ -14,6 +14,8 @@ Agents do not always inherit your terminal’s shell environment. Absolute paths
 
 ## After Effects reported unavailable
 
+Confirm you are on After Effects **24.6+** (LayerCake's supported host baseline). Older installs may fail in surprising ways.
+
 ### macOS
 
 - Verify that `AE_APP_NAME` matches the name under `/Applications`. The year suffix matters.

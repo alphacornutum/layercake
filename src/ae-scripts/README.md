@@ -16,11 +16,13 @@ Import helpers from `shared/` -- Rollup inlines them into each entry (no shared 
 
 ```ts
 import { loadAeScript, loadAeHelperScript } from "../host/load-ae-script.js";
+
 const source = loadAeScript("list-folders");
+// Rare: helper-only emit for tests or intentional concat (not for self-bundled entries).
 const helpers = loadAeHelperScript("helpers-inventory");
 ```
 
-Dynamic builders (patch apply, get-layer, ...) inject a short preamble, then concatenate `loadAeScript("...")`.
+Dynamic builders inject a short preamble (e.g. `__itemId`), then `loadAeScript("...")`. Do not prepend helper blobs onto entries that already import those modules — that duplicates symbols and a second `function main`.
 
 ## Authority
 

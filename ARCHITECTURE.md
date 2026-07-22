@@ -27,17 +27,17 @@ Thin MCP tools compose over a single host bridge. Inventory, context, patch, sav
 
 ## Layers
 
-| Module           | Role                                                                                                        |
-| ---------------- | ----------------------------------------------------------------------------------------------------------- |
-| `src/index.ts`   | Wire config, host, docs corpus, product skill, stdio transport — orchestration only                         |
-| `src/config.ts`  | Env loading (`AE_*`, including `AE_ARTIFACT_DIR`) and platform-aware `ConfigError` / `assertHostConfigured` |
-| `src/server.ts`  | Register MCP tools/resources; call host/inventory/patch/docs/skills; return `textResult` / `isError`        |
-| `src/host/`      | `AeHost` interface, factory, macOS/Windows bridges, wrap/parse (`OK`/`ERR`), session open/close guards      |
-| `src/inventory/` | Read-only inventories, inspect, and lean `ae_project_context` (fingerprint); Node loaders for emitted AE scripts |
+| Module            | Role                                                                                                             |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `src/index.ts`    | Wire config, host, docs corpus, product skill, stdio transport — orchestration only                              |
+| `src/config.ts`   | Env loading (`AE_*`, including `AE_ARTIFACT_DIR`) and platform-aware `ConfigError` / `assertHostConfigured`      |
+| `src/server.ts`   | Register MCP tools/resources; call host/inventory/patch/docs/skills; return `textResult` / `isError`             |
+| `src/host/`       | `AeHost` interface, factory, macOS/Windows bridges, wrap/parse (`OK`/`ERR`), session open/close guards           |
+| `src/inventory/`  | Read-only inventories, inspect, and lean `ae_project_context` (fingerprint); Node loaders for emitted AE scripts |
 | `src/ae-scripts/` | Typed first-party ExtendScript (modern TS → ES5/ES3-compatible emit via `build:ae-scripts`)                      |
-| `src/patch/`     | Typed apply-only patch schemas/scripts, broad-gate, `ae_save_project` helpers                               |
-| `src/docs/`      | Local corpus load/search; URIs use `ae://docs/...`                                                          |
-| `src/skills/`    | Load packaged Agent Skill from `skills/`; URIs use `skill://...` (SEP-2640)                                 |
+| `src/patch/`      | Typed apply-only patch schemas/scripts, broad-gate, `ae_save_project` helpers                                    |
+| `src/docs/`       | Local corpus load/search; URIs use `ae://docs/...`                                                               |
+| `src/skills/`     | Load packaged Agent Skill from `skills/`; URIs use `skill://...` (SEP-2640)                                      |
 
 ### Dependency direction
 
@@ -63,27 +63,27 @@ Thin MCP tools compose over a single host bridge. Inventory, context, patch, sav
 
 Specs under `openspec/specs/<capability>/spec.md` are the behavior contracts. Code packages own the implementation.
 
-| Capability                | MCP surface                                                                    | Primary code                                                                                      |
-| ------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
-| `product-identity`        | npm/bin/MCP name `layercake`; product **LayerCake**                            | `package.json`, `src/server.ts`, `README.md`, `docs/`                                             |
-| `typed-extendscript-authoring` | (authoring/build; not an MCP tool)                                        | `src/ae-scripts/`, `tsconfig.ae.json`, `scripts/build-ae-scripts.mjs`, `src/host/load-ae-script.ts` |
-| `ae-host`                 | `ae_host_status`, `ae_open_project`; `AE_ARTIFACT_DIR`                         | `src/host/`, `src/config.ts`                                                                      |
-| `ae-project-session`      | `ae_close_project`; open refuse / same-path no-op                              | `src/host/session.ts`                                                                             |
-| `ae-project-context`      | `ae_project_context`                                                           | `src/inventory/list-project-context*.ts`, `fingerprint.ts`                                        |
-| `ae-project-patch`        | `ae_patch_project`                                                             | `src/patch/` (`schema`, `apply*`, `broad-gate`)                                                   |
-| `ae-project-save`         | `ae_save_project`                                                              | `src/patch/save.ts`                                                                               |
-| `extendscript-execution`  | `ae_eval_script`                                                               | `src/host/script-wrapper.ts`, `macos.ts`, `windows.ts`                                            |
-| `ae-comp-layer-inventory` | `ae_list_comps`                                                                | `src/inventory/list-comps*.ts`                                                                    |
-| `ae-item-references`      | `ae_get_item_refs`                                                             | `src/inventory/get-item-refs.ts`, `item-refs-script.ts`                                           |
-| `ae-project-sources`      | `ae_list_sources`                                                              | `src/inventory/list-sources*.ts`                                                                  |
-| `ae-project-folders`      | `ae_list_folders`                                                              | `src/inventory/list-folders*.ts`                                                                  |
-| `ae-project-summary`      | `ae_project_summary`                                                           | `src/inventory/list-project-summary*.ts`, `effect-origin.ts`, `first-party-effect-match-names.ts` |
-| `ae-scripting-docs`       | `ae_docs_search`, `ae_docs_get`, `ae://docs/...`                               | `src/docs/`                                                                                       |
-| `ae-layer-inspect`        | `ae_get_layer`                                                                 | `src/inventory/get-layer*.ts`, `inspect-*.ts`                                                     |
-| `ae-source-inspect`       | `ae_get_source`                                                                | `src/inventory/get-source*.ts`, `inspect-*.ts`                                                    |
-| `ae-product-skill`        | `skill://drive-after-effects/...`, `skill://index.json`, server `instructions` | `src/skills/`, `skills/drive-after-effects/`                                                      |
+| Capability                     | MCP surface                                                                    | Primary code                                                                                        |
+| ------------------------------ | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
+| `product-identity`             | npm/bin/MCP name `layercake`; product **LayerCake**                            | `package.json`, `src/server.ts`, `README.md`, `docs/`                                               |
+| `typed-extendscript-authoring` | (authoring/build; not an MCP tool)                                             | `src/ae-scripts/`, `tsconfig.ae.json`, `scripts/build-ae-scripts.mjs`, `src/host/load-ae-script.ts` |
+| `ae-host`                      | `ae_host_status`, `ae_open_project`; `AE_ARTIFACT_DIR`                         | `src/host/`, `src/config.ts`                                                                        |
+| `ae-project-session`           | `ae_close_project`; open refuse / same-path no-op                              | `src/host/session.ts`                                                                               |
+| `ae-project-context`           | `ae_project_context`                                                           | `src/inventory/list-project-context*.ts`, `fingerprint.ts`                                          |
+| `ae-project-patch`             | `ae_patch_project`                                                             | `src/patch/` (`schema`, `apply*`, `broad-gate`)                                                     |
+| `ae-project-save`              | `ae_save_project`                                                              | `src/patch/save.ts`                                                                                 |
+| `extendscript-execution`       | `ae_eval_script`                                                               | `src/host/script-wrapper.ts`, `macos.ts`, `windows.ts`                                              |
+| `ae-comp-layer-inventory`      | `ae_list_comps`                                                                | `src/inventory/list-comps*.ts`                                                                      |
+| `ae-item-references`           | `ae_get_item_refs`                                                             | `src/inventory/get-item-refs.ts`, `item-refs-script.ts`                                             |
+| `ae-project-sources`           | `ae_list_sources`                                                              | `src/inventory/list-sources*.ts`                                                                    |
+| `ae-project-folders`           | `ae_list_folders`                                                              | `src/inventory/list-folders*.ts`                                                                    |
+| `ae-project-summary`           | `ae_project_summary`                                                           | `src/inventory/list-project-summary*.ts`, `effect-origin.ts`, `first-party-effect-match-names.ts`   |
+| `ae-scripting-docs`            | `ae_docs_search`, `ae_docs_get`, `ae://docs/...`                               | `src/docs/`                                                                                         |
+| `ae-layer-inspect`             | `ae_get_layer`                                                                 | `src/inventory/get-layer*.ts`, `inspect-*.ts`                                                       |
+| `ae-source-inspect`            | `ae_get_source`                                                                | `src/inventory/get-source*.ts`, `inspect-*.ts`                                                      |
+| `ae-product-skill`             | `skill://drive-after-effects/...`, `skill://index.json`, server `instructions` | `src/skills/`, `skills/drive-after-effects/`                                                        |
 
-Shared AE DOM helpers live under `src/ae-scripts/shared/`; Node inventory/patch modules load emitted `.jsx` via `loadAeScript` / `loadAeHelperScript`. Inventory still owns parse/filter/Zod: `layer-target-schema.ts`, `parse.ts`, `types.ts`, `filter.ts`, `inspect-limit.ts`, `comp-switches.ts`.
+Shared AE DOM helpers live under `src/ae-scripts/shared/` and are inlined into emitted entries. Node inventory/patch modules load those `.jsx` files via `loadAeScript` (plus intentional preambles such as `__itemId`); do not prepend `loadAeHelperScript` blobs onto self-bundled entries. Inventory still owns parse/filter/Zod: `layer-target-schema.ts`, `parse.ts`, `types.ts`, `filter.ts`, `inspect-limit.ts`, `comp-switches.ts`.
 
 Product skill files live at top-level `skills/` (shipped with the npm package). They are independent of contributor AgentSync under `.ai/src/`.
 

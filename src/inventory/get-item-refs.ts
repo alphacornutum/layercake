@@ -18,6 +18,5 @@ export async function getItemRefs(
 }
 
 export { buildGetItemRefsScript } from "./item-refs-script.js";
-export { SHARED_ITEM_REFS_HELPERS } from "./item-refs-script.js";
 export { parseItemRefs } from "./parse.js";
 export type { ItemRefEntry, ItemRefsResult } from "./types.js";

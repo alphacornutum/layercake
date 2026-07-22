@@ -19,11 +19,8 @@ import {
   parseSourceInventory,
 } from "../src/inventory/parse.js";
 import { buildFingerprint } from "../src/inventory/fingerprint.js";
-import {
-  buildGetItemRefsScript,
-  SHARED_ITEM_REFS_HELPERS,
-} from "../src/inventory/item-refs-script.js";
-import { SHARED_INVENTORY_HELPERS } from "../src/inventory/shared-script.js";
+import { loadAeHelperScript, loadAeScript } from "../src/host/load-ae-script.js";
+import { buildGetItemRefsScript } from "../src/inventory/item-refs-script.js";
 import type {
   CompInventory,
   FolderInventory,
@@ -463,29 +460,30 @@ describe("applyCompFilters", () => {
   });
 });
 
-describe("SHARED_INVENTORY_HELPERS", () => {
+describe("helpers-inventory emit", () => {
   it("exposes folder placement, footage kind, serializeSourceRef, and time↔frame helpers", () => {
-    expect(SHARED_INVENTORY_HELPERS).toContain("function folderPlacement");
-    expect(SHARED_INVENTORY_HELPERS).toContain("function footageKindOf");
-    expect(SHARED_INVENTORY_HELPERS).toContain("function serializeSourceRef");
-    expect(SHARED_INVENTORY_HELPERS).toContain("FileSource");
-    expect(SHARED_INVENTORY_HELPERS).toContain("SolidSource");
-    expect(SHARED_INVENTORY_HELPERS).toContain("PlaceholderSource");
-    expect(SHARED_INVENTORY_HELPERS).toContain("function timeToFrame");
-    expect(SHARED_INVENTORY_HELPERS).toContain("function frameToTime");
-    expect(SHARED_INVENTORY_HELPERS).toContain("function isOnGridFrame");
-    expect(SHARED_INVENTORY_HELPERS).toContain("function layerTimingFrames");
-    expect(SHARED_INVENTORY_HELPERS).toContain("function transformMatchName");
-    expect(SHARED_INVENTORY_HELPERS).toContain("function isCoreTransformMatchName");
-    expect(SHARED_INVENTORY_HELPERS).toContain("function readCompSwitches");
-    expect(SHARED_INVENTORY_HELPERS).toContain("function readDisplayStartFrame");
-    expect(SHARED_INVENTORY_HELPERS).toContain("function compSwitchKeys");
-    expect(SHARED_INVENTORY_HELPERS).toContain('"preserveNestedResolution"');
+    const helpers = loadAeHelperScript("helpers-inventory");
+    expect(helpers).toContain("function folderPlacement");
+    expect(helpers).toContain("function footageKindOf");
+    expect(helpers).toContain("function serializeSourceRef");
+    expect(helpers).toContain("FileSource");
+    expect(helpers).toContain("SolidSource");
+    expect(helpers).toContain("PlaceholderSource");
+    expect(helpers).toContain("function timeToFrame");
+    expect(helpers).toContain("function frameToTime");
+    expect(helpers).toContain("function isOnGridFrame");
+    expect(helpers).toContain("function layerTimingFrames");
+    expect(helpers).toContain("function transformMatchName");
+    expect(helpers).toContain("function isCoreTransformMatchName");
+    expect(helpers).toContain("function readCompSwitches");
+    expect(helpers).toContain("function readDisplayStartFrame");
+    expect(helpers).toContain("function compSwitchKeys");
+    expect(helpers).toContain('"preserveNestedResolution"');
   });
 
   it("treats frame/fps seconds as on-grid (including non-integer fps)", () => {
     const helpers = new Function(`
-      ${SHARED_INVENTORY_HELPERS}
+      ${loadAeHelperScript("helpers-inventory")}
       return {
         timeToFrame: timeToFrame,
         frameToTime: frameToTime,
@@ -546,14 +544,16 @@ describe("parseItemRefs", () => {
 });
 
 describe("item refs script", () => {
-  it("embeds shared helpers and collectItemRefs", () => {
-    expect(SHARED_ITEM_REFS_HELPERS).toContain("function collectItemRefs");
-    expect(SHARED_ITEM_REFS_HELPERS).toContain("unknownRefsPossible");
+  it("loads the self-contained get-item-refs entry with an itemId preamble", () => {
+    const entry = loadAeScript("get-item-refs");
+    expect(entry).toContain("collectItemRefs");
+    expect(entry).toContain("unknownRefsPossible");
     const script = buildGetItemRefsScript(56);
-    expect(script).toContain("function projectNameOf");
-    expect(script).toContain("function serializeSourceRef");
-    expect(script).toContain("collectItemRefs");
     expect(script).toContain('"itemId":56');
+    expect(script).toContain("collectItemRefs");
+    expect(script).not.toContain("function folderPlacement");
+    // Bundled entry has one main; do not prepend helpers-inventory (second main).
+    expect(script.match(/function main\b/g)?.length).toBe(1);
   });
 });
 
