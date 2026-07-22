@@ -739,7 +739,14 @@ describe("buildPatchApplyScript", () => {
     expect(script).toContain("fontCapsOption");
     expect(script).toContain("FONT_ALL_SMALL_CAPS");
     expect(script).toContain("capsBooleansFromDoc");
-    expect(script).toContain("fontCapsOptionFromBooleans");
+    expect(script).toContain("preservedCaps");
+    expect(script).toContain('charWriteTarget("allCaps")');
+    expect(script).not.toContain("fontCapsOptionFromBooleans");
+    const preserveAt = script.indexOf("preservedCaps = capsBooleansFromDoc");
+    const docOrderAt = script.indexOf("for (di = 0; di < TEXT_STYLE_DOC_ORDER.length");
+    expect(preserveAt).toBeGreaterThan(-1);
+    expect(docOrderAt).toBeGreaterThan(-1);
+    expect(preserveAt).toBeLessThan(docOrderAt);
     expect(script).toContain("attachEvaluatedTextEvidence");
     expect(script).toContain("readAuthoredTextDocument");
     expect(script).toContain("readEvaluatedTextDocument");

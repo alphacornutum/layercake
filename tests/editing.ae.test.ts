@@ -109,6 +109,43 @@ async function mainTextLayer(
   return { main: main!, textLayer: textLayer! };
 }
 
+type SetTextStyleBag = Extract<
+  PatchProjectInput["operations"][number],
+  { op: "set_text_style" }
+>["style"];
+
+/** Apply set_text_style to the fixture main text layer; returns patch + typed target. */
+async function patchMainTextStyle(
+  host: AeHost,
+  projectPath: string,
+  fingerprint: string,
+  main: InventoryComposition,
+  textLayer: InventoryLayer,
+  style: SetTextStyleBag,
+) {
+  const patch = await applyProjectPatch(
+    host,
+    {
+      project: { path: projectPath, fingerprint },
+      operations: [
+        {
+          op: "set_text_style",
+          selector: {
+            kind: "layers",
+            layers: [{ compId: main.id, layerId: textLayer.id }],
+          },
+          style,
+        },
+      ],
+    },
+    config.scriptTimeoutMs,
+  );
+  const target = patch.ok
+    ? (patch.results[0]?.targets[0] as TextStyleTargetResult | undefined)
+    : undefined;
+  return { patch, target };
+}
+
 describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () => {
   const host = hasHost ? createAeHost(config) : (null as unknown as AeHost);
 
@@ -626,6 +663,7 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
     await openWorkCopy(host, true);
     const before = await listProjectContext(host, config.scriptTimeoutMs);
     const { main, textLayer } = await mainTextLayer(host);
+    const projectPath = before.projectPath!;
 
     const modes: Array<{
       style: { allCaps: boolean; smallCaps: boolean };
@@ -639,84 +677,75 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
 
     let fingerprint = before.fingerprint;
     for (const mode of modes) {
-      const ctxNow = await listProjectContext(host, config.scriptTimeoutMs);
-      fingerprint = ctxNow.fingerprint;
-      const patch = await applyProjectPatch(
+      const { patch, target } = await patchMainTextStyle(
         host,
-        {
-          project: { path: before.projectPath!, fingerprint },
-          operations: [
-            {
-              op: "set_text_style",
-              selector: {
-                kind: "layers",
-                layers: [{ compId: main.id, layerId: textLayer.id }],
-              },
-              style: mode.style,
-            },
-          ],
-        },
-        config.scriptTimeoutMs,
+        projectPath,
+        fingerprint,
+        main,
+        textLayer,
+        mode.style,
       );
       expect(patch.ok, mode.label).toBe(true);
       if (!patch.ok) return;
       fingerprint = patch.fingerprint;
-      const target = patch.results[0]?.targets[0] as TextStyleTargetResult | undefined;
       expect(target?.status, mode.label).toMatch(/^(changed|already_satisfied)$/);
       expect(target?.after?.style?.allCaps, mode.label).toBe(mode.style.allCaps);
       expect(target?.after?.style?.smallCaps, mode.label).toBe(mode.style.smallCaps);
     }
 
-    // Partial: only allCaps true while smallCaps was false → stay all-caps (not clear sibling).
-    const mid = await listProjectContext(host, config.scriptTimeoutMs);
-    const partial = await applyProjectPatch(
-      host,
-      {
-        project: { path: before.projectPath!, fingerprint: mid.fingerprint },
-        operations: [
-          {
-            op: "set_text_style",
-            selector: {
-              kind: "layers",
-              layers: [{ compId: main.id, layerId: textLayer.id }],
-            },
-            style: { smallCaps: true },
-          },
-        ],
-      },
-      config.scriptTimeoutMs,
-    );
-    expect(partial.ok).toBe(true);
-    if (!partial.ok) return;
-    const partialTarget = partial.results[0]?.targets[0] as TextStyleTargetResult | undefined;
-    expect(partialTarget?.status).toMatch(/^(changed|already_satisfied)$/);
-    expect(partialTarget?.after?.style?.allCaps).toBe(false);
-    expect(partialTarget?.after?.style?.smallCaps).toBe(true);
+    // Partial from normal caps: only smallCaps true → preserve allCaps false.
+    {
+      const { patch, target } = await patchMainTextStyle(
+        host,
+        projectPath,
+        fingerprint,
+        main,
+        textLayer,
+        { smallCaps: true },
+      );
+      expect(patch.ok).toBe(true);
+      if (!patch.ok) return;
+      fingerprint = patch.fingerprint;
+      expect(target?.status).toMatch(/^(changed|already_satisfied)$/);
+      expect(target?.after?.style?.allCaps).toBe(false);
+      expect(target?.after?.style?.smallCaps).toBe(true);
+    }
 
-    const mid2 = await listProjectContext(host, config.scriptTimeoutMs);
-    const mergeAll = await applyProjectPatch(
-      host,
-      {
-        project: { path: before.projectPath!, fingerprint: mid2.fingerprint },
-        operations: [
-          {
-            op: "set_text_style",
-            selector: {
-              kind: "layers",
-              layers: [{ compId: main.id, layerId: textLayer.id }],
-            },
-            style: { allCaps: true },
-          },
-        ],
-      },
-      config.scriptTimeoutMs,
-    );
-    expect(mergeAll.ok).toBe(true);
-    if (!mergeAll.ok) return;
-    const mergeTarget = mergeAll.results[0]?.targets[0] as TextStyleTargetResult | undefined;
-    expect(mergeTarget?.status).toMatch(/^(changed|already_satisfied)$/);
-    expect(mergeTarget?.after?.style?.allCaps).toBe(true);
-    expect(mergeTarget?.after?.style?.smallCaps).toBe(true);
+    // Partial merge: only allCaps true while smallCaps on → ALL_SMALL_CAPS.
+    {
+      const { patch, target } = await patchMainTextStyle(
+        host,
+        projectPath,
+        fingerprint,
+        main,
+        textLayer,
+        { allCaps: true },
+      );
+      expect(patch.ok).toBe(true);
+      if (!patch.ok) return;
+      fingerprint = patch.fingerprint;
+      expect(target?.status).toMatch(/^(changed|already_satisfied)$/);
+      expect(target?.after?.style?.allCaps).toBe(true);
+      expect(target?.after?.style?.smallCaps).toBe(true);
+    }
+
+    // text + partial caps: merge sibling from pre-text state (not AE reset after text write).
+    {
+      const { patch, target } = await patchMainTextStyle(
+        host,
+        projectPath,
+        fingerprint,
+        main,
+        textLayer,
+        { text: "Caps Merge Probe", allCaps: false },
+      );
+      expect(patch.ok).toBe(true);
+      if (!patch.ok) return;
+      expect(target?.status).toMatch(/^(changed|already_satisfied)$/);
+      expect(target?.after?.style?.allCaps).toBe(false);
+      expect(target?.after?.style?.smallCaps).toBe(true);
+      expect(target?.after?.style?.text).toBe("Caps Merge Probe");
+    }
   });
 
   it("rename_layer by id and unique name; opaque mustache; no implicit save", async (ctx) => {

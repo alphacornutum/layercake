@@ -89,15 +89,11 @@ function capsBooleansFromDoc(doc) {
   return { allCaps: allCaps, smallCaps: smallCaps };
 }
 
-function fontCapsOptionFromBooleans(allCaps, smallCaps) {
-  if (allCaps && smallCaps) return FontCapsOption.FONT_ALL_SMALL_CAPS;
-  if (allCaps) return FontCapsOption.FONT_ALL_CAPS;
-  if (smallCaps) return FontCapsOption.FONT_SMALL_CAPS;
-  return FontCapsOption.FONT_NORMAL_CAPS;
-}
-
 function readScalarAttr(target, key) {
   try {
+    if (key === "allCaps" || key === "smallCaps") {
+      return capsBooleansFromDoc(target)[key];
+    }
     var v = target[key];
     if (v === undefined) return undefined;
     if (key === "fillColor" || key === "strokeColor") return colorToRgbArray(v);
@@ -138,7 +134,6 @@ function projectTextDocument(doc) {
   collectStyleKeys(keys);
   for (var i = 0; i < keys.length; i++) {
     var k = keys[i];
-    if (k === "allCaps" || k === "smallCaps") continue;
     if (k === "boxTextSize" || k === "boxTextPos") {
       try {
         if (!doc.boxText) continue;
@@ -149,9 +144,6 @@ function projectTextDocument(doc) {
     var val = readScalarAttr(doc, k);
     if (val !== undefined) style[k] = val;
   }
-  var caps = capsBooleansFromDoc(doc);
-  style.allCaps = caps.allCaps;
-  style.smallCaps = caps.smallCaps;
   var out = { kind: "textDocument", style: style };
   try { out.boxText = !!doc.boxText; } catch (e1) {}
   try { out.pointText = !!doc.pointText; } catch (e2) {}
@@ -216,6 +208,12 @@ function applyStyleToDoc(doc, style, allStyleRuns) {
     }
   }
 
+  // Sample caps before DOC_ORDER — assigning text can reset fontCapsOption on AE.
+  var preservedCaps = null;
+  if (style.allCaps !== undefined || style.smallCaps !== undefined) {
+    preservedCaps = capsBooleansFromDoc(doc);
+  }
+
   var di;
   for (di = 0; di < TEXT_STYLE_DOC_ORDER.length; di++) {
     var dk = TEXT_STYLE_DOC_ORDER[di];
@@ -264,19 +262,20 @@ function applyStyleToDoc(doc, style, allStyleRuns) {
     }
   }
 
-  // Caps: allCaps/smallCaps are read-only since AE 24 — write fontCapsOption.
-  // Omit key = preserve sibling from projected authored booleans, then encode.
-  // (true,true) is LayerCake's encoding of FONT_ALL_SMALL_CAPS (raw AE booleans stay false).
-  if (style.allCaps !== undefined || style.smallCaps !== undefined) {
+  // Caps: read-only booleans since AE 24 — merge omit=preserve from preservedCaps, write enum.
+  if (preservedCaps) {
     try {
       if (typeof FontCapsOption === "undefined") {
         return "fontCapsOption requires After Effects 24+ (LayerCake supports AE 26+)";
       }
-      var curCaps = capsBooleansFromDoc(doc);
-      var nextAll = style.allCaps !== undefined ? !!style.allCaps : curCaps.allCaps;
-      var nextSmall = style.smallCaps !== undefined ? !!style.smallCaps : curCaps.smallCaps;
-      // Document-level write stamps all characters (AE docs); avoid CharacterRange for caps.
-      doc.fontCapsOption = fontCapsOptionFromBooleans(nextAll, nextSmall);
+      var nextAll = style.allCaps !== undefined ? !!style.allCaps : preservedCaps.allCaps;
+      var nextSmall = style.smallCaps !== undefined ? !!style.smallCaps : preservedCaps.smallCaps;
+      var capsOpt;
+      if (nextAll && nextSmall) capsOpt = FontCapsOption.FONT_ALL_SMALL_CAPS;
+      else if (nextAll) capsOpt = FontCapsOption.FONT_ALL_CAPS;
+      else if (nextSmall) capsOpt = FontCapsOption.FONT_SMALL_CAPS;
+      else capsOpt = FontCapsOption.FONT_NORMAL_CAPS;
+      charWriteTarget("allCaps").fontCapsOption = capsOpt;
     } catch (ecaps) {
       return "Failed to set font caps: " + String(ecaps);
     }
