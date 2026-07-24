@@ -32,7 +32,25 @@ Your agent discovers these tools automatically through MCP. Prefer inventory too
 | `save_copy`     | AE Save As to an absolute destination; the active project path switches to that file.                                                                                                                                                                                                                                                                              |
 | `create_backup` | Filesystem copy of the open `.aep` only (under `AE_ARTIFACT_DIR` or a caller path). Session stays on the original path. Requires a clean, saved project. **Does not** collect linked footage/media (not Collect Files) — opening the backup from a new folder can show missing footage unless those files are still reachable via the paths stored in the project. |
 
-Every evaluated script is prepended with [extendscript-json](https://github.com/theasci/extendscript-json) so `JSON.stringify` / `JSON.parse` work in After Effects’ ES3 host. Prefer scripts that `return` a value and avoid modal dialogs. `ae_eval_script` **pre-validates** source as ExtendScript/ES3 (refuses `const`/`let`, arrows, optional chaining, non-ASCII, etc.; strips trailing commas) before invoking After Effects. Common ES5+ helpers such as `Array.map` are not hard-refused alone but typically fail in AE — use `for` loops. Compact cheat sheet: `skill://drive-after-effects/references/extendscript.md`.
+Every evaluated script is prepended with [extendscript-json](https://github.com/theasci/extendscript-json) so `JSON.stringify` / `JSON.parse` work in After Effects’ ES3 host. `ae_eval_script` **pre-validates** source as ExtendScript/ES3 (refuses `const`/`let`, arrows, optional chaining, non-ASCII, etc.; strips trailing commas) before invoking After Effects. Common ES5+ helpers such as `Array.map` are not hard-refused alone but typically fail in AE — use `for` loops. Avoid modal dialogs. Compact cheat sheet: `skill://drive-after-effects/references/extendscript.md`.
+
+**Return value:** LayerCake wraps your source and returns that body’s **completion value** as the MCP text result. Use a top-level `return` when you want a payload (string or JSON text). Void / side-effect-only scripts that do not return are fine — MCP success with an empty body is intentional. A bare IIFE whose only `return` is _inside_ the IIFE discards that value under the wrap (side effects may still run and dirty the project):
+
+```javascript
+// Bad — MCP gets empty success; measure/mutate still ran
+(function () {
+  // ...
+  return JSON.stringify(payload);
+})();
+
+// Good — completion value reaches MCP
+return (function () {
+  // ...
+  return JSON.stringify(payload);
+})();
+```
+
+LayerCake does **not** impose a result size limit on `ae_eval_script` (multi‑KB JSON is fine). That is separate from inspect tools’ `AE_INSPECT_MAX_BYTES` fail-closed gate (default 512 KiB).
 
 For payload shape and architecture detail, see [`ARCHITECTURE.md`](../ARCHITECTURE.md).
 

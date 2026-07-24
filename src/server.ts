@@ -270,7 +270,9 @@ export function createServer(
         "Modern syntax is refused before the host runs; see skill://drive-after-effects/references/extendscript.md. " +
         "Prefer ae_list_* / ae_get_* first for inventory; use ae_patch_project for typed edits. " +
         "Look up comps/layers/items by stable id (not ephemeral index/name). Scripts can mutate the open project. " +
-        "Prefer returning a value from the script body. Empty scripts are rejected. " +
+        "Prefer a top-level return when you want a payload; empty success is normal for void scripts. " +
+        "Bare IIFE with only an inner return yields empty success — see skill://drive-after-effects/references/extendscript.md. " +
+        "Empty scripts are rejected. " +
         "JSON.stringify / JSON.parse are available (extendscript-json polyfill). " +
         "Bypasses patch fingerprint guards — use with care.",
       inputSchema: z.object({
