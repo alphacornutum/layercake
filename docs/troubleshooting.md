@@ -42,9 +42,24 @@ In After Effects, enable:
 
 **Preferences → Scripting & Expressions → Allow Scripts To Write Files And Access Network**
 
-LayerCake uses a result file to receive values from After Effects. Without this preference, a script may run but fail to return its result.
+LayerCake uses a result file to receive values from After Effects. Without this preference, a script may run but fail to return its result (typically an MCP **error** about a missing result file, not an empty success).
 
 Also dismiss open modal dialogs. They can prevent scripts from finishing.
+
+## `ae_eval_script` succeeds with an empty body
+
+If the tool returns success with empty text, but the project became dirty (or other side effects ran), the script almost certainly **ran** and the wrap captured no completion value. LayerCake maps `undefined`/`null` to an empty success string.
+
+Common cause: a bare top-level IIFE with an _inner_ `return` — the inner return never becomes the wrap’s completion value. Fix with a top-level `return`:
+
+```javascript
+return (function () {
+  // ...
+  return JSON.stringify(payload);
+})();
+```
+
+Empty success is **normal** for void / side-effect-only scripts that intentionally omit `return`. This is not a size/truncation limit — `ae_eval_script` has no LayerCake-imposed result size ceiling (see [MCP tools](mcp-tools.md)).
 
 ## Script times out
 

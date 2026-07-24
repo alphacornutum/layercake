@@ -8,8 +8,28 @@ After Effects evaluates **ExtendScript** — an ES3-like dialect, not modern Nod
 - `function name() { ... }` (not arrow functions)
 - `for (var i = 0; i < n; i++)` (not `.map` / `.filter` / `.forEach` / `.find`)
 - `JSON.stringify` / `JSON.parse` — LayerCake injects a polyfill
-- Top-level `return` of a value (string or JSON text)
+- Top-level `return` of a value (string or JSON text) when you want a payload
 - Lookups by stable `Item.id` / `Layer.id` (see helpers in `SKILL.md`)
+
+## Return completion value (wrap contract)
+
+LayerCake wraps your source in an IIFE and returns that body’s **completion value** as the MCP text result. `undefined`/`null` become successful **empty** text — fine for void / side-effect-only scripts. When you need the payload, use a top-level `return`.
+
+A bare IIFE with only an _inner_ `return` discards that value (side effects may still run and dirty the project):
+
+```javascript
+// Bad — empty MCP success; work still ran
+(function () {
+  return JSON.stringify(payload);
+})();
+
+// Good
+return (function () {
+  return JSON.stringify(payload);
+})();
+```
+
+There is **no** LayerCake-imposed size limit on `ae_eval_script` results (multi‑KB JSON is fine). Inspect tools use a separate `AE_INSPECT_MAX_BYTES` gate — that does not apply to eval.
 
 ## Avoid (refused or will fail in AE)
 
