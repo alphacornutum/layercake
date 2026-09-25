@@ -23,6 +23,7 @@ coverage/
 .vitest/
 
 # After Effects host leftovers (autosave next to .aep, open-project lock)
+Auto-Save/
 Adobe After Effects Auto-Save/
 *.aep-lock
 
