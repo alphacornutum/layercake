@@ -190,7 +190,7 @@ export function createServer(
         "(partial switches bag; full switch snapshot evidence; timeRemapEnabled lives here); " +
         "set_comp_settings (target.compId|compName + partial settings bag; integer-frame evidence; " +
         "place before set_layer_timing in mixed batches); " +
-        "set_property_expression (exactly one of matchNames|propertyPath; prefer matchNames from ae_get_layer); " +
+        "set_property_expression (exactly one of matchNames|propertyPath; effect params need Effect Parade + effect instance + param — not parade→param alone); " +
         "set_layer_transform (partial transform bag; authored value evidence; fingerprint guards for stale apply); " +
         "reset_layer_surface (resetTransforms verifies AE defaults with value evidence; clearExpressions separate); " +
         "delete_layer; create_folder / move_project_item / delete_project_item " +
@@ -496,6 +496,8 @@ export function createServer(
         'TEXT_DOCUMENT values are projected as { kind: "textDocument", style: {…}, boxText?, pointText? } (same style keys as set_text_style). ' +
         "Other unsupported value types are flagged { unserializable: true, propertyValueType }. " +
         "Success JSON larger than AE_INSPECT_MAX_BYTES (default 512 KiB) is a hard error — narrow with leaner detail / matchNames. " +
+        "Property tree nodes are hierarchical (name + matchName) — not a flat matchNames path for set_property_expression; " +
+        "effect parameters require the effect instance segment between ADBE Effect Parade and the param matchName. " +
         "Layer.id ≠ Item.id; join layer.source.id to ae_list_sources / comps.",
       inputSchema: getLayerInputSchema,
     },
