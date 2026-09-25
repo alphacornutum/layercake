@@ -103,13 +103,77 @@ Read-only inbound references for one `itemId` (`Item.id`): `used_in_comp`, `laye
 | `delete_project_item`      | Permissive AE `Item.remove()`; refuses root; may delete in-use items / recurse folders                                                                                         |
 | `safe_delete_project_item` | Delete only when inbound refs are empty and `unknownRefsPossible` is false; empty folders only                                                                                 |
 
-Successful targets include **post-condition-verified** before/after evidence (apply re-reads live state after the write; `changed` only when it matches the request). See [ADR 0003](adr/0003-patch-targeting-and-post-conditions.md). Nested `target` + op-specific bags (`settings` / `switches` / `style` / `transform`) follow [ADR 0004](adr/0004-patch-op-target-and-settings-bags.md). Typed **create** ops treat `name` as optional ([ADR 0006](adr/0006-optional-create-names.md)): omit keeps the host/AE default (placeholders `Solid` / `Untitled Folder` when the AE API requires a name argument); evidence always returns the final `name`. Prefer `matchNames` from `ae_get_layer` for `set_property_expression` (locale-stable); `propertyPath` splits on `->` when present, otherwise `.`.
+Successful targets include **post-condition-verified** before/after evidence (apply re-reads live state after the write; `changed` only when it matches the request). See [ADR 0003](adr/0003-patch-targeting-and-post-conditions.md). Nested `target` + op-specific bags (`settings` / `switches` / `style` / `transform`) follow [ADR 0004](adr/0004-patch-op-target-and-settings-bags.md). Typed **create** ops treat `name` as optional ([ADR 0006](adr/0006-optional-create-names.md)): omit keeps the host/AE default (placeholders `Solid` / `Untitled Folder` when the AE API requires a name argument); evidence always returns the final `name`. For `set_property_expression`, build segment paths from the nested `ae_get_layer` tree (include effect instance segments for effect params — see below); `propertyPath` splits on `->` when present, otherwise `.`.
 
 #### Layer targeting (id or unique name)
 
 Layer-targeting control-plane ops (`rename_layer`, `set_layer_index`, `replace_layer_source`, `set_layer_timing`, `set_layer_switches`, `set_property_expression`, `set_layer_transform`, `reset_layer_surface`, `delete_layer`) and each `set_text_style` `selector.kind: "layers"` entry use the same shape as `ae_get_layer`: exactly one of `compId` \| `compName`, exactly one of `layerId` \| `layerName` (case-sensitive exact match). Ambiguous names refuse before mutation with candidate lists. Prefer ids when names may collide. There is no ids-only exception for new layer-targeting ops.
 
 `set_comp_settings` and `create_text` use comps-only `target` (`compId` XOR `compName`) with the same ambiguity rules. `set_text_style` `selector.kind: "comps"` accepts `compIds` and/or `compNames` (union; at least one non-empty). Existing `{ compIds: [...] }` and `{ compId, layerId }` payloads remain valid. `all_text_layers` is unchanged. Panel item ops stay on `Item.id`.
+
+#### `set_property_expression` — effect parameter paths
+
+`ae_get_layer` returns a **nested** property tree (`name` + `matchName` per node). That tree is not a flat copy-paste path. Effect **parameters** (for example a Slider Control slider) are nested under an applied **effect instance**, not directly under `ADBE Effect Parade`:
+
+```
+ADBE Effect Parade
+  └── Contrast Boost          (matchName: ADBE Slider Control)
+        └── Slider              (matchName: ADBE Slider Control-0001)
+```
+
+Selectors walk `property(segment)` from the layer root. Each segment MAY be a matchName or, where After Effects accepts it, an effect **display name** for disambiguation when multiple effects share the same matchName.
+
+**Fails** — skips the effect instance (parameter is not a direct child of Effect Parade):
+
+```json
+{
+  "op": "set_property_expression",
+  "target": { "compName": "main", "layerName": "Hello World" },
+  "matchNames": ["ADBE Effect Parade", "ADBE Slider Control-0001"],
+  "expression": "0"
+}
+```
+
+**Works** — include the effect group segment (effect matchName when unique on the layer):
+
+```json
+{
+  "op": "set_property_expression",
+  "target": { "compName": "main", "layerName": "Hello World" },
+  "matchNames": [
+    "ADBE Effect Parade",
+    "ADBE Slider Control",
+    "ADBE Slider Control-0001"
+  ],
+  "expression": "0"
+}
+```
+
+**Works** — effect display name as the middle segment (when multiple Slider Controls exist):
+
+```json
+{
+  "op": "set_property_expression",
+  "target": { "compName": "main", "layerName": "Hello World" },
+  "matchNames": [
+    "ADBE Effect Parade",
+    "Contrast Boost",
+    "ADBE Slider Control-0001"
+  ],
+  "expression": "0"
+}
+```
+
+Success evidence includes `resolvedMatchNames` with the normalized matchName chain. Prefer matchName segments for locale stability; use display names only when needed to disambiguate duplicate effect types. Alternatively, `propertyPath` with nexrender-style delimiters (`.` or `->` when a segment contains a dot):
+
+```json
+{
+  "op": "set_property_expression",
+  "target": { "compId": 1, "layerId": 2 },
+  "propertyPath": "ADBE Effect Parade->Contrast Boost->ADBE Slider Control-0001",
+  "expression": "0"
+}
+```
 
 #### `create_text` example
 

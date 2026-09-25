@@ -31,6 +31,7 @@ import type {
   SetLayerSwitchesTargetResult,
   SetLayerTimingTargetResult,
   SetLayerTransformTargetResult,
+  SetPropertyExpressionTargetResult,
   TextStyleTargetResult,
 } from "../src/patch/types.js";
 
@@ -1887,6 +1888,122 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
       // Heuristic incompleteness correctly blocks rather than false-allowing.
       expect(safeDel.ok).toBe(false);
     }
+  });
+
+  it("set_property_expression: effect param paths require effect instance segment", async (ctx) => {
+    if (!aeReady) {
+      ctx.skip();
+      return;
+    }
+    await openWorkCopy(host, true);
+    const { main, textLayer } = await mainTextLayer(host);
+    let ctxToken = await listProjectContext(host, config.scriptTimeoutMs);
+
+    const effectDisplayName = "Contrast Boost";
+    const sliderParamPath = [
+      "ADBE Effect Parade",
+      "ADBE Slider Control",
+      "ADBE Slider Control-0001",
+    ] as const;
+    const setup = await host.evalScript(
+      `
+      var items = app.project.items;
+      var comp = null;
+      for (var i = 1; i <= items.length; i++) {
+        if (items[i] instanceof CompItem && items[i].id === ${main.id}) { comp = items[i]; break; }
+      }
+      if (!comp) throw new Error("comp missing");
+      var layer = null;
+      for (var j = 1; j <= comp.numLayers; j++) {
+        if (comp.layer(j).id === ${textLayer.id}) { layer = comp.layer(j); break; }
+      }
+      if (!layer) throw new Error("layer missing");
+      var parade = layer.property("ADBE Effect Parade");
+      var fx = parade.addProperty("ADBE Slider Control");
+      fx.name = ${JSON.stringify(effectDisplayName)};
+      return "ok";
+      `,
+      config.scriptTimeoutMs,
+    );
+    expect(setup.ok, !setup.ok ? setup.error : undefined).toBe(true);
+    ctxToken = await listProjectContext(host, config.scriptTimeoutMs);
+
+    const skipInstance = await applyProjectPatch(
+      host,
+      {
+        project: { path: ctxToken.projectPath!, fingerprint: ctxToken.fingerprint },
+        operations: [
+          {
+            op: "set_property_expression",
+            target: { compId: main.id, layerId: textLayer.id },
+            matchNames: ["ADBE Effect Parade", "ADBE Slider Control-0001"],
+            expression: "0",
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(skipInstance.ok).toBe(false);
+    if (skipInstance.ok) return;
+    const skipTarget = skipInstance.results?.[0]?.targets[0] as
+      | SetPropertyExpressionTargetResult
+      | undefined;
+    expect(skipTarget?.status).toBe("failed");
+    expect(skipTarget?.message).toMatch(/ADBE Slider Control-0001/);
+
+    const viaMatchName = await applyProjectPatch(
+      host,
+      {
+        project: { path: ctxToken.projectPath!, fingerprint: ctxToken.fingerprint },
+        operations: [
+          {
+            op: "set_property_expression",
+            target: { compId: main.id, layerId: textLayer.id },
+            matchNames: [...sliderParamPath],
+            expression: "0",
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(viaMatchName.ok, !viaMatchName.ok ? viaMatchName.error : undefined).toBe(true);
+    if (!viaMatchName.ok) return;
+    const viaMatchNameTarget = viaMatchName.results[0]?.targets[0] as
+      | SetPropertyExpressionTargetResult
+      | undefined;
+    expect(viaMatchNameTarget?.status).toBe("changed");
+    expect(viaMatchNameTarget?.resolvedMatchNames).toEqual([...sliderParamPath]);
+    expect(viaMatchNameTarget?.after?.expression).toBe("0");
+    ctxToken = {
+      ...ctxToken,
+      fingerprint: viaMatchName.fingerprint,
+      dirty: viaMatchName.dirty,
+      revision: viaMatchName.revision,
+    };
+
+    const viaDisplayName = await applyProjectPatch(
+      host,
+      {
+        project: { path: ctxToken.projectPath!, fingerprint: ctxToken.fingerprint },
+        operations: [
+          {
+            op: "set_property_expression",
+            target: { compId: main.id, layerId: textLayer.id },
+            matchNames: ["ADBE Effect Parade", effectDisplayName, "ADBE Slider Control-0001"],
+            expression: "1",
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(viaDisplayName.ok, !viaDisplayName.ok ? viaDisplayName.error : undefined).toBe(true);
+    if (!viaDisplayName.ok) return;
+    const viaDisplayNameTarget = viaDisplayName.results[0]?.targets[0] as
+      | SetPropertyExpressionTargetResult
+      | undefined;
+    expect(viaDisplayNameTarget?.status).toBe("changed");
+    expect(viaDisplayNameTarget?.resolvedMatchNames).toEqual([...sliderParamPath]);
+    expect(viaDisplayNameTarget?.after?.expression).toBe("1");
   });
 
   it("refuses different-path open; close discard; stale fingerprint on patch/save", async (ctx) => {
