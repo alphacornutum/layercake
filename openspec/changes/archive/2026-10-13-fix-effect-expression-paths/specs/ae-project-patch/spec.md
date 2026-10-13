@@ -48,9 +48,9 @@
 
 ### Requirement: Document effect expression paths in operator docs
 
-Operator documentation for `ae_patch_project` / `set_property_expression` MUST explain that effect parameters are not direct children of `ADBE Effect Parade`, MUST show working three-segment examples for Slider Control (effect matchName middle segment and effect display name middle segment), MUST show an optional `propertyPath` example using `->` when effect names contain dots, and MUST warn that flattening `ae_get_layer` matchNames without intermediate group segments fails for nested effect params.
+Operator documentation for `ae_patch_project` / `set_property_expression` MUST explain that effect parameter paths include intermediate effect-instance segments. It MUST document matchName and display-name examples, `propertyPath` with `->`, and warn against flattening `ae_get_layer` paths.
 
 #### Scenario: mcp-tools documents effect path rule
 
 - **WHEN** an operator or agent reads `docs/mcp-tools.md` for `set_property_expression` after this change ships
-- **THEN** the documentation MUST include the effect-instance segment rule and at least one Slider Control path example
+- **THEN** the documentation MUST explain that effect parameters are nested under the effect instance, not directly under `ADBE Effect Parade`; show three-segment Slider Control paths using both the effect matchName and display name; show optional `propertyPath` using `->` when an effect name contains dots; and warn that flattening `ae_get_layer` matchNames without intermediate group segments fails

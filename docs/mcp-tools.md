@@ -14,7 +14,7 @@ Your agent discovers these tools automatically through MCP. Prefer inventory too
 | `ae_list_comps`      | Read-only JSON inventory of compositions (settings + switches) and layers (switches, parent/matte, frame timing, Solid `footageKind`)              |
 | `ae_list_sources`    | Read-only JSON inventory of footage, solids, and placeholders                                                                                      |
 | `ae_list_folders`    | Read-only nested JSON tree of the Project panel folder hierarchy                                                                                   |
-| `ae_get_layer`       | Read-only deep dump of one layer property tree; dual authored/evaluated Transform samples on `extended`/`full`                                     |
+| `ae_get_layer`       | Read-only layer/property inspection; includes `isNameSet` and best-effort `isNameFromSource`, plus dual Transform samples on `extended`/`full`     |
 | `ae_get_source`      | Read-only deep dump of one footage item and interpret settings (`overview` / `full`)                                                               |
 | `ae_get_item_refs`   | Read-only inbound references for one project item (`Item.id`) plus `unknownRefsPossible`                                                           |
 | `ae_patch_project`   | Apply-only typed mutations (text, rename, panel + control-plane ops); verified before/after; path+fingerprint guards; no implicit save             |
@@ -64,7 +64,9 @@ After Effects uses separate ID namespaces for timeline layers and Project panel 
 
 For follow-up work, prefer IDs over names or indexes. Names can be duplicated; indexes can change.
 
-### `ae_get_layer` dual samples
+### `ae_get_layer` name state and dual samples
+
+Layer identity metadata always includes `isNameSet`; AVLayers also include `isNameFromSource` when After Effects exposes it. The existing `source` object reports the source `Item.id`. These fields do not depend on the requested property `detail` and allow name assignment to be checked after saving and reopening a project.
 
 On `detail` `extended` / `full`, Transform and SourceText (`TEXT_DOCUMENT`) properties that have keyframes or expressions include:
 
@@ -85,7 +87,7 @@ Read-only inbound references for one `itemId` (`Item.id`): `used_in_comp`, `laye
 | Op                         | Purpose                                                                                                                                                                        |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `set_text_style`           | Partial authored TextDocument style bag (font, size, leading/autoLeading, fill/stroke, justification, text, box size/pos, …); omit=preserve                                    |
-| `rename_layer`             | Rename exactly one timeline layer per op (`target` id\|name + desired `layerName`)                                                                                             |
+| `rename_layer`             | Ensure exactly one timeline layer has an explicit desired `layerName` (`target` id\|name); same-text inherited names are explicitly assigned                                   |
 | `rename_project_item`      | Rename a Project panel item by `itemId`                                                                                                                                        |
 | `set_layer_index`          | Reorder one layer to a 1-based `index`                                                                                                                                         |
 | `create_solid`             | Always create a new Solid FootageItem (dims, pixelAspect, color; optional `name` / folder; omit name → host default, see [ADR 0006](adr/0006-optional-create-names.md))        |
@@ -201,7 +203,7 @@ Success evidence includes `resolvedMatchNames` with the normalized matchName cha
 }
 ```
 
-Desired `layerName` is opaque (braces / `{message_10}` preserved). AE allows duplicate layer names — LayerCake does not enforce uniqueness. Multi-rename = multiple ops in one `operations` array.
+Desired `layerName` is opaque (braces / `{message_10}` preserved). `rename_layer` explicitly assigns the name even when the visible text already matches but is inherited; it reports `already_satisfied` only when the requested name is already explicit. Evidence includes before/after `name` and `isNameSet`, plus `isNameFromSource` and `sourceId` when available. AE allows duplicate layer names — LayerCake does not enforce uniqueness. Multi-rename = multiple ops in one `operations` array.
 
 #### `set_layer_switches` example
 
@@ -317,7 +319,7 @@ Or symlink:
 ln -s "$(pwd)/skills/drive-after-effects" /path/to/your/agent/skills/drive-after-effects
 ```
 
-The npm package (`layercake`) includes `skills/` alongside `dist/`. No AgentSync required for end-user install.
+The npm package (`layercake`) includes `skills/` alongside `dist/`. No Exuno required for end-user install.
 
 ### MCP resources (SEP-2640)
 

@@ -8,20 +8,19 @@ permissions:
   contents: read
 
 jobs:
-  agentsync:
+  exuno:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install AgentSync
-        run: curl -fsSL https://raw.githubusercontent.com/yelmuratoff/agent/main/install.sh | bash
+      - name: Install pinned Exuno
+        run: scripts/install-exuno.sh
 
-      - name: Check sync-manifest is up to date
-        run: |
-          export AGENTSYNC_HOME="$HOME/.agentsync"
-          export PATH="$AGENTSYNC_HOME/bin:$HOME/.local/bin:$PATH"
-          agentsync sync
-          git diff --exit-code -- .ai/.sync-manifest
+      - name: Sync generated agent configuration
+        run: exuno sync
+
+      - name: Check generated agent configuration
+        run: exuno check
 
   build:
     runs-on: ubuntu-latest

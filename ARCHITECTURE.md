@@ -85,12 +85,12 @@ Specs under `openspec/specs/<capability>/spec.md` are the behavior contracts. Co
 
 Shared AE DOM helpers live under `src/ae-scripts/shared/` and are inlined into emitted entries. Node inventory/patch modules load those `.jsx` files via `loadAeScript` (plus intentional preambles such as `__itemId`); do not prepend `loadAeHelperScript` blobs onto self-bundled entries. Inventory still owns parse/filter/Zod: `layer-target-schema.ts`, `parse.ts`, `types.ts`, `filter.ts`, `inspect-limit.ts`, `comp-switches.ts`.
 
-Product skill files live at top-level `skills/` (shipped with the npm package). They are independent of contributor AgentSync under `.ai/src/`.
+Product skill files live at top-level `skills/` (shipped with the npm package). They are independent of contributor Exuno under `.ai/src/`.
 
 ## Design constraints
 
 - **Stable ids as handles** — `Item.id` (comps, footage, folders) and `Layer.id` (timeline) are distinct namespaces; join via `layer.source.id`.
-- **Compact list, deep on demand** — `ae_list_*` stay small; property trees and interpret detail live in `ae_get_*` or `ae_eval_script`. Context is the cheap bind poll; summary is the heavier health passport.
+- **Compact list, deep on demand** — `ae_list_*` stay small; property trees and interpret detail live in `ae_get_*` or `ae_eval_script`. `ae_get_layer` identity includes `isNameSet` and best-effort `isNameFromSource`, distinct from visible name text. Context is the cheap bind poll; summary is the heavier health passport.
 - **Guarded session** — open/close are session transitions; patch/save verify path+fingerprint and never open. Fingerprint = `rev:{n}\|dirty:{0\|1}\|path:{absolute\|unsaved}` (see [ADR 0002](docs/adr/0002-guarded-session-revision-fingerprint.md)). Assume 1:1 agent↔AE (no mutex).
 - **Typed patch first** — prefer `ae_patch_project` for routine text-style (partial TextDocument `style` bag including boolean `allCaps`/`smallCaps` written via AE `fontCapsOption`; authored/`evaluatedStyle` evidence; SourceText readable via `ae_get_layer`), text layer create (`create_text`), rename, control-plane mutators (solids/source/timing/layer switches/`set_comp_settings`/expressions/`set_layer_transform`/reset/layer delete/`safe_delete_project_item`), and Project panel create/move/delete; `ae_eval_script` remains the escape hatch (bypasses guards). New ops use semantic verbs + op-specific fields; layer selectors are id-or-name with recoverable ambiguity errors; mutating targets report verified before/after (see [ADR 0003](docs/adr/0003-patch-targeting-and-post-conditions.md)). Large/heterogeneous partial mutators and comps-only ops use nested `target` + op-specific bags (`settings` / `switches` / `style` / `transform`), not a shared `value` bag (see [ADR 0004](docs/adr/0004-patch-op-target-and-settings-bags.md)). Typed create ops treat `name` as optional (see [ADR 0006](docs/adr/0006-optional-create-names.md)). `timeRemapEnabled` is owned by `set_layer_switches`, not `set_layer_timing`.
 - **Explicit save** — patch/context/inventory/eval must not persist; compose optional copy-first + patch + `ae_save_project` (`save_copy` / `create_backup` only in v1). `create_backup` copies the project file only and does not collect linked footage.
@@ -98,7 +98,7 @@ Product skill files live at top-level `skills/` (shipped with the npm package). 
 - **Contracts** — public `ae_*` names/schemas/JSON shapes, `AeHost`, and the eval result-file protocol change through OpenSpec when possible (prefer additive).
 - **After Effects 24.6+** — supported host floor (newer hosts including 26+ work as supersets; older than 24.6 may work but are unsupported).
 - **macOS + Windows host** — `darwin` uses AppleScript and soft-attaches without `activate` when AE is already running (`launch` on cold start); `win32` uses `AfterFX.exe -r`; other platforms report host unavailable without attempting unsupported automation.
-- **Agent guidance** — end-user product skill lives under `skills/`; contributor AgentSync guidance is edited under `.ai/src/` only, then `agentsync sync`.
+- **Agent guidance** — end-user product skill lives under `skills/`; contributor Exuno guidance is edited under `.ai/src/` only, then `exuno sync`.
 
 ## Related docs
 

@@ -1,6 +1,0 @@
-tools:
-  enabled:
-    - cursor
-
-gitignore:
-  update: true

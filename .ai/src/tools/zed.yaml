@@ -1,0 +1,9 @@
+# Zed loads Agent Skills natively from `.agents/skills/`, so emit complete skill
+# directories instead of an inline skill index in `.rules`.
+targets:
+  skills:
+    dest: ".agents/skills"
+    inline_into_agents: false
+
+  commands:
+    as_skills: true

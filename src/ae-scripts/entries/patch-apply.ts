@@ -217,7 +217,10 @@ function resolveTextSelector(selector) {
 
 function resolveItemsSelector(selector) {
   if (!selector || selector.kind !== "items" || !selector.itemIds || selector.itemIds.length < 1) {
-    return { error: "items selector requires a non-empty itemIds list", targets: [] };
+    return {
+      error: "items selector requires a non-empty itemIds list",
+      targets: [],
+    };
   }
   var targets = [];
   for (var i = 0; i < selector.itemIds.length; i++) {
@@ -459,7 +462,25 @@ function applySetTextStyle(plan, opResult) {
     }
   }
 
-  return { anyChanged: anyChanged, anyFailed: anyFailed, applyError: applyError };
+  return {
+    anyChanged: anyChanged,
+    anyFailed: anyFailed,
+    applyError: applyError,
+  };
+}
+
+function readLayerNameState(layer: Layer): any {
+  var state: any = { name: String(layer.name) };
+  try {
+    state.isNameSet = layer.isNameSet;
+  } catch (_e) {}
+  try {
+    state.isNameFromSource = (layer as AVLayer).isNameFromSource;
+  } catch (_e) {}
+  try {
+    state.sourceId = layer.source ? layer.source.id : null;
+  } catch (_e) {}
+  return state;
 }
 
 function applyRenameLayer(plan, opResult) {
@@ -472,42 +493,77 @@ function applyRenameLayer(plan, opResult) {
     layerName: t.layer.name,
     status: "failed",
   };
-  var beforeName = String(t.layer.name);
-  targetResult.before = { name: beforeName };
+  var before = readLayerNameState(t.layer);
+  targetResult.before = before;
 
-  if (beforeName === desired) {
+  if (typeof before.isNameSet !== "boolean") {
+    targetResult.after = readLayerNameState(t.layer);
+    targetResult.message = "Could not verify explicit layer-name state before assignment";
+    opResult.targets.push(targetResult);
+    return {
+      anyChanged: false,
+      anyFailed: true,
+      applyError: targetResult.message,
+    };
+  }
+
+  if (before.name === desired && before.isNameSet) {
     targetResult.status = "already_satisfied";
-    targetResult.after = { name: beforeName };
+    targetResult.after = readLayerNameState(t.layer);
     opResult.targets.push(targetResult);
     return { anyChanged: false, anyFailed: false, applyError: null };
   }
 
   try {
     t.layer.name = desired;
-    var afterName = String(t.layer.name);
-    targetResult.after = { name: afterName };
-    if (afterName === desired) {
-      targetResult.status = "changed";
-      opResult.targets.push(targetResult);
-      return { anyChanged: true, anyFailed: false, applyError: null };
+  } catch (re) {
+    targetResult.message = String(re);
+    try {
+      targetResult.after = readLayerNameState(t.layer);
+    } catch (ae) {
+      targetResult.message += "; could not read after state: " + String(ae);
     }
-    targetResult.status = "failed";
-    targetResult.message = "Post-condition failed: layer name did not match after write";
+    opResult.targets.push(targetResult);
+    var catchChanged =
+      targetResult.after &&
+      (targetResult.after.name !== before.name ||
+        targetResult.after.isNameSet !== before.isNameSet ||
+        targetResult.after.sourceId !== before.sourceId);
+    return {
+      anyChanged: !!catchChanged,
+      anyFailed: true,
+      applyError: String(re),
+    };
+  }
+
+  var after;
+  try {
+    after = readLayerNameState(t.layer);
+  } catch (re) {
+    targetResult.message = "Could not read after state following name assignment: " + String(re);
     opResult.targets.push(targetResult);
     return {
       anyChanged: true,
       anyFailed: true,
       applyError: targetResult.message,
     };
-  } catch (re) {
-    targetResult.status = "failed";
-    targetResult.message = String(re);
-    try {
-      targetResult.after = { name: String(t.layer.name) };
-    } catch (ae) {}
-    opResult.targets.push(targetResult);
-    return { anyChanged: false, anyFailed: true, applyError: String(re) };
   }
+  targetResult.after = after;
+  var sourcePreserved = before.sourceId === undefined || after.sourceId === before.sourceId;
+  if (after.name === desired && after.isNameSet === true && sourcePreserved) {
+    targetResult.status = "changed";
+    opResult.targets.push(targetResult);
+    return { anyChanged: true, anyFailed: false, applyError: null };
+  }
+
+  targetResult.message =
+    "Post-condition failed: layer name, explicit-name state, or source identity did not match after assignment";
+  opResult.targets.push(targetResult);
+  return {
+    anyChanged: true,
+    anyFailed: true,
+    applyError: targetResult.message,
+  };
 }
 
 function applyCreateFolder(plan, opResult) {
@@ -554,7 +610,11 @@ function applyCreateFolder(plan, opResult) {
     targetResult.message =
       "Post-condition failed: created folder name/parent did not match request";
     opResult.targets.push(targetResult);
-    return { anyChanged: true, anyFailed: true, applyError: targetResult.message };
+    return {
+      anyChanged: true,
+      anyFailed: true,
+      applyError: targetResult.message,
+    };
   } catch (ce) {
     targetResult.message = String(ce);
     if (created) {
@@ -612,7 +672,11 @@ function applyCreateText(plan, opResult) {
       } catch (re0) {}
       targetResult.message = "Created layer has no Source Text property";
       opResult.targets.push(targetResult);
-      return { anyChanged: false, anyFailed: true, applyError: targetResult.message };
+      return {
+        anyChanged: false,
+        anyFailed: true,
+        applyError: targetResult.message,
+      };
     }
     var doc = readAuthoredTextDocument(textProp, comp);
     if (!doc) {
@@ -621,7 +685,11 @@ function applyCreateText(plan, opResult) {
       } catch (re1) {}
       targetResult.message = "Could not read TextDocument after create";
       opResult.targets.push(targetResult);
-      return { anyChanged: false, anyFailed: true, applyError: targetResult.message };
+      return {
+        anyChanged: false,
+        anyFailed: true,
+        applyError: targetResult.message,
+      };
     }
     try {
       doc.text = requestedText;
@@ -631,7 +699,11 @@ function applyCreateText(plan, opResult) {
       } catch (re2) {}
       targetResult.message = "Failed to set text: " + String(te);
       opResult.targets.push(targetResult);
-      return { anyChanged: false, anyFailed: true, applyError: targetResult.message };
+      return {
+        anyChanged: false,
+        anyFailed: true,
+        applyError: targetResult.message,
+      };
     }
     if (style) {
       var writeErr = applyStyleToDoc(doc, style, allStyleRuns);
@@ -655,7 +727,11 @@ function applyCreateText(plan, opResult) {
       } catch (re4) {}
       targetResult.message = "Post-condition failed: could not re-read TextDocument after create";
       opResult.targets.push(targetResult);
-      return { anyChanged: false, anyFailed: true, applyError: targetResult.message };
+      return {
+        anyChanged: false,
+        anyFailed: true,
+        applyError: targetResult.message,
+      };
     }
     var afterStyle = styleSnapshotFromDoc(afterDoc);
     var afterFonts = readFonts(afterDoc, allStyleRuns);
@@ -794,7 +870,10 @@ function applyMoveProjectItem(plan, opResult) {
       item.parentFolder = destination;
       anyChanged = true;
       var after = parentFolderInfo(item);
-      targetResult.after = { parentFolderId: after.id, parentFolderName: after.name };
+      targetResult.after = {
+        parentFolderId: after.id,
+        parentFolderName: after.name,
+      };
       if (after.id === destination.id) {
         targetResult.status = "changed";
         opResult.targets.push(targetResult);
@@ -824,7 +903,11 @@ function applyMoveProjectItem(plan, opResult) {
     }
   }
 
-  return { anyChanged: anyChanged, anyFailed: anyFailed, applyError: applyError };
+  return {
+    anyChanged: anyChanged,
+    anyFailed: anyFailed,
+    applyError: applyError,
+  };
 }
 
 function applyDeleteProjectItem(plan, opResult) {
@@ -878,7 +961,11 @@ function applyDeleteProjectItem(plan, opResult) {
     }
   }
 
-  return { anyChanged: anyChanged, anyFailed: anyFailed, applyError: applyError };
+  return {
+    anyChanged: anyChanged,
+    anyFailed: anyFailed,
+    applyError: applyError,
+  };
 }
 
 function rootRefusalAmong(targets, actionVerb) {
@@ -914,7 +1001,9 @@ function resolveOp(op) {
   if (op.op === "create_folder") {
     var parentFolder = folderById(op.parentFolderId);
     if (!parentFolder) {
-      return { error: "Parent folder not found or not a FolderItem: " + op.parentFolderId };
+      return {
+        error: "Parent folder not found or not a FolderItem: " + op.parentFolderId,
+      };
     }
     return {
       plan: {
@@ -992,7 +1081,9 @@ function resolveOp(op) {
     if (op.parentFolderId !== undefined && op.parentFolderId !== null) {
       solidParent = folderById(op.parentFolderId);
       if (!solidParent) {
-        return { error: "Parent folder not found or not a FolderItem: " + op.parentFolderId };
+        return {
+          error: "Parent folder not found or not a FolderItem: " + op.parentFolderId,
+        };
       }
     } else {
       solidParent = app.project.rootFolder;
@@ -1029,7 +1120,9 @@ function resolveOp(op) {
     var sourceItem = itemById(op.sourceItemId);
     if (!sourceItem) return { error: "Source project item not found: " + op.sourceItemId };
     if (!(sourceItem instanceof CompItem) && !(sourceItem instanceof FootageItem)) {
-      return { error: "sourceItemId must be a CompItem or FootageItem: " + op.sourceItemId };
+      return {
+        error: "sourceItemId must be a CompItem or FootageItem: " + op.sourceItemId,
+      };
     }
     return {
       plan: {

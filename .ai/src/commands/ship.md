@@ -22,7 +22,7 @@ Every command in the full QA block below is a **required quality gate**, includi
 ## 1. Prepare and full QA
 
 - Finish any incomplete OpenSpec/docs/agent work needed for a coherent release.
-- If you edited `.ai/src/`, run `agentsync sync` first.
+- If you edited `.ai/src/`, run `exuno sync` first.
 - Make sure docs are up to date:
 
 ```bash
@@ -30,10 +30,10 @@ npm run docs:fetch
 npm run docs:allowlist
 ```
 
-- Run full QA. Prefer running gates so a single failure does not hide later ones (e.g. chain with `;` / record exit codes, or run steps sequentially and continue after failures). In Cursor, use Shell `required_permissions: ["all"]` — `agentsync check` always fails in the sandbox (`Failed to prepare temporary workspace for check`); do not attempt a sandboxed first try.
+- Run full QA. Prefer running gates so a single failure does not hide later ones (e.g. chain with `;` / record exit codes, or run steps sequentially and continue after failures). In Cursor, use Shell `required_permissions: ["all"]` — `exuno check` always fails in the sandbox (`Failed to prepare temporary workspace for check`); do not attempt a sandboxed first try.
 
 ```bash
-agentsync check
+exuno check
 npm audit --audit-level=high
 npm run typecheck
 npm run lint

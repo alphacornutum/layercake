@@ -1,0 +1,535 @@
+# LayerCake
+
+You are a senior TypeScript engineer on **LayerCake**: a stdio MCP server that drives a local Adobe After Effects install on macOS or Windows. Agents open `.aep` projects, evaluate ExtendScript, inventory comps/sources/folders, and search the vendored Scripting Guide.
+
+Machine IDs stay lowercase `layercake` (npm package, MCP config key, `serverInfo.name`, CLI bin). Product display name is **LayerCake**. Public repo: https://github.com/alphacornutum/layercake
+
+## Stack
+
+- **Runtime:** Node.js 20+, TypeScript (`NodeNext` ESM), `tsx` for dev
+- **MCP:** `@modelcontextprotocol/sdk` + Zod tool schemas in `src/server.ts`
+- **Host bridge:** platform factory in `src/host/create-host.ts` — AppleScript `DoScriptFile` (`macos.ts` on darwin), `AfterFX.exe -r` (`windows.ts` on win32); other platforms get an unavailable stub
+- **ExtendScript:** Author under `src/ae-scripts/` (Types-for-Adobe 24.6); emit ES5/`var` for the ES3 host; `JSON` from the `extendscript-json` polyfill in `wrapExtendScript` — typedefs are not Scripting Guide truth
+- **Docs corpus:** `vendor/after-effects-scripting-guide/docs` under the package root (shipped with the npm package; refresh with `npm run docs:fetch`)
+- **Quality:** Vitest, oxlint, oxfmt
+- **Planning:** OpenSpec under `openspec/` (specs + changes)
+- **ADRs:** `docs/adr/` for hard-to-reverse, surprising design trade-offs (see rules `docs-adr`)
+
+Tempting wrong defaults: this is not a web app or Electron — AE control requires a local macOS or Windows host process. Prefer thin MCP primitives over a fat “do everything” tool.
+
+## Product tradeoffs
+
+Optimize for **agent-usable, predictable host control**: stable AE ids as handles, read-only inventory before mutation, clear errors when the host/docs are missing, and a small tool surface that composes. Latency and payload size matter — inventory tools return compact JSON; deep detail stays in `ae_eval_script`.
+
+## Approach
+
+1. **Orient** — Read `ARCHITECTURE.md`, `README.md`, and the relevant `openspec/specs/*` before inventing APIs or modules.
+2. **Plan** — For behavior changes, prefer an OpenSpec change (`openspec-propose` / apply skills) when the public MCP contract or host protocol shifts.
+3. **Implement** — Match existing module boundaries; keep diffs surgical.
+4. **Verify** — Full QA always includes Exuno: `exuno check` (run `exuno sync` first if `.ai/src/` changed), then `npm audit --audit-level=high && npm run typecheck && npm run lint && npm run fmt:check && npm test && npm run build`. Use `npm run test:ae` only when host env is configured. In Cursor, run `exuno check` (and full QA that includes it) with Shell `required_permissions: ["all"]` — sandboxed check fails with `Failed to prepare temporary workspace for check`.
+5. **Document** — Keep operator docs accurate: root `README.md` (showcase/quickstart) plus linked `docs/` pages (`setup`, `mcp-tools`, `troubleshooting`, `scripting-guide`). Keep `ARCHITECTURE.md` accurate after OpenSpec sync/archive when the system shape changed. For surprising or hard-to-reverse design trade-offs, add or update an ADR under `docs/adr/` (do not leave broken ADR links).
+
+When inspecting a live project, prefer `ae_list_*` / `ae_docs_*` MCP tools over guessing ExtendScript APIs from memory.
+
+## Commands
+
+```bash
+npm install
+npm run docs:fetch # vendor scripting-guide markdown
+npm run dev # stdio MCP (tsx)
+npm run build && npm start # dist/
+npm test # unit (no AE)
+npm run test:ae # host tests (needs AE_* env)
+npm audit --audit-level=high
+npm run typecheck
+npm run lint / lint:fix
+npm run fmt / fmt:check
+exuno sync # after editing .ai/src/
+exuno check # full QA: generated agent outputs match .ai/src/ (Cursor: Shell required_permissions ["all"])
+```
+
+## Principles
+
+- Thin primitives first; higher-level tools compose over `AeHost.evalScript`.
+- Treat `Layer.id` and `Item.id` as distinct namespaces — join via `layer.source.id`.
+- Prefer layer/item `id` over ephemeral `index` / name for follow-up scripts.
+- Scripts should `return` a value; avoid AE modal dialogs in evaluated code.
+- Keep `README.md` and linked `docs/` (especially `docs/mcp-tools.md`, `docs/troubleshooting.md`) aligned when env vars or the public MCP tool surface change.
+- Keep `ARCHITECTURE.md` aligned when layers, tools, host protocol, or capability ownership change.
+- Record durable design trade-offs in `docs/adr/` (OpenSpec = behavior contracts; ADRs = why we chose a path).
+- Edit agent guidance only under `.ai/src/`, then run `exuno sync`. Full QA includes `exuno check` (Cursor Shell: `required_permissions: ["all"]`).
+
+## Boundaries
+
+- Host bridge is macOS (AppleScript) + Windows (`AfterFX.exe -r`); do not invent Linux or COM transports without an explicit change.
+- Treat `vendor/` as fetched corpus + attribution — regenerate via `docs:fetch`, do not hand-author guide pages; load from package root (ships in the npm package).
+- Preserve the eval result protocol in `script-wrapper.ts` (`OK|ERR` file payload).
+- Public tool names (`ae_*`) and their JSON shapes are contracts — change them through OpenSpec when possible.
+- Keep root `ARCHITECTURE.md` accurate — it is part of the agent orientation contract.
+- Keep `.env` local; commit only `.env.example`.
+
+---
+
+---
+description: "Always-on behavioral guidelines for cautious, simple, surgical coding work in LayerCake"
+alwaysApply: true
+---
+
+Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
+
+**Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
+
+## 1. Think Before Coding
+
+**Do not assume. Do not hide confusion. Surface tradeoffs.**
+
+Before implementing:
+
+- State assumptions explicitly when they affect the solution.
+- If multiple interpretations exist, present them instead of silently choosing.
+- If a simpler approach exists, say so. Push back when warranted.
+- If something is unclear and blocks correctness, stop, name what is confusing, and ask.
+
+## 2. Simplicity First
+
+**Minimum code that solves the problem. Nothing speculative.**
+
+- No features beyond what was asked.
+- No abstractions for single-use code.
+- No flexibility or configurability that was not requested.
+- No error handling for impossible scenarios.
+- If you write 200 lines and it could be 50, rewrite it.
+
+Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
+
+## 3. Surgical Changes
+
+**Touch only what you must. Clean up only your own mess.**
+
+When editing existing code:
+
+- Do not improve adjacent code, comments, or formatting unless asked.
+- Do not refactor things that are not broken.
+- Match existing style, even if you would do it differently.
+- If you notice unrelated dead code, mention it instead of deleting it.
+
+When your changes create orphans:
+
+- Remove imports, variables, functions, and files that your changes made unused.
+- Do not remove pre-existing dead code unless asked.
+
+The test: every changed line should trace directly to the user's request.
+
+## 4. Goal-Driven Execution
+
+**Define success criteria. Loop until verified.**
+
+Transform tasks into verifiable goals:
+
+- "Add validation" -> write tests for invalid inputs, then make them pass.
+- "Fix the bug" -> reproduce it, then make it pass.
+- "Refactor X" -> ensure relevant checks pass before and after.
+
+For multi-step tasks, state a brief plan with verification steps when useful.
+
+These guidelines are working if diffs are smaller, unnecessary rewrites decrease, and clarifying questions happen before implementation mistakes.
+
+---
+
+---
+description: "Module layers, dependency direction, and mandatory ARCHITECTURE.md maintenance"
+alwaysApply: true
+---
+
+# Architecture Rules
+
+## Living architecture doc
+
+- Root `ARCHITECTURE.md` is the system map (layers, flows, capability ↔ code). Treat it as a maintained contract, not optional docs.
+- Orient on architecture changes by reading `ARCHITECTURE.md` before inventing modules or tools.
+- After OpenSpec **sync** or **archive**, update `ARCHITECTURE.md` when layers, tools, host protocol, or `openspec/specs/` capabilities changed. If reviewed with no edits, say so in the sync/archive summary.
+- Keep the capability map, dependency rules, and design constraints aligned with `src/` and main specs — prefer accurate short updates over stale narrative.
+
+## Layers
+
+- `src/index.ts` — wire config, host, docs corpus, stdio transport; keep orchestration thin.
+- `src/server.ts` — register MCP tools/resources only; call host/inventory/docs; return `textResult` / `isError`.
+- `src/config.ts` — env loading and `ConfigError`; no AE I/O.
+- `src/host/` — `AeHost` interface, `createAeHost` factory, macOS AppleScript + Windows CLI bridges, script wrap/parse protocol, `loadAeScript` / `loadAeHelperScript`.
+- `src/ae-scripts/` — typed first-party ExtendScript (modern TS → emit); entries export `main(): string`.
+- `src/inventory/` — read-only project inventories: Node loaders + TS parse/filter; shared layer-target Zod in `layer-target-schema.ts`.
+- `src/patch/` — typed apply-only mutations, broad-gate, save helpers; compose with inventory context (never mega-tools that hide patch+save).
+- `src/docs/` — local corpus load/search; URIs use `ae://docs/...`.
+
+## Dependency direction
+
+- `server` → `host` / `inventory` / `patch` / `docs` / `config`.
+- `inventory` → `host` (via `AeHost.evalScript` + `loadAeScript`) and local parse/filter — not the reverse.
+- `patch` → `host` (and shared AE resolve via bundled `src/ae-scripts/`) — not the reverse.
+- Keep host-evaluated bodies under `src/ae-scripts/`; TypeScript owns filtering, validation, and MCP shaping.
+- New host capabilities go on `AeHost` + platform implementations (`macos.ts` / `windows.ts`); tools stay thin wrappers.
+
+## Tool design
+
+- Prefer a dedicated read-only tool when agents need the same inventory repeatedly.
+- Prefer typed `ae_patch_project` ops for routine mutations; leave one-off or unsupported work to `ae_eval_script` with a `return` value.
+- Layer patch selectors follow inspect id-or-name rules; post-condition re-reads are required for mutating targets (see ADR 0003).
+- Validate tool inputs with Zod `inputSchema` on `registerTool`.
+- Surface host/config failures as MCP `isError` text results, not thrown transport crashes.
+
+---
+
+---
+description: "TypeScript ESM, lint, and formatting conventions for this repo"
+globs:
+  - src/**/*.ts
+  - tests/**/*.ts
+  - scripts/**/*
+alwaysApply: false
+---
+
+# Code Style Rules
+
+## TypeScript / ESM
+
+- Use NodeNext ESM: relative imports include the `.js` extension in TypeScript sources (`./config.js`).
+- Prefer explicit types on exported public shapes (`AeConfig`, inventory types, `AeHost`).
+- Use project error classes (`ConfigError`, `DocsError`) for typed failure paths callers already branch on.
+
+## Formatting and lint
+
+- Format with `npm run fmt` (oxfmt); check with `npm run fmt:check`.
+- Lint with `npm run lint` (oxlint). `vendor/`, `dist/`, and `fixtures/` are ignored.
+- Match surrounding naming: `ae_*` for MCP tools, `listX` / `parseX` for inventory, `createAeHost` factories.
+
+## Comments
+
+- Comment only non-obvious host/protocol constraints (polyfill injection, id namespaces, AppleScript escaping).
+- Skip narrating obvious TypeScript.
+
+---
+
+# Comments
+
+A comment earns its place when it captures something the code itself cannot show — a hidden constraint, an external quirk, a workaround, or a surprise the reader would otherwise question. Everything else lives in the code.
+
+## The test
+
+Read the line without the comment. If a competent reader still understands the code, leave the comment out. Reach for a sharper identifier (`isExpired` beats `// check if expired`) or a smaller function before reaching for prose.
+
+## Where a comment helps
+
+- **Hidden constraint** — a non-obvious invariant, ordering requirement, performance assumption, or external API quirk.
+- **Workaround** — a fix for a specific upstream bug or platform behaviour. Name the system, link the issue when you have one.
+- **Surprise** — behaviour that would make a reasonable reader pause ("why is this list reversed?", "why catch this error silently?").
+- **Public API contract** — inputs, outputs, errors, side effects — via the language's doc-comment syntax (`///`, `/** */`, docstrings). Internal helpers stay quiet unless they hide a constraint.
+
+## Style
+
+- Describe *why*, not *what*. The code shows the mechanism; the comment supplies the reason.
+- One line where possible. A paragraph usually signals the surrounding code wants splitting or renaming.
+- Single space after the marker: `// like this`.
+- Match the file's existing density and tone — scan 5–10 nearby files before changing the style.
+- Pair every `TODO` / `FIXME` with an owner or a tracked issue, or resolve it now.
+- Match section banners (`// ===== HELPERS =====`) to what the file already uses.
+
+## Examples
+
+```
+// Sharper name beats a narrating comment:
+- // check if user is an adult
+- if (user.age >= 18) { ... }
++ const isAdult = user.age >= 18;
++ if (isAdult) { ... }
+
+// Step markers and narration belong in the diff, not the file:
+- // Step 1: fetch users
+- const users = await fetchUsers();
+- // loop through users
+- for (const u of users) { ... }
++ const users = await fetchUsers();
++ for (const u of users) { ... }
+
+// A real "why" comment earns its keep:
++ // Backend returns 404 for "no data yet" on new accounts — treat as empty.
++ if (isNotFound(e)) return;
+
+// Doc comments capture the contract on a public API:
++ /**
++  * Synchronizes user records with the remote backend.
++  * Throws SyncError on network failure or malformed payload.
++  */
++ async function syncUsers() { ... }
+```
+
+Unused code belongs in git history rather than in commented-out blocks. Task numbers, PR references, and caller lists belong in the commit message rather than in the source.
+
+---
+
+# Core Rules
+
+Write code that fits the project's existing patterns, surfaces failures explicitly, and keeps the change scoped to what the task asked for.
+
+## Agent Configuration
+
+- Change agent instructions in `.ai/src/` only — `AGENTS.md`, `rules/`, `skills/`, `commands/`, `agents/` — then run `exuno sync`.
+- Treat every generated tool directory as output: `CLAUDE.md`, `.claude/`, `.cursor/`, `.github/copilot-instructions.md`, and the rest are rewritten from `.ai/src/` on the next sync.
+- Recover an edit made in the wrong place with `exuno adopt <file>`, which promotes it back into `.ai/src/`.
+
+## Scope of Changes
+
+- Touch only what the task requires. Adjacent code stays as-is until asked.
+- Three similar lines beat a premature abstraction — let real duplication drive helpers.
+- Delete dead code outright; git keeps the history.
+
+## Errors
+
+- Raise the project's typed exceptions instead of raw strings.
+- Handle failures explicitly — either recover or let the exception propagate.
+- Validate at system boundaries (user input, external APIs); trust internal calls.
+
+## Tests
+
+- Cover business logic and error paths. Skip framework internals and trivial getters.
+- Keep tests deterministic — local fixtures only, with no real network, no randomness, no time-based sleeps.
+- Name tests by the behaviour verified, not by the method called.
+
+## Security
+
+- Load secrets, API keys, and credentials at runtime from the project's secret store — keep them out of source.
+- Keep tokens, passwords, and PII out of logs.
+- Store sensitive values through the project's secure storage primitive.
+
+## Examples
+
+```
+# Surface the failure with structure:
+- catch (e) { return null; }
++ catch (e) {
++   logger.error("user fetch failed", { userId, error: e });
++   throw new UserFetchError(userId, { cause: e });
++ }
+
+# Name the test by what it proves:
+- test("test_fetch")
++ test("returns empty list when the user has no orders")
+```
+
+---
+
+---
+description: "When and how to record Architecture Decision Records under docs/adr/"
+alwaysApply: true
+---
+
+# Docs / ADR Rules
+
+## Living docs
+
+- `docs/adr/` holds Architecture Decision Records for LayerCake. This is a maintained practice, not a one-off folder for ADR 0001.
+- Root `ARCHITECTURE.md` is the system map; ADRs record _why_ we chose a surprising or hard-to-reverse option. OpenSpec holds behavior contracts. Do not collapse these three into one place.
+
+## When to add an ADR
+
+Write a new ADR when **all** of the following are true:
+
+1. **Hard to reverse** — changing course later is costly.
+2. **Surprising without context** — a future reader would wonder why the code looks this way.
+3. **Real trade-off** — alternatives were considered and rejected for specific reasons.
+
+Skip ADRs for obvious, easily reversed, or OpenSpec-only contract tweaks. Prefer an OpenSpec change when the public MCP / host / inventory contract shifts; use an ADR for durable design choices (vendoring strategy, bridge shape, packaging of non-npm corpora, etc.).
+
+## How to write
+
+- Path: `docs/adr/NNNN-slug.md` (zero-padded sequence; scan `docs/adr/` for the next number).
+- Keep it short: title + 1–3 sentence decision. Optional **Status**, **Considered options**, **Consequences** only when they add value.
+- Create `docs/adr/` lazily if missing; do not invent parallel `docs/decisions/` trees.
+- Link the ADR from the operator-facing place that would otherwise surprise (README, fetch script comment, etc.) when readers need the “why”.
+- Do not leave broken ADR links. If you remove an ADR, update references the same change.
+
+## Format reference
+
+Shared ADR format guidance lives in the domain-modeling skill’s `ADR-FORMAT.md` (agent skill on this machine). Match that template’s spirit: record the decision and why, not a ceremony of empty sections.
+
+---
+
+---
+description: "ExtendScript and AE id conventions for host eval and inventory scripts"
+globs:
+  - src/host/**
+  - src/inventory/**
+  - src/patch/**
+  - src/ae-scripts/**
+  - tests/**/*.ae.test.ts
+alwaysApply: false
+---
+
+# ExtendScript Rules
+
+## Authoring (first-party)
+
+- Author first-party AE scripts as modern TypeScript under `src/ae-scripts/` (`entries/` + `shared/`), typechecked with `tsconfig.ae.json` against `types-for-adobe` / `AfterEffects/24.6`.
+- Each entry exports `main(): string`. `npm run build:ae-scripts` emits ES5/`var` `.jsx` under `dist/ae-scripts/`; Node loads via `loadAeScript` / `loadAeHelperScript` (`src/host/load-ae-script.ts`).
+- Treat `build:ae-scripts` as the mandatory compatibility authority: it sanitizes known ExtendScript hazards, parses every payload as ES3, and rejects undeclared non-host globals. Add intentional host/preamble globals to its explicit allowlists rather than bypassing the gate.
+- Do not hand-author untyped template-string ExtendScript bodies in `src/inventory/` or `src/patch/` for first-party paths — extend `src/ae-scripts/` instead.
+- Do not add bolt-cep or CEP panel tooling for typing (see `docs/adr/0005-typed-extendscript-authoring.md`).
+
+## Host language (emitted / agent eval)
+
+- Runtime payloads must stay ExtendScript-safe (ES3 dialect / ES5 `var` emit): no optional chaining or other syntax AE cannot parse left in emitted `.jsx`. The AE build strips trailing commas, non-ASCII bytes, and `@ts-*` / triple-slash reference comments; ExtendScript treats those TypeScript comments as compiler directives.
+- Prefer ASCII in `src/ae-scripts/` comments (`--` not em dashes) so sources match emit.
+- Use `JSON.stringify` / `JSON.parse` freely — `wrapExtendScript` injects the extendscript-json polyfill before user code.
+- Prefer `return` from `main()` (or top-level `return` in agent `ae_eval_script` bodies); the wrapper captures the IIFE result.
+- Guard AE properties that throw on some layer types with `try/catch` (see inventory serializers).
+
+## Id namespaces
+
+- `Item.id` — comps, footage, folders (project panel).
+- `Layer.id` — timeline layers (AE 22+; product floor is AE 24.6+); distinct from `Item.id`.
+- Join layer sources with `layer.source.id` → `ae_list_sources` / composition ids — never treat a layer id as an item id.
+- Prefer stable `id` over `index` or name for follow-up `ae_eval_script` lookups.
+
+## Eval protocol
+
+- Keep the `OK\\n` / `ERR\\n` result-file protocol in `src/host/script-wrapper.ts` intact.
+- Reject empty scripts via `validateScriptSource`.
+- Avoid modal dialogs and long interactive UI in evaluated scripts; they hang until timeout (`AE_SCRIPT_TIMEOUT_MS`).
+
+## Docs before guessing
+
+- For unfamiliar AE DOM APIs, use `ae_docs_search` / `ae_docs_get` (or the local corpus under `vendor/.../docs`) before inventing method names.
+- Treat `types-for-adobe` (and any typed ExtendScript authoring) as IDE help, not Scripting Guide truth — community defs can lag or lead Adobe. Prefer the vendored guide + host tests (`npm run test:ae`) when types and docs disagree; recent example: read-only `allCaps`/`smallCaps` vs writable `fontCapsOption`.
+
+---
+
+# Git Rules
+
+One logical change per commit, imperative mood, build artefacts stay out of history.
+
+## Commits
+
+- Match the project's existing commit style (`git log --oneline -10`). If none is established, default to Conventional Commits: `<type>: <subject>` with `feat`, `fix`, `refactor`, `docs`, `test`, `chore`.
+- One logical change per commit. Split unrelated work into separate commits.
+- Subject in imperative mood, ≤72 chars. Body explains *why*; skip the body when the subject says enough.
+- Never append attribution or tooling trailers — no `Co-Authored-By:`, no `Generated with …`, no agent/model signatures. A commit records the human author only.
+
+## Branches
+
+- Descriptive names: `feat/<slug>`, `fix/<slug>`, `refactor/<slug>`.
+- Rebase onto the default branch before opening a PR.
+
+## Pull Requests
+
+- Link the related ticket or issue in the description.
+- Resolve hook or CI failures at the source rather than passing `--no-verify` — a green CI built on bypassed checks lies.
+- Prefer additive commits while reviewers are looking; coordinate before force-pushing a shared branch.
+
+## Keep Out of History
+
+- Build artefacts, lockfile binaries, secrets, and `.env*` files belong outside the repo.
+- Reach for `.gitignore` to fence off environment-specific or machine-local output.
+- Leave the `AI SYNC GENERATED` block in `.gitignore` to Exuno — `outputs:` in `.ai/exuno.yaml` decides whether generated agent config is committed, and when it is, those files belong in the same commit as the `.ai/src/` change that produced them.
+
+---
+
+---
+description: "Where new files go and when to extract shared inventory helpers"
+alwaysApply: true
+---
+
+# Placement Rules
+
+## Default locations
+
+| Kind                          | Location                                                                                                                    |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| MCP tool registration         | `src/server.ts`                                                                                                             |
+| Host bridge / wrap protocol   | `src/host/`                                                                                                                 |
+| Inventory tool                | `src/inventory/` — `list-<name>.ts`, thin `list-<name>-script.ts` loaders, types in `types.ts`, parse in `parse.js`         |
+| First-party ExtendScript      | `src/ae-scripts/entries/` + `src/ae-scripts/shared/`; emit via `npm run build:ae-scripts`                                   |
+| Shared ExtendScript helpers   | `src/ae-scripts/shared/` when two+ entries need the same helper; helper-only entries use `loadAeHelperScript`               |
+| Shared id\|name resolve       | `src/ae-scripts/shared/resolve.ts` (imported by inspect + patch entries)                                                    |
+| Shared layer id\|name Zod     | `src/inventory/layer-target-schema.ts` (`compTargetSchema` / `layerTargetSchema` / `getLayerInputSchema`; patch re-exports) |
+| Comp switch key allowlist     | `src/inventory/comp-switches.ts` (`COMP_SWITCH_KEYS`; keep in sync with `src/ae-scripts/shared/inventory.ts`)               |
+| Typed patch ops               | `src/patch/` (`schema.ts`, `apply-script.ts` preamble + `patch-apply` entry, `types.ts`)                                    |
+| Docs corpus/search            | `src/docs/`                                                                                                                 |
+| Unit / AE tests               | `tests/*.test.ts` / `tests/*.ae.test.ts`                                                                                    |
+| Doc fetch script              | `scripts/fetch-docs.mjs`                                                                                                    |
+| Behavior specs                | `openspec/specs/<capability>/spec.md`                                                                                       |
+| System architecture map       | Root `ARCHITECTURE.md` (update on OpenSpec sync/archive)                                                                    |
+| Architecture Decision Records | `docs/adr/NNNN-slug.md` (see `docs-adr` rule)                                                                               |
+| Agent guidance                | `.ai/src/` only                                                                                                             |
+
+## Extract vs edit in place
+
+- Edit in place when the change is local to one AE entry or its Node loader/parser.
+- Move helpers into `src/ae-scripts/shared/` when the same ExtendScript function appears in a second entry.
+- Add a new `src/` top-level package only for a new subsystem (do not invent `src/utils/` for one helper).
+
+## Naming
+
+- MCP tools: `ae_<verb>_<noun>` (`ae_list_comps`, `ae_eval_script`).
+- Keep public tool names stable; rename only with an intentional contract change.
+- New `ae_patch_project` ops: prefer semantic domain verbs (`rename_layer`, `move_project_item`) over bland `get`/`set` when a clear verb exists; use op-specific field names (`layerName`, `style.font`) — no shared `value` bag. Existing op names (`set_text_style`) stay.
+- Large or heterogeneous partial mutators: nest writes under an op-specific bag (`settings`, `switches`, `style`); omit key = preserve. Comps-only ops use nested `target` (`compId` XOR `compName`). Small flat sets (e.g. `set_layer_timing` frames) may stay flat. See ADR 0004.
+
+---
+
+---
+description: "High-risk surfaces that need explicit contract care before editing"
+alwaysApply: true
+---
+
+# Safe Changes Rules
+
+## Treat as contracts
+
+- Public MCP tools in `src/server.ts` (`ae_*` names, descriptions, Zod schemas, JSON result shapes).
+- `AeHost` in `src/host/types.ts` and the eval result file protocol in `script-wrapper.ts`.
+- Inventory JSON field names consumed by agents (`id`, `source.id`, `missing`, folder tree shape).
+- Environment variables documented in `.env.example`, `README.md` (brief), and `docs/troubleshooting.md`.
+- Root `ARCHITECTURE.md` (layers, dependency direction, capability map, design constraints).
+- ADRs under `docs/adr/` once accepted — prefer a superseding ADR over silently rewriting history.
+
+## Required behaviors when touching contracts
+
+- Prefer additive fields and new tools over renaming or removing existing keys.
+- Update `openspec/specs/` (via an OpenSpec change) when host, eval, docs, or inventory requirements change.
+- Update operator docs when the agent-facing surface changes: keep `README.md` briefly accurate and update the full tool table / id guidance in `docs/mcp-tools.md` (setup/env detail in `docs/setup.md` / `docs/troubleshooting.md` as needed).
+- Update `ARCHITECTURE.md` when module boundaries, MCP surface, host protocol, or capability ownership change (required on OpenSpec sync/archive).
+- When landing a surprising or hard-to-reverse design choice, add `docs/adr/NNNN-*.md` and keep inbound links valid (see `docs-adr` rule).
+
+## Sensitive / generated
+
+- Leave `.env` untracked; change templates via `.env.example`.
+- Regenerate guide markdown with `npm run docs:fetch`; preserve `vendor/.../ATTRIBUTION.md`.
+- Edit `.ai/src/` then `exuno sync` — leave generated `.cursor/` / `.claude/` outputs alone. Full QA includes `exuno check` (in Cursor: Shell `required_permissions: ["all"]`; sandboxed check always fails preparing a temp workspace).
+
+---
+
+---
+description: "Vitest unit vs AE host integration test conventions"
+alwaysApply: true
+---
+
+# Testing Rules
+
+## Suites
+
+- Unit tests: `tests/**/*.test.ts` via `npm test` (Vitest, `vitest.config.ts`) — no After Effects required.
+- Host tests: `tests/**/*.ae.test.ts` via `npm run test:ae` — skipped unless the platform is macOS/Windows and host config resolves (`AE_APP_NAME`/`AE_EXECUTABLE` on macOS; `AE_EXECUTABLE` on Windows). Open/eval cases use the committed `fixtures/hello-world.aep`.
+- Keep host tests gated with `describe.skipIf(!hasHost)` / fixture checks, matching `tests/host.ae.test.ts` (use `assertHostConfigured`, not app-name-only checks).
+
+## What to cover in unit tests
+
+- Config parsing and error messages (`ConfigError`).
+- Script wrapper: wrap/parse/validate, including `\r` newline normalization.
+- Inventory: parse fixtures, filter union semantics, shared helper presence in script strings.
+- Docs search/get against the vendored corpus when present.
+
+## Patterns
+
+- Import from `../src/...` with `.js` extensions (NodeNext).
+- Prefer pure fixtures/objects over mocking the whole MCP server.
+- When adding inventory fields, extend sample objects in `tests/inventory.test.ts` and assert parse + filter behavior.
+- After host-facing changes, run `npm run test:ae` when a local AE install is available; otherwise note the skip and keep unit coverage green.

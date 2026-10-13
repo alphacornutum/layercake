@@ -1,19 +1,19 @@
 ---
 description: >-
-  Full QA: agentsync check, audit, typecheck, lint, fmt:check, unit tests, and build; optionally AE host tests
+  Full QA: exuno check, audit, typecheck, lint, fmt:check, unit tests, and build; optionally AE host tests
 argument-hint: "[ae]"
 ---
 
 Run the LayerCake full verification suite and fix failures you introduce.
 
-Full QA **always** includes AgentSync. If you edited `.ai/src/`, run `agentsync sync` before `agentsync check`.
+Full QA **always** includes Exuno. If you edited `.ai/src/`, run `exuno sync` before `exuno check`.
 
-In Cursor, run the QA Shell with `required_permissions: ["all"]`. `agentsync check` fails in the sandbox every time (`Failed to prepare temporary workspace for check` / `.cursor/: Operation not permitted`) — that is not drift; skip the sandboxed attempt.
+In Cursor, run the QA Shell with `required_permissions: ["all"]`. `exuno check` fails in the sandbox every time (`Failed to prepare temporary workspace for check` / `.cursor/: Operation not permitted`) — that is not drift; skip the sandboxed attempt.
 
 1. Run:
 
 ```bash
-agentsync check
+exuno check
 npm audit --audit-level=high
 npm run typecheck
 npm run lint

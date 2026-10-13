@@ -42,7 +42,7 @@ Follow the inventory pattern already used for comps, sources, and folders.
 
 7. **Verify**
    ```bash
-   agentsync check
+   exuno check
    npm run typecheck && npm run lint && npm test && npm run build
    # optional: npm run test:ae
    ```

@@ -48,6 +48,7 @@ export function main(): string {
     id: layer.id,
     index: layer.index,
     name: layer.name,
+    isNameSet: layer.isNameSet,
     type: layerType(layer),
     inPoint: layer.inPoint,
     outPoint: layer.outPoint,
@@ -64,6 +65,9 @@ export function main(): string {
     payload.solo = !!layer.solo;
     payload.shy = !!layer.shy;
     payload.locked = !!layer.locked;
+  } catch (_e) {}
+  try {
+    if (layer instanceof AVLayer) payload.isNameFromSource = layer.isNameFromSource;
   } catch (_e) {}
   try {
     if ((layer as any).source) payload.source = serializeSourceRef((layer as any).source);
