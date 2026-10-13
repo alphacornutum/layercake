@@ -4,3 +4,6 @@ targets:
   skills:
     dest: ".agents/skills"
     inline_into_agents: false
+
+  commands:
+    as_skills: true
