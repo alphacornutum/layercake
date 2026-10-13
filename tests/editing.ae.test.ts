@@ -2990,11 +2990,12 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
       setValueAtKeyOk: boolean;
       setValueOk: boolean;
     };
-    // Observed host behavior (AE 26.5x89): setValue is refused on a hidden
-    // property. addKey/setValueAtKey availability there is host-dependent, so
-    // clear mode never relies on either write; static-mode restore reports whether
-    // the in-place recreation verified. Record the observed booleans in the
-    // operator docs when this runs on a new AE version.
+    // Observed on After Effects 26.5x89: a hidden property refuses every value
+    // write — addKey, setValueAtKey, and setValue all throw — while removeKey and
+    // reads succeed. Clear mode therefore never depends on a write, and a static
+    // restore on a hidden property reports restore.verified false because the
+    // removed keys cannot be re-added. Other builds may differ, so this probe
+    // records the booleans rather than asserting a fixed capability.
     expect(observed.setValueOk).toBe(false);
     expect(typeof observed.addKeyOk).toBe("boolean");
     expect(typeof observed.setValueAtKeyOk).toBe("boolean");

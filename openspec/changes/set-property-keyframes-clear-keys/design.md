@@ -2,11 +2,11 @@
 
 ## Context
 
-`set_property_keyframes` shipped in `property-keyframe-management` (complete, not yet synced to main specs). Its static mode removes every key and then calls `prop.setValue(sample)`. On a property After Effects considers hidden — the motivating case is `Audio Levels` on an audio-less solid (issue #32) — `setValue` is refused with "the property or a parent property is hidden", but only *after* the keys are already removed, leaving partial mutation; the batch `app.undo()` rollback was observed as `completed: false` (AE 26.5x89).
+`set_property_keyframes` shipped in `property-keyframe-management` (complete, not yet synced to main specs). Its static mode removes every key and then calls `prop.setValue(sample)`. On a property After Effects considers hidden — the motivating case is `Audio Levels` on an audio-less solid (issue #32) — `setValue` is refused with "the property or a parent property is hidden", but only _after_ the keys are already removed, leaving partial mutation; the batch `app.undo()` rollback was observed as `completed: false` (AE 26.5x89).
 
 Host observations that constrain the design:
 
-- Reads (`value`, `valueAtTime`, key metadata) and `removeKey` work while hidden; only value *writes* are refused.
+- Reads (`value`, `valueAtTime`, key metadata) and `removeKey` work while hidden; only value _writes_ are refused.
 - The vendored Scripting Guide exposes no `isHidden` or equivalent attribute — hidden-ness is only observable through a refused write, never before mutation.
 - Whether `addKey`/`setValueAtKey` work on a hidden property is unknown (the leftover keys in the motivating fixture were created by a source round-trip, not by adding keys while hidden).
 
@@ -30,7 +30,7 @@ Host observations that constrain the design:
 
 ### `clearKeys: true` as a literal-true third desired state
 
-Schema: `clearKeys: z.literal(true)` so `clearKeys: false` fails validation rather than silently meaning "do nothing". The desired-state refinement becomes exactly one of `keyframes` (non-empty), `staticValueAtTime`, or `clearKeys`. Empty desired `keyframes` stays rejected; empty *expected* `keyframes` still asserts zero keys.
+Schema: `clearKeys: z.literal(true)` so `clearKeys: false` fails validation rather than silently meaning "do nothing". The desired-state refinement becomes exactly one of `keyframes` (non-empty), `staticValueAtTime`, or `clearKeys`. Empty desired `keyframes` stays rejected; empty _expected_ `keyframes` still asserts zero keys.
 
 Preflight: mode `"clear"` skips static sampling entirely. Idempotence reuses the static-mode rule: zero keys and no expression clear needed means `already_satisfied`. Domain checks are unchanged — clear mode still requires the supported numeric domain so before/after evidence and the sibling preservation walk stay faithful (markers remain refused).
 
@@ -48,7 +48,7 @@ The static apply branch wraps its remove-loop plus `setValue(sample)`. On a writ
 
 ### Host probe: key writes on a hidden property
 
-A host test probes whether `addKey`/`setValueAtKey` succeed on a hidden `Audio Levels` while `hasAudio === false`. This decides whether the in-place restore can ever verify on the motivating fixture and documents whether timeline mode can apply to hidden properties at all. Clear mode does not depend on the answer: it uses only `removeKey` and reads, both proven to work while hidden.
+A host test probes whether `addKey`/`setValueAtKey` succeed on a hidden `Audio Levels` while `hasAudio === false`. Host result (AE 26.5x89): a hidden property refuses every value write — `addKey`, `setValueAtKey`, and `setValue` — while `removeKey` and reads succeed. So the in-place restore cannot verify on the motivating fixture (it reports `restore.verified: false`), timeline mode cannot write to a hidden property either, and clear mode is the only supported way to remove keys there. Clear mode never depends on a write, which is why it is the fix.
 
 ### Delta composition with the unsynced prior change
 

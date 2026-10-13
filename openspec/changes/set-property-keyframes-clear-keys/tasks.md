@@ -13,18 +13,18 @@
 
 ## 3. AE host verification
 
-- [ ] 3.1 Add a host test in `tests/editing.ae.test.ts` that builds the hidden fixture from issue #32 (solid layer, source round-trip through audio footage leaving leftover `Audio Levels` keys) and verifies `clearKeys` clears it to `numKeys === 0` without throwing, reports `retainedValue` and `mode: "clear"`, preserves sibling keyed properties, and reports `already_satisfied` on an idempotent re-run.
-- [ ] 3.2 Add a host regression test that visible-property `staticValueAtTime` behavior is unchanged, and that static mode on the hidden fixture fails with the original error plus `restore` evidence — asserting no partial mutation when restoration verifies (before/after snapshots equal) and honest reporting when it cannot.
-- [ ] 3.3 Add the host probe for `addKey`/`setValueAtKey` on a hidden property and record the observed behavior in the test comments and `docs/mcp-tools.md` (determines restore verifiability on hidden properties and whether timeline mode can ever apply to them). Verify with `npm run test:ae` on a configured host.
+- [x] 3.1 Add a host test in `tests/editing.ae.test.ts` that builds the hidden fixture from issue #32 (solid layer, source round-trip through audio footage leaving leftover `Audio Levels` keys) and verifies `clearKeys` clears it to `numKeys === 0` without throwing, reports `retainedValue` and `mode: "clear"`, preserves sibling keyed properties, and reports `already_satisfied` on an idempotent re-run.
+- [x] 3.2 Add a host regression test that visible-property `staticValueAtTime` behavior is unchanged, and that static mode on the hidden fixture fails with the original error plus `restore` evidence — asserting no partial mutation when restoration verifies (before/after snapshots equal) and honest reporting when it cannot.
+- [x] 3.3 Add the host probe for `addKey`/`setValueAtKey` on a hidden property and record the observed behavior in the test comments and `docs/mcp-tools.md` (determines restore verifiability on hidden properties and whether timeline mode can ever apply to them). Verify with `npm run test:ae` on a configured host.
 
 ## 4. Operator docs and orientation
 
-- [ ] 4.1 Update the `set_property_keyframes` section in `docs/mcp-tools.md`: the three desired states, `clearKeys` usage, and value semantics (AE retains the last key value on a hidden property; `retainedValue` is read-back evidence, not a restore). Verify the documented example payloads validate against the new schema.
-- [ ] 4.2 Update the `ae_patch_project` tool description in `src/server.ts` and the patch-ops sentence in `ARCHITECTURE.md` to mention clear mode. Verify descriptions match the shipped schema wording.
+- [x] 4.1 Update the `set_property_keyframes` section in `docs/mcp-tools.md`: the three desired states, `clearKeys` usage, and value semantics (AE retains the last key value on a hidden property; `retainedValue` is read-back evidence, not a restore). Verify the documented example payloads validate against the new schema.
+- [x] 4.2 Update the `ae_patch_project` tool description in `src/server.ts` and the patch-ops sentence in `ARCHITECTURE.md` to mention clear mode. Verify descriptions match the shipped schema wording.
 
 ## 5. Full QA
 
-- [ ] 5.1 Run full QA: `exuno check`, `npm audit --audit-level=high`, `npm run typecheck`, `npm run lint`, `npm run fmt:check`, `npm test`, `npm run build`, and `npm run test:ae` on a configured host. Verify all green (host tests skipped without a configured host, noted in the run).
+- [x] 5.1 Run full QA: `exuno check`, `npm audit --audit-level=high`, `npm run typecheck`, `npm run lint`, `npm run fmt:check`, `npm test`, `npm run build`, and `npm run test:ae` on a configured host. Verify all green (host tests skipped without a configured host, noted in the run).
 
 ## Workflow follow-up
 
