@@ -109,7 +109,7 @@ Successful targets include **post-condition-verified** before/after evidence (ap
 
 #### Layer targeting (id or unique name)
 
-Layer-targeting control-plane ops (`rename_layer`, `set_layer_index`, `replace_layer_source`, `set_layer_timing`, `set_layer_switches`, `set_property_expression`, `set_layer_transform`, `reset_layer_surface`, `delete_layer`) and each `set_text_style` `selector.kind: "layers"` entry use the same shape as `ae_get_layer`: exactly one of `compId` \| `compName`, exactly one of `layerId` \| `layerName` (case-sensitive exact match). Ambiguous names refuse before mutation with candidate lists. Prefer ids when names may collide. There is no ids-only exception for new layer-targeting ops.
+Layer-targeting control-plane ops (`rename_layer`, `set_layer_index`, `replace_layer_source`, `set_layer_timing`, `set_layer_switches`, `set_property_expression`, `set_property_keyframes`, `set_layer_transform`, `reset_layer_surface`, `delete_layer`) and each `set_text_style` `selector.kind: "layers"` entry use the same shape as `ae_get_layer`: exactly one of `compId` \| `compName`, exactly one of `layerId` \| `layerName` (case-sensitive exact match). Ambiguous names refuse before mutation with candidate lists. Prefer ids when names may collide. There is no ids-only exception for new layer-targeting ops.
 
 `set_comp_settings` and `create_text` use comps-only `target` (`compId` XOR `compName`) with the same ambiguity rules. `set_text_style` `selector.kind: "comps"` accepts `compIds` and/or `compNames` (union; at least one non-empty). Existing `{ compIds: [...] }` and `{ compId, layerId }` payloads remain valid. `all_text_layers` is unchanged. Panel item ops stay on `Item.id`.
 
@@ -174,6 +174,56 @@ Success evidence includes `resolvedMatchNames` with the normalized matchName cha
   "target": { "compId": 1, "layerId": 2 },
   "propertyPath": "ADBE Effect Parade->Contrast Boost->ADBE Slider Control-0001",
   "expression": "0"
+}
+```
+
+#### `set_property_keyframes` — property timelines and sampled restore
+
+Replace **one property's** complete keyframe timeline, or remove its keys and restore the pre-expression value sampled at a composition time. Selectors are an exact, unique matchName/display-name path (or `propertyPath` with `.` / `->`), including intermediate groups; each segment must resolve to exactly one child, so duplicate effect instances need a display-name or deeper segment.
+
+```json
+{
+  "op": "set_property_keyframes",
+  "target": { "compId": 1, "layerId": 15 },
+  "matchNames": ["ADBE Transform Group", "ADBE Opacity"],
+  "keyframes": [
+    { "time": 0, "value": 0 },
+    {
+      "time": 1,
+      "value": 50,
+      "inInterpolationType": "BEZIER",
+      "outInterpolationType": "BEZIER",
+      "inEase": [{ "speed": 0, "influence": 33.333 }],
+      "outEase": [{ "speed": 0, "influence": 33.333 }]
+    },
+    {
+      "time": 2,
+      "value": 100,
+      "inInterpolationType": "LINEAR",
+      "outInterpolationType": "HOLD"
+    }
+  ],
+  "expected": { "numKeys": 2 }
+}
+```
+
+- **Two desired states** (exactly one): `keyframes` (non-empty complete replacement — omitted keys are deleted) or `staticValueAtTime` (composition seconds; samples the authored pre-expression value, removes every key, then restores the sample as the static value).
+- **Targets** follow the id-or-unique-name rules above; the property path is resolved strictly (ambiguous or unresolved segments refuse before mutation).
+- **Values** are finite numbers or 2/3-component vectors (`COLOR` is exactly 4). AE may normalize extra components (for example Scale keeps its default z on 2D layers); LayerCake writes what you supply and verifies those components. Complex AE-native values (shape, text document, marker, custom) and special properties (Time Remap, separated dimensions) are refused.
+- **Curves**: incoming/outgoing `LINEAR`/`BEZIER`/`HOLD` (omitted = `LINEAR`); each Bezier side requires an ease array of `{speed, influence}` (`influence` 0.1–100). Because AE forces **both** sides to Bezier whenever ease is applied, mixed or HOLD interpolation with ease is rejected. Spatial properties (Position/Anchor) get straight paths — zero tangents, roving/auto-Bezier/continuity off; author spatial curves with `ae_eval_script`.
+- **Expressions** are preserved by default; a property with an **enabled** expression refuses the op. Pass `expressionHandling: "clear"` to clear only that property's expression (verified empty/disabled).
+- **Expected-state guards** are optional (`numKeys`, a complete ordered `keyframes` timeline with optional curve assertions, or both). Both must agree and pass; a stale guard refuses even when the desired state already matches.
+- **Safety**: full preflight before any batch mutation (invalid later ops never let earlier ops apply), bounded timelines (≤ 1024 keys; ≤ 4096 sibling nodes/keys), stale-plan refusal instead of silent recapture, and **sibling key preservation** verified on the target layer (key times, values, interpolation, and authored Bezier ease). Layers whose keyed siblings cannot be faithfully compared (markers, animated mask paths/text) are refused — LayerCake never claims preservation it did not check. No implicit save.
+
+To remove animation but keep a chosen value (issue [#28](https://github.com/alphacornutum/layercake/issues/28) — e.g. Audio Levels keys on a solid):
+
+```json
+{
+  "op": "set_property_keyframes",
+  "target": { "compId": 1, "layerId": 15 },
+  "matchNames": ["ADBE Audio Group", "ADBE Audio Levels"],
+  "staticValueAtTime": 0,
+  "expected": { "numKeys": 2 }
 }
 ```
 

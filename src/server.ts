@@ -192,6 +192,9 @@ export function createServer(
         "set_comp_settings (target.compId|compName + partial settings bag; integer-frame evidence; " +
         "place before set_layer_timing in mixed batches); " +
         "set_property_expression (exactly one of matchNames|propertyPath; effect params need Effect Parade + effect instance + param — not parade→param alone); " +
+        "set_property_keyframes (one property by exact unique matchNames|propertyPath incl. intermediate groups; complete timeline replacement with LINEAR/BEZIER/HOLD + explicit temporal ease, " +
+        "or staticValueAtTime sampled authored restore; optional expected numKeys/timeline guards; enabled expressions refused unless expressionHandling: clear; " +
+        "sibling keyframes verified unchanged; bounded — refuses opaque keyed siblings like markers); " +
         "set_layer_transform (partial transform bag; authored value evidence; fingerprint guards for stale apply); " +
         "reset_layer_surface (resetTransforms verifies AE defaults with value evidence; clearExpressions separate); " +
         "delete_layer; create_folder / move_project_item / delete_project_item " +

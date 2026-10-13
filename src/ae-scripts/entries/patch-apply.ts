@@ -20,6 +20,8 @@ import {
   applySetLayerTiming,
   applySetLayerTransform,
   applySetPropertyExpression,
+  applySetPropertyKeyframes,
+  preflightSetPropertyKeyframes,
 } from "../shared/control-plane";
 
 declare const payload: any;
@@ -1182,6 +1184,29 @@ function resolveOp(op) {
       targetCount: 1,
     };
   }
+  if (op.op === "set_property_keyframes") {
+    var kfPair;
+    try {
+      kfPair = resolveLayerTarget(op.target);
+    } catch (kfre) {
+      return { error: formatResolveError(kfre) };
+    }
+    // Full no-write preflight (resolution, types, curves, guards, samples,
+    // preservation walkability) so an invalid op never lets earlier batch ops mutate.
+    var kfPre = preflightSetPropertyKeyframes(op, kfPair.comp, kfPair.layer);
+    if (kfPre.error) {
+      return { error: kfPre.error };
+    }
+    return {
+      plan: {
+        op: op,
+        kind: "set_property_keyframes",
+        targets: [kfPair],
+        kf: kfPre,
+      },
+      targetCount: 1,
+    };
+  }
   if (op.op === "set_layer_transform") {
     var transformPair;
     try {
@@ -1250,6 +1275,7 @@ function applyPlan(plan, opResult) {
   if (plan.kind === "set_layer_switches") return applySetLayerSwitches(plan, opResult);
   if (plan.kind === "set_comp_settings") return applySetCompSettings(plan, opResult);
   if (plan.kind === "set_property_expression") return applySetPropertyExpression(plan, opResult);
+  if (plan.kind === "set_property_keyframes") return applySetPropertyKeyframes(plan, opResult);
   if (plan.kind === "set_layer_transform") return applySetLayerTransform(plan, opResult);
   if (plan.kind === "reset_layer_surface") return applyResetLayerSurface(plan, opResult);
   if (plan.kind === "delete_layer") return applyDeleteLayer(plan, opResult);
@@ -1309,6 +1335,32 @@ export function main(): string {
     }
     totalTargets += resolved.targetCount;
     resolvedPlans.push(resolved.plan);
+  }
+
+  // One keyframe-managed property per layer per batch: sequencing conflicting
+  // property edits in separate calls keeps plans fresh (stale plans refuse).
+  var kfTargetSeen = {};
+  for (var kpi = 0; kpi < resolvedPlans.length; kpi++) {
+    var kfPlan = resolvedPlans[kpi];
+    if (kfPlan.kind !== "set_property_keyframes") continue;
+    var kfKey =
+      kfPlan.targets[0].comp.id +
+      "|" +
+      kfPlan.targets[0].layer.id +
+      "|" +
+      kfPlan.kf.matchNames.join("/");
+    if (kfTargetSeen[kfKey]) {
+      return JSON.stringify({
+        ok: false,
+        error:
+          "Duplicate set_property_keyframes target in one batch: " +
+          kfPlan.kf.matchNames.join("/") +
+          "; sequence conflicting property edits in separate calls",
+        code: "validation",
+        context: ctx,
+      });
+    }
+    kfTargetSeen[kfKey] = true;
   }
 
   if (totalTargets > MAX_TARGETS && !allowBroad) {

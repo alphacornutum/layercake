@@ -90,7 +90,7 @@ Typed mutations go through `ae_patch_project`. Current operations include:
 
 - text style and layer rename
 - layer timing (frame-exact), switches, transform, index, and delete
-- composition settings and property expressions
+- composition settings, property expressions, and property keyframes (timeline replace with temporal curves, or sampled static restore)
 - create solid, replace layer source, and reset layer surface
 - Project panel create/move/rename/delete, plus `safe_delete_project_item`
 

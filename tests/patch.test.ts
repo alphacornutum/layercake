@@ -7,6 +7,8 @@ import { buildPatchApplyScript } from "../src/patch/apply-script.js";
 import { checkBroadTargetGate } from "../src/patch/broad-gate.js";
 import { PATCH_MAX_TARGETS } from "../src/patch/constants.js";
 import { patchProjectInputSchema } from "../src/patch/schema.js";
+import type { SetPropertyKeyframesOp } from "../src/patch/schema.js";
+import type { SetPropertyKeyframesTargetResult } from "../src/patch/types.js";
 import { saveProject } from "../src/patch/save.js";
 
 function guardedProject() {
@@ -815,6 +817,329 @@ describe("patchProjectInputSchema", () => {
     });
     expect(parsed.operations[0]?.op).toBe("set_property_expression");
   });
+
+  it("accepts set_property_keyframes timeline payloads by ids and by names", () => {
+    const byIds = patchProjectInputSchema.parse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "set_property_keyframes",
+          target: { compId: 1, layerId: 2 },
+          matchNames: ["ADBE Transform Group", "ADBE Opacity"],
+          keyframes: [
+            { time: 0, value: 0 },
+            {
+              time: 1,
+              value: 50,
+              inInterpolationType: "BEZIER",
+              outInterpolationType: "BEZIER",
+              inEase: [{ speed: 0, influence: 33.333 }],
+              outEase: [{ speed: 0, influence: 33.333 }],
+            },
+            {
+              time: 2,
+              value: 100,
+              inInterpolationType: "LINEAR",
+              outInterpolationType: "HOLD",
+            },
+          ],
+          expected: { numKeys: 2 },
+        },
+      ],
+    });
+    const op = byIds.operations[0] as SetPropertyKeyframesOp;
+    expect(op.op).toBe("set_property_keyframes");
+    expect(op.keyframes).toHaveLength(3);
+    expect(op.expressionHandling).toBe("reject_enabled");
+    expect(op.expected?.numKeys).toBe(2);
+
+    const byNames = patchProjectInputSchema.parse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "set_property_keyframes",
+          target: { compName: "main", layerName: "Background" },
+          propertyPath: "ADBE Transform Group->ADBE Audio Levels",
+          keyframes: [
+            { time: 0, value: [0, 0] },
+            {
+              time: 1,
+              value: [12, 12],
+              inInterpolationType: "BEZIER",
+              outInterpolationType: "BEZIER",
+              inEase: [
+                { speed: 0, influence: 33.333 },
+                { speed: 0, influence: 33.333 },
+              ],
+              outEase: [
+                { speed: 0, influence: 50 },
+                { speed: 0, influence: 50 },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    const namedOp = byNames.operations[0] as SetPropertyKeyframesOp;
+    expect(namedOp.target).toMatchObject({
+      compName: "main",
+      layerName: "Background",
+    });
+    expect(namedOp.propertyPath).toBe("ADBE Transform Group->ADBE Audio Levels");
+  });
+
+  it("accepts set_property_keyframes staticValueAtTime with expressionHandling clear", () => {
+    const parsed = patchProjectInputSchema.parse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "set_property_keyframes",
+          target: { compId: 1, layerId: 2 },
+          matchNames: ["ADBE Audio Group", "ADBE Audio Levels"],
+          staticValueAtTime: 0,
+          expected: { numKeys: 1, keyframes: [{ time: 0, value: [0, 0] }] },
+          expressionHandling: "clear",
+        },
+      ],
+    });
+    const op = parsed.operations[0] as SetPropertyKeyframesOp;
+    expect(op.staticValueAtTime).toBe(0);
+    expect(op.expressionHandling).toBe("clear");
+    expect(op.expected?.keyframes).toHaveLength(1);
+  });
+
+  it("rejects set_property_keyframes selector and desired-state unions", () => {
+    const bothSelectors = patchProjectInputSchema.safeParse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "set_property_keyframes",
+          target: { compId: 1, layerId: 2 },
+          matchNames: ["ADBE Opacity"],
+          propertyPath: "ADBE Opacity",
+          keyframes: [{ time: 0, value: 1 }],
+        },
+      ],
+    });
+    expect(bothSelectors.success).toBe(false);
+
+    const neitherSelector = patchProjectInputSchema.safeParse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "set_property_keyframes",
+          target: { compId: 1, layerId: 2 },
+          keyframes: [{ time: 0, value: 1 }],
+        },
+      ],
+    });
+    expect(neitherSelector.success).toBe(false);
+
+    const bothModes = patchProjectInputSchema.safeParse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "set_property_keyframes",
+          target: { compId: 1, layerId: 2 },
+          matchNames: ["ADBE Opacity"],
+          keyframes: [{ time: 0, value: 1 }],
+          staticValueAtTime: 0,
+        },
+      ],
+    });
+    expect(bothModes.success).toBe(false);
+
+    const neitherMode = patchProjectInputSchema.safeParse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "set_property_keyframes",
+          target: { compId: 1, layerId: 2 },
+          matchNames: ["ADBE Opacity"],
+        },
+      ],
+    });
+    expect(neitherMode.success).toBe(false);
+
+    const emptyTimeline = patchProjectInputSchema.safeParse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "set_property_keyframes",
+          target: { compId: 1, layerId: 2 },
+          matchNames: ["ADBE Opacity"],
+          keyframes: [],
+        },
+      ],
+    });
+    expect(emptyTimeline.success).toBe(false);
+  });
+
+  it("rejects set_property_keyframes malformed curves and inconsistent guards", () => {
+    const easeOnLinear = patchProjectInputSchema.safeParse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "set_property_keyframes",
+          target: { compId: 1, layerId: 2 },
+          matchNames: ["ADBE Opacity"],
+          keyframes: [{ time: 0, value: 1, inEase: [{ speed: 0, influence: 33.3 }] }],
+        },
+      ],
+    });
+    expect(easeOnLinear.success).toBe(false);
+
+    // AE forces both sides to BEZIER when ease is applied; mixed sides with ease
+    // cannot be honored, so the schema refuses them.
+    const easeWithMixedSides = patchProjectInputSchema.safeParse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "set_property_keyframes",
+          target: { compId: 1, layerId: 2 },
+          matchNames: ["ADBE Opacity"],
+          keyframes: [
+            {
+              time: 0,
+              value: 1,
+              inInterpolationType: "BEZIER",
+              outInterpolationType: "LINEAR",
+              inEase: [{ speed: 0, influence: 33.3 }],
+            },
+          ],
+        },
+      ],
+    });
+    expect(easeWithMixedSides.success).toBe(false);
+
+    const bezierWithoutEase = patchProjectInputSchema.safeParse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "set_property_keyframes",
+          target: { compId: 1, layerId: 2 },
+          matchNames: ["ADBE Opacity"],
+          keyframes: [{ time: 0, value: 1, inInterpolationType: "BEZIER" }],
+        },
+      ],
+    });
+    expect(bezierWithoutEase.success).toBe(false);
+
+    const influenceOutOfRange = patchProjectInputSchema.safeParse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "set_property_keyframes",
+          target: { compId: 1, layerId: 2 },
+          matchNames: ["ADBE Opacity"],
+          keyframes: [
+            {
+              time: 0,
+              value: 1,
+              inInterpolationType: "BEZIER",
+              inEase: [{ speed: 0, influence: 200 }],
+            },
+          ],
+        },
+      ],
+    });
+    expect(influenceOutOfRange.success).toBe(false);
+
+    const inconsistentGuards = patchProjectInputSchema.safeParse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "set_property_keyframes",
+          target: { compId: 1, layerId: 2 },
+          matchNames: ["ADBE Opacity"],
+          keyframes: [{ time: 0, value: 1 }],
+          expected: {
+            numKeys: 3,
+            keyframes: [
+              { time: 0, value: 0 },
+              { time: 1, value: 50 },
+            ],
+          },
+        },
+      ],
+    });
+    expect(inconsistentGuards.success).toBe(false);
+
+    const emptyExpected = patchProjectInputSchema.safeParse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "set_property_keyframes",
+          target: { compId: 1, layerId: 2 },
+          matchNames: ["ADBE Opacity"],
+          keyframes: [{ time: 0, value: 1 }],
+          expected: {},
+        },
+      ],
+    });
+    expect(emptyExpected.success).toBe(false);
+
+    const unorderedTimes = patchProjectInputSchema.safeParse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "set_property_keyframes",
+          target: { compId: 1, layerId: 2 },
+          matchNames: ["ADBE Opacity"],
+          keyframes: [
+            { time: 1, value: 1 },
+            { time: 0, value: 0 },
+          ],
+        },
+      ],
+    });
+    expect(unorderedTimes.success).toBe(false);
+
+    const nearDuplicateTimes = patchProjectInputSchema.safeParse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "set_property_keyframes",
+          target: { compId: 1, layerId: 2 },
+          matchNames: ["ADBE Opacity"],
+          keyframes: [
+            { time: 0, value: 1 },
+            { time: 0 + 5e-8, value: 0 },
+          ],
+        },
+      ],
+    });
+    expect(nearDuplicateTimes.success).toBe(false);
+  });
+
+  it("rejects unknown set_property_keyframes fields", () => {
+    const withSpatial = patchProjectInputSchema.safeParse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "set_property_keyframes",
+          target: { compId: 1, layerId: 2 },
+          matchNames: ["ADBE Position"],
+          keyframes: [{ time: 0, value: [0, 0], inSpatialTangent: [10, 0] }],
+        },
+      ],
+    });
+    expect(withSpatial.success).toBe(false);
+
+    const unknownOpField = patchProjectInputSchema.safeParse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "set_property_keyframes",
+          target: { compId: 1, layerId: 2 },
+          matchNames: ["ADBE Opacity"],
+          keyframes: [{ time: 0, value: 1 }],
+          roving: false,
+        },
+      ],
+    });
+    expect(unknownOpField.success).toBe(false);
+  });
 });
 
 describe("checkBroadTargetGate", () => {
@@ -1017,6 +1342,41 @@ describe("buildPatchApplyScript", () => {
     expect(script).toContain("after.isNameSet === true");
     expect(script).toContain("before.sourceId === undefined || after.sourceId === before.sourceId");
     expect(script).not.toContain("function resolveFootage");
+  });
+
+  it("includes set_property_keyframes preflight, apply, and bounds", () => {
+    const script = buildPatchApplyScript(
+      JSON.stringify({
+        project: guardedProject(),
+        operations: [
+          {
+            op: "set_property_keyframes",
+            target: { compId: 1, layerId: 2 },
+            matchNames: ["ADBE Transform Group", "ADBE Opacity"],
+            keyframes: [{ time: 0, value: 0 }],
+          },
+        ],
+        allowBroadTargetSet: false,
+      }),
+    );
+    expect(script).toContain("function pkfResolveSegments");
+    expect(script).toContain("function preflightSetPropertyKeyframes");
+    expect(script).toContain("function applySetPropertyKeyframes");
+    expect(script).toContain("function pkfCapturePreservation");
+    expect(script).toContain("function pkfPreservationsEqual");
+    expect(script).toContain("var PKF_MAX_KEYS = 1024");
+    expect(script).toContain("var PKF_MAX_PATH_SEGMENTS = 32");
+    expect(script).toContain("var PKF_MAX_PRESERVATION_NODES = 4096");
+    expect(script).toContain("var PKF_MAX_PRESERVATION_KEYS = 4096");
+    expect(script).toContain("Ambiguous property segment");
+    expect(script).toContain("Expected-state guard failed");
+    expect(script).toContain("Cannot faithfully compare keyed sibling property");
+    expect(script).toContain("other_keyframes_on_target_layer");
+    expect(script).toContain("Planned property changed before apply");
+    expect(script).toContain("Duplicate set_property_keyframes target in one batch");
+    expect(script).toContain("setInterpolationTypeAtKey");
+    expect(script).toContain("setTemporalEaseAtKey");
+    expect(script).toContain("new KeyframeEase");
   });
 });
 
@@ -1407,6 +1767,150 @@ describe("parsePatchApplyResult", () => {
       usedInCompIds: [],
       usedInCompCount: 0,
     });
+  });
+
+  it("shapes set_property_keyframes evidence with timeline, expression, and preservation", () => {
+    const parsed = parsePatchApplyResult(
+      JSON.stringify({
+        ok: true,
+        results: [
+          {
+            index: 0,
+            op: "set_property_keyframes",
+            status: "changed",
+            targets: [
+              {
+                compId: 1,
+                layerId: 2,
+                compName: "main",
+                layerName: "Background",
+                status: "changed",
+                selector: {
+                  matchNames: ["ADBE Transform Group", "ADBE Opacity"],
+                },
+                resolvedMatchNames: ["ADBE Transform Group", "ADBE Opacity"],
+                resolvedPath: [
+                  {
+                    name: "Transform",
+                    matchName: "ADBE Transform Group",
+                    index: 6,
+                  },
+                  { name: "Opacity", matchName: "ADBE Opacity", index: 9 },
+                ],
+                propertyValueType: "OneD",
+                mode: "timeline",
+                before: {
+                  numKeys: 2,
+                  keyframes: [
+                    { time: 0, value: 10 },
+                    { time: 1, value: 90 },
+                  ],
+                  expression: { expression: "", expressionEnabled: false },
+                },
+                after: {
+                  numKeys: 3,
+                  keyframes: [
+                    {
+                      time: 0,
+                      value: 0,
+                      temporalContinuous: false,
+                      temporalAutoBezier: false,
+                    },
+                    {
+                      time: 1,
+                      value: 50,
+                      inInterpolationType: "BEZIER",
+                      outInterpolationType: "LINEAR",
+                      inEase: [{ speed: 0, influence: 33.333 }],
+                    },
+                    { time: 2, value: 100, outInterpolationType: "HOLD" },
+                  ],
+                  expression: { expression: "", expressionEnabled: false },
+                },
+                preservation: {
+                  scope: "other_keyframes_on_target_layer",
+                  checkedProperties: 1,
+                  checkedKeys: 1,
+                  unchanged: true,
+                },
+              },
+            ],
+          },
+        ],
+        fingerprint: "rev:6|dirty:1|path:/tmp/Demo.aep",
+        dirty: true,
+        revision: 6,
+      }),
+    );
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    const target = parsed.results[0]?.targets[0] as SetPropertyKeyframesTargetResult;
+    expect(target).toMatchObject({
+      mode: "timeline",
+      propertyValueType: "OneD",
+      status: "changed",
+    });
+    expect(target.after?.keyframes).toHaveLength(3);
+    expect(target.after?.keyframes?.[1]).toMatchObject({
+      inInterpolationType: "BEZIER",
+      inEase: [{ speed: 0, influence: 33.333 }],
+    });
+    expect(target.preservation).toMatchObject({
+      scope: "other_keyframes_on_target_layer",
+      checkedProperties: 1,
+      checkedKeys: 1,
+      unchanged: true,
+    });
+  });
+
+  it("shapes set_property_keyframes preservation drift and rollback failures", () => {
+    const parsed = parsePatchApplyResult(
+      JSON.stringify({
+        ok: false,
+        error: "Post-condition failed: unrelated keyframes on the target layer changed",
+        code: "apply_failed",
+        results: [
+          {
+            index: 0,
+            op: "set_property_keyframes",
+            status: "failed",
+            targets: [
+              {
+                compId: 1,
+                layerId: 2,
+                status: "failed",
+                mode: "timeline",
+                after: { numKeys: 1, keyframes: [{ time: 0, value: 5 }] },
+                preservation: {
+                  scope: "other_keyframes_on_target_layer",
+                  checkedProperties: 2,
+                  checkedKeys: 9,
+                  unchanged: false,
+                  drift: [
+                    {
+                      matchNames: ["ADBE Transform Group", "ADBE Scale"],
+                      beforeTime: 0,
+                      afterTime: null,
+                    },
+                  ],
+                  driftTruncated: false,
+                },
+              },
+            ],
+          },
+        ],
+        rollback: { attempted: true, completed: true },
+      }),
+    );
+    expect(parsed.ok).toBe(false);
+    if (parsed.ok) return;
+    const target = parsed.results?.[0]?.targets[0] as SetPropertyKeyframesTargetResult;
+    expect(target.preservation?.unchanged).toBe(false);
+    expect(target.preservation?.drift?.[0]).toMatchObject({
+      matchNames: ["ADBE Transform Group", "ADBE Scale"],
+      beforeTime: 0,
+    });
+    expect(parsed.rollback).toMatchObject({ attempted: true, completed: true });
   });
 });
 
