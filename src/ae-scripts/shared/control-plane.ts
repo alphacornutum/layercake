@@ -1949,7 +1949,9 @@ function pkfReadStaticValue(prop) {
 // write reports verified:false instead of claiming a restoration that did not land.
 function pkfRestoreTimeline(prop, snapshot, info) {
   try {
-    while (prop.numKeys > 0) prop.removeKey(1);
+    for (var removeIndex = prop.numKeys; removeIndex >= 1; removeIndex--) {
+      prop.removeKey(removeIndex);
+    }
   } catch (e0) {}
   for (var i = 0; i < snapshot.keyframes.length; i++) {
     var entry = snapshot.keyframes[i];
@@ -2575,7 +2577,9 @@ export function applySetPropertyKeyframes(plan, opResult) {
       expr = pkfReadExpressionState(prop);
     } catch (e2) {}
     if (!snap) {
-      return { expression: expr };
+      var unavailableEvidence = { expression: expr };
+      if (kf.mode === "clear") unavailableEvidence.valueWritten = false;
+      return unavailableEvidence;
     }
     var evidence = {
       numKeys: snap.numKeys,
@@ -2583,13 +2587,11 @@ export function applySetPropertyKeyframes(plan, opResult) {
       expression: expr,
     };
     if (kf.mode === "static" || kf.mode === "clear") {
-      var sv = null;
-      try {
-        sv = pkfNormalizeNumericValue(prop.value);
-      } catch (e3) {}
-      if (sv !== null) {
-        if (kf.mode === "static") evidence.staticValue = sv;
-        else evidence.retainedValue = sv;
+      var sv = pkfReadStaticValue(prop);
+      if (kf.mode === "static" && sv !== null) evidence.staticValue = sv;
+      if (kf.mode === "clear") {
+        evidence.valueWritten = false;
+        if (sv !== null) evidence.retainedValue = sv;
       }
     }
     return evidence;
@@ -2653,6 +2655,7 @@ export function applySetPropertyKeyframes(plan, opResult) {
     if (kf.mode === "static") targetResult.after.staticValue = kf.sample;
     if (kf.mode === "clear") {
       var retainedNoop = pkfReadStaticValue(prop);
+      targetResult.after.valueWritten = false;
       if (retainedNoop !== null) targetResult.after.retainedValue = retainedNoop;
     }
     targetResult.preservation = {
@@ -2683,8 +2686,8 @@ export function applySetPropertyKeyframes(plan, opResult) {
       try {
         hadKeys = prop.numKeys > 0;
       } catch (hk) {}
-      while (prop.numKeys > 0) {
-        prop.removeKey(1);
+      for (var clearRemoveIndex = prop.numKeys; clearRemoveIndex >= 1; clearRemoveIndex--) {
+        prop.removeKey(clearRemoveIndex);
         mutated = true;
       }
       if (hadKeys) {
@@ -2717,8 +2720,12 @@ export function applySetPropertyKeyframes(plan, opResult) {
         }
       }
     } else if (kf.mode === "clear") {
-      while (prop.numKeys > 0) {
-        prop.removeKey(1);
+      for (
+        var timelineRemoveIndex = prop.numKeys;
+        timelineRemoveIndex >= 1;
+        timelineRemoveIndex--
+      ) {
+        prop.removeKey(timelineRemoveIndex);
         mutated = true;
       }
     } else {
@@ -2884,6 +2891,7 @@ export function applySetPropertyKeyframes(plan, opResult) {
   if (kf.mode === "static") targetResult.after.staticValue = kf.sample;
   if (kf.mode === "clear") {
     var retainedFinal = pkfReadStaticValue(prop);
+    targetResult.after.valueWritten = false;
     if (retainedFinal !== null) targetResult.after.retainedValue = retainedFinal;
   }
   targetResult.preservation = {

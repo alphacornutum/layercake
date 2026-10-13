@@ -971,6 +971,7 @@ describe("pkf clear mode", () => {
     expect(result.mode).toBe("clear");
     expect(result.after.numKeys).toBe(0);
     expect(result.after.retainedValue).toBe(-8);
+    expect(result.after.valueWritten).toBe(false);
     expect(target.__state.keys).toHaveLength(0);
   });
 
@@ -990,6 +991,7 @@ describe("pkf clear mode", () => {
     expect(result.status).toBe("changed");
     expect(result.after.numKeys).toBe(0);
     expect(result.after.retainedValue).toBe(-8);
+    expect(result.after.valueWritten).toBe(false);
   });
 
   it("is idempotent when the property already has no keys", () => {
@@ -1006,6 +1008,7 @@ describe("pkf clear mode", () => {
     expect(result.mode).toBe("clear");
     expect(result.after.numKeys).toBe(0);
     expect(result.after.retainedValue).toBe(5);
+    expect(result.after.valueWritten).toBe(false);
   });
 });
 

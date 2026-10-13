@@ -255,6 +255,8 @@ export type PropertyKeyframeStateEvidence = {
   keyframes?: PropertyKeyframeEntry[];
   /** Static mode: authored value sampled at `sampleTime` (before) / restored static value (after). */
   staticValue?: number | number[];
+  /** Clear mode: no value write is performed; the value After Effects retains is read-back evidence. */
+  valueWritten?: false;
   /** Clear mode: the value After Effects retained after removing keys (read-back, not a restore). */
   retainedValue?: number | number[];
   expression?: { expression: string; expressionEnabled: boolean };
