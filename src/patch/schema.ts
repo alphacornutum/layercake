@@ -334,6 +334,189 @@ export const setPropertyExpressionOpSchema = z
     }
   });
 
+// set_property_keyframes bounds -- mirrored host-side in src/ae-scripts/shared/control-plane.ts (PKF_*).
+export const PROPERTY_KEYFRAME_MAX_KEYS = 1024;
+export const PROPERTY_KEYFRAME_MAX_PATH_SEGMENTS = 32;
+
+const KEYFRAME_INTERPOLATION_TYPES = ["LINEAR", "BEZIER", "HOLD"] as const;
+
+const keyframeEasePointSchema = z
+  .object({
+    speed: z.number().finite(),
+    influence: z.number().finite().min(0.1).max(100),
+  })
+  .strict();
+
+const propertyKeyframeValueSchema = z.union([
+  z.number().finite(),
+  z.array(z.number().finite()).min(2).max(4),
+]);
+
+// Desired keys: Bezier sides require an explicit ease array; ease on non-Bezier
+// sides is rejected so the written curve is never silently dropped.
+const desiredKeyframeSchema = z
+  .object({
+    time: z.number().finite(),
+    value: propertyKeyframeValueSchema,
+    inInterpolationType: z.enum(KEYFRAME_INTERPOLATION_TYPES).optional(),
+    outInterpolationType: z.enum(KEYFRAME_INTERPOLATION_TYPES).optional(),
+    inEase: z.array(keyframeEasePointSchema).min(1).max(3).optional(),
+    outEase: z.array(keyframeEasePointSchema).min(1).max(3).optional(),
+  })
+  .strict()
+  .superRefine((v, ctx) => {
+    const inType = v.inInterpolationType ?? "LINEAR";
+    const outType = v.outInterpolationType ?? "LINEAR";
+    // AE forces both sides to BEZIER whenever temporal ease is applied, so mixed
+    // or HOLD interpolation with ease cannot be honored. Reject it up front.
+    if (
+      (v.inEase !== undefined || v.outEase !== undefined) &&
+      (inType !== "BEZIER" || outType !== "BEZIER")
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Temporal ease requires BEZIER interpolation on both sides (AE forces this)",
+        path: ["inEase"],
+      });
+    }
+    if (inType === "BEZIER" && v.inEase === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "inEase is required when inInterpolationType is BEZIER",
+        path: ["inEase"],
+      });
+    }
+    if (inType !== "BEZIER" && v.inEase !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "inEase is only allowed when inInterpolationType is BEZIER",
+        path: ["inEase"],
+      });
+    }
+    if (outType === "BEZIER" && v.outEase === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "outEase is required when outInterpolationType is BEZIER",
+        path: ["outEase"],
+      });
+    }
+    if (outType !== "BEZIER" && v.outEase !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "outEase is only allowed when outInterpolationType is BEZIER",
+        path: ["outEase"],
+      });
+    }
+  });
+
+// Expected keys assert observed state; ease may be asserted on any key (AE exposes
+// ease arrays for non-Bezier keys too), so there is no interpolation/ease cross-check.
+const expectedKeyframeSchema = z
+  .object({
+    time: z.number().finite(),
+    value: propertyKeyframeValueSchema,
+    inInterpolationType: z.enum(KEYFRAME_INTERPOLATION_TYPES).optional(),
+    outInterpolationType: z.enum(KEYFRAME_INTERPOLATION_TYPES).optional(),
+    inEase: z.array(keyframeEasePointSchema).min(1).max(3).optional(),
+    outEase: z.array(keyframeEasePointSchema).min(1).max(3).optional(),
+  })
+  .strict();
+
+const KEYFRAME_TIME_TOLERANCE = 1e-7;
+
+function keyframeTimesStrictlyIncreasing(frames: { time: number }[] | undefined): boolean {
+  if (!frames || frames.length < 2) return true;
+  for (let i = 1; i < frames.length; i++) {
+    if (!(frames[i]!.time > frames[i - 1]!.time + KEYFRAME_TIME_TOLERANCE)) return false;
+  }
+  return true;
+}
+
+export const setPropertyKeyframesOpSchema = z
+  .object({
+    op: z.literal("set_property_keyframes"),
+    target: layerTargetSchema,
+    matchNames: z
+      .array(z.string().min(1))
+      .min(1)
+      .max(PROPERTY_KEYFRAME_MAX_PATH_SEGMENTS)
+      .optional(),
+    propertyPath: z.string().min(1).optional(),
+    keyframes: z
+      .array(desiredKeyframeSchema)
+      .min(1)
+      .max(PROPERTY_KEYFRAME_MAX_KEYS)
+      .optional()
+      .describe("Complete replacement timeline; omitted keys are deleted"),
+    staticValueAtTime: z
+      .number()
+      .finite()
+      .optional()
+      .describe("Composition seconds; sample authored value, remove keys, restore as static"),
+    expected: z
+      .object({
+        numKeys: z.number().int().min(0).max(PROPERTY_KEYFRAME_MAX_KEYS).optional(),
+        keyframes: z
+          .array(expectedKeyframeSchema)
+          .max(PROPERTY_KEYFRAME_MAX_KEYS)
+          .optional()
+          .describe("Complete ordered expected timeline; empty asserts zero keys"),
+      })
+      .strict()
+      .superRefine((v, ctx) => {
+        if (v.numKeys === undefined && v.keyframes === undefined) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "expected requires numKeys, keyframes, or both",
+          });
+        }
+        if (
+          v.numKeys !== undefined &&
+          v.keyframes !== undefined &&
+          v.numKeys !== v.keyframes.length
+        ) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "expected.numKeys must equal expected.keyframes.length",
+          });
+        }
+        if (!keyframeTimesStrictlyIncreasing(v.keyframes)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "expected.keyframes times must be strictly increasing",
+          });
+        }
+      })
+      .optional(),
+    expressionHandling: z.enum(["reject_enabled", "clear"]).optional().default("reject_enabled"),
+  })
+  .strict()
+  .superRefine((v, ctx) => {
+    const hasNames = (v.matchNames?.length ?? 0) > 0;
+    const hasPath = v.propertyPath !== undefined && v.propertyPath.length > 0;
+    if (hasNames === hasPath) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Provide exactly one of matchNames or propertyPath",
+      });
+    }
+    const hasKeys = v.keyframes !== undefined;
+    const hasStatic = v.staticValueAtTime !== undefined;
+    if (hasKeys === hasStatic) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "Provide exactly one of keyframes (non-empty complete timeline) or staticValueAtTime",
+      });
+    }
+    if (!keyframeTimesStrictlyIncreasing(v.keyframes)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "keyframes times must be strictly increasing and separated beyond tolerance",
+      });
+    }
+  });
+
 // Prefer length-bounded array over z.tuple: tuple JSON Schema emits `items` as an
 // array of schemas, which Codex rejects when building MCP tool specs.
 const spatialArraySchema = z
@@ -409,6 +592,7 @@ export const patchOperationSchema = z.union([
   setLayerSwitchesOpSchema,
   setCompSettingsOpSchema,
   setPropertyExpressionOpSchema,
+  setPropertyKeyframesOpSchema,
   setLayerTransformOpSchema,
   resetLayerSurfaceOpSchema,
   deleteLayerOpSchema,
@@ -442,6 +626,7 @@ export type SetLayerTimingOp = z.infer<typeof setLayerTimingOpSchema>;
 export type SetLayerSwitchesOp = z.infer<typeof setLayerSwitchesOpSchema>;
 export type SetCompSettingsOp = z.infer<typeof setCompSettingsOpSchema>;
 export type SetPropertyExpressionOp = z.infer<typeof setPropertyExpressionOpSchema>;
+export type SetPropertyKeyframesOp = z.infer<typeof setPropertyKeyframesOpSchema>;
 export type SetLayerTransformOp = z.infer<typeof setLayerTransformOpSchema>;
 export type ResetLayerSurfaceOp = z.infer<typeof resetLayerSurfaceOpSchema>;
 export type DeleteLayerOp = z.infer<typeof deleteLayerOpSchema>;

@@ -14,6 +14,7 @@ const AE_RUNTIME_GLOBALS = new Set([
   "FontCapsOption",
   "FootageItem",
   "JSON",
+  "KeyframeEase",
   "KeyframeInterpolationType",
   "LightLayer",
   "Math",

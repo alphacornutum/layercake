@@ -1461,6 +1461,1214 @@ export function applySetPropertyExpression(plan, opResult) {
   }
 }
 
+// ===== set_property_keyframes: guarded property-scoped keyframe management =====
+// Bounds mirror src/patch/schema.ts (PROPERTY_KEYFRAME_MAX_KEYS / _MAX_PATH_SEGMENTS).
+
+var PKF_MAX_KEYS = 1024;
+var PKF_MAX_PATH_SEGMENTS = 32;
+var PKF_MAX_PRESERVATION_NODES = 4096;
+var PKF_MAX_PRESERVATION_KEYS = 4096;
+var PKF_TIME_EPSILON = 1e-7;
+var PKF_VALUE_EPSILON = 1e-6;
+var PKF_DRIFT_CAP = 8;
+
+function pkfInterpEnum(name) {
+  if (name === "LINEAR") return KeyframeInterpolationType.LINEAR;
+  if (name === "BEZIER") return KeyframeInterpolationType.BEZIER;
+  return KeyframeInterpolationType.HOLD;
+}
+
+function pkfInterpName(value) {
+  if (value === KeyframeInterpolationType.LINEAR) return "LINEAR";
+  if (value === KeyframeInterpolationType.BEZIER) return "BEZIER";
+  if (value === KeyframeInterpolationType.HOLD) return "HOLD";
+  return null;
+}
+
+function pkfValueTypeName(t) {
+  var PVT = PropertyValueType;
+  if (t === PVT.OneD) return "OneD";
+  if (t === PVT.TwoD) return "TwoD";
+  if (t === PVT.ThreeD) return "ThreeD";
+  if (t === PVT.TwoD_SPATIAL) return "TwoD_SPATIAL";
+  if (t === PVT.ThreeD_SPATIAL) return "ThreeD_SPATIAL";
+  if (t === PVT.COLOR) return "COLOR";
+  if (t === PVT.NO_VALUE) return "NO_VALUE";
+  if (t === PVT.TEXT_DOCUMENT) return "TEXT_DOCUMENT";
+  if (t === PVT.MARKER) return "MARKER";
+  if (t === PVT.SHAPE) return "SHAPE";
+  if (t === PVT.MASK_INDEX) return "MASK_INDEX";
+  if (t === PVT.LAYER_INDEX) return "LAYER_INDEX";
+  return "UNSUPPORTED";
+}
+
+// Supported numeric domains. easeDim follows the Scripting Guide: TwoD -> 2 ease
+// objects, ThreeD -> 3, all other supported types (including spatial) -> 1.
+function pkfValueTypeInfo(prop) {
+  var t = null;
+  try {
+    t = prop.propertyValueType;
+  } catch (e) {
+    return null;
+  }
+  var PVT = PropertyValueType;
+  if (t === PVT.OneD) return { typeName: "OneD", dim: 1, easeDim: 1, spatial: false };
+  if (t === PVT.TwoD) return { typeName: "TwoD", dim: 2, easeDim: 2, spatial: false };
+  if (t === PVT.ThreeD) return { typeName: "ThreeD", dim: 3, easeDim: 3, spatial: false };
+  if (t === PVT.TwoD_SPATIAL)
+    return { typeName: "TwoD_SPATIAL", dim: 2, easeDim: 1, spatial: true };
+  if (t === PVT.ThreeD_SPATIAL)
+    return { typeName: "ThreeD_SPATIAL", dim: 3, easeDim: 1, spatial: true };
+  if (t === PVT.COLOR) return { typeName: "COLOR", dim: 4, easeDim: 1, spatial: false };
+  return null;
+}
+
+function pkfNormalizeNumericValue(raw) {
+  if (typeof raw === "number") {
+    return isNaN(raw) ? null : raw;
+  }
+  if (raw !== null && raw !== undefined && raw.length !== undefined && typeof raw !== "string") {
+    var out = [];
+    for (var i = 0; i < raw.length; i++) {
+      var n = Number(raw[i]);
+      if (isNaN(n)) return null;
+      out.push(n);
+    }
+    return out;
+  }
+  return null;
+}
+
+// Value shape rules: AE normalizes extra vector components per property (Scale keeps
+// its default z on 2D layers; Position/Anchor use z 0), so callers supply a scalar or a
+// 2/3-component vector (exactly 4 for COLOR) and LayerCake verifies the supplied
+// components rather than an AE-normalized tail.
+function pkfValueShapeOk(value, info) {
+  if (typeof value === "number") return info.dim === 1;
+  if (value === null || value === undefined || value.length === undefined) return false;
+  if (info.dim === 1) return false;
+  if (info.typeName === "COLOR") return value.length === 4;
+  return value.length === 2 || value.length === 3;
+}
+
+// Compare only the components the caller supplied (AE may append/normalize the tail).
+function pkfValuePrefixMatches(actual, want, epsilon) {
+  if (typeof want === "number")
+    return typeof actual === "number" ? Math.abs(actual - want) <= epsilon : false;
+  if (actual === null || actual === undefined || actual.length === undefined) return false;
+  if (actual.length < want.length) return false;
+  for (var i = 0; i < want.length; i++) {
+    if (Math.abs(Number(actual[i]) - Number(want[i])) > epsilon) return false;
+  }
+  return true;
+}
+
+function pkfValuesEqual(a, b, epsilon) {
+  var aNum = typeof a === "number";
+  var bNum = typeof b === "number";
+  if (aNum !== bNum) return false;
+  if (aNum) return Math.abs(a - b) <= epsilon;
+  if (a === null || a === undefined || b === null || b === undefined) return false;
+  if (a.length !== b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (Math.abs(Number(a[i]) - Number(b[i])) > epsilon) return false;
+  }
+  return true;
+}
+
+function pkfEaseArraysEqual(a, b) {
+  var aMissing = a === undefined || a === null;
+  var bMissing = b === undefined || b === null;
+  if (aMissing && bMissing) return true;
+  if (aMissing || bMissing) return false;
+  if (a.length !== b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (Math.abs(Number(a[i].speed) - Number(b[i].speed)) > PKF_VALUE_EPSILON) return false;
+    if (Math.abs(Number(a[i].influence) - Number(b[i].influence)) > PKF_VALUE_EPSILON) return false;
+  }
+  return true;
+}
+
+function pkfTangentsNormalized(tangent) {
+  if (!tangent || tangent.length === 0) return false;
+  for (var i = 0; i < tangent.length; i++) {
+    if (Math.abs(Number(tangent[i])) > PKF_VALUE_EPSILON) return false;
+  }
+  return true;
+}
+
+function pkfSerializeEase(ease) {
+  if (!ease) return null;
+  var out = [];
+  try {
+    for (var i = 0; i < ease.length; i++) {
+      out.push({
+        speed: Number(ease[i].speed),
+        influence: Number(ease[i].influence),
+      });
+    }
+  } catch (e) {
+    return null;
+  }
+  return out;
+}
+
+function pkfEaseObjects(points) {
+  var out = [];
+  for (var i = 0; i < points.length; i++) {
+    out.push(new KeyframeEase(Number(points[i].speed), Number(points[i].influence)));
+  }
+  return out;
+}
+
+// Strict unique property walk: each segment resolves to exactly one child by
+// exact matchName or exact display name. Ambiguity and misses fail before mutation.
+function pkfResolveSegments(layer, segments) {
+  var cur = layer;
+  var identity = [];
+  var matchNames = [];
+  var indexPath = [];
+  var i;
+  var c;
+  for (i = 0; i < segments.length; i++) {
+    var seg = String(segments[i]);
+    if (!seg) {
+      return {
+        error: "Empty property path segment at position " + (i + 1),
+        prop: null,
+        identity: identity,
+        matchNames: matchNames,
+        indexPath: indexPath,
+      };
+    }
+    var count = 0;
+    try {
+      count = cur.numProperties;
+    } catch (ne) {
+      return {
+        error: "Property segment parent is not a group: " + seg,
+        prop: null,
+        identity: identity,
+        matchNames: matchNames,
+        indexPath: indexPath,
+      };
+    }
+    var matches = [];
+    var matchPositions = [];
+    for (c = 1; c <= count; c++) {
+      var child = null;
+      try {
+        child = cur.property(c);
+      } catch (ce) {
+        continue;
+      }
+      if (!child) continue;
+      var matched = false;
+      try {
+        if (String(child.matchName) === seg) matched = true;
+      } catch (me) {}
+      if (!matched) {
+        try {
+          if (String(child.name) === seg) matched = true;
+        } catch (ne2) {}
+      }
+      if (matched) {
+        matches.push(child);
+        matchPositions.push(c);
+      }
+    }
+    if (matches.length === 0) {
+      return {
+        error: "Property not found for segment: " + seg,
+        prop: null,
+        identity: identity,
+        matchNames: matchNames,
+        indexPath: indexPath,
+      };
+    }
+    if (matches.length > 1) {
+      return {
+        error:
+          "Ambiguous property segment '" +
+          seg +
+          "' matched " +
+          matches.length +
+          " children; use a unique segment (effect display name or deeper path)",
+        prop: null,
+        identity: identity,
+        matchNames: matchNames,
+        indexPath: indexPath,
+      };
+    }
+    cur = matches[0];
+    var pos = matchPositions[0];
+    var id = { matchName: "", name: "", index: pos };
+    try {
+      id.matchName = String(cur.matchName || "");
+    } catch (e) {}
+    try {
+      id.name = String(cur.name || "");
+    } catch (e2) {}
+    identity.push(id);
+    matchNames.push(id.matchName);
+    indexPath.push(pos);
+  }
+  var isLeaf = false;
+  try {
+    isLeaf = cur.propertyType === PropertyType.PROPERTY;
+  } catch (pe) {
+    return {
+      error: "Resolved property could not be inspected",
+      prop: null,
+      identity: identity,
+      matchNames: matchNames,
+      indexPath: indexPath,
+    };
+  }
+  if (!isLeaf) {
+    return {
+      error: "Resolved path is not a property leaf (PropertyType.PROPERTY)",
+      prop: null,
+      identity: identity,
+      matchNames: matchNames,
+      indexPath: indexPath,
+    };
+  }
+  return {
+    error: null,
+    prop: cur,
+    identity: identity,
+    matchNames: matchNames,
+    indexPath: indexPath,
+  };
+}
+
+function pkfReadKeyEntry(prop, index, info) {
+  var entry = null;
+  try {
+    entry = {
+      time: Number(prop.keyTime(index)),
+      value: pkfNormalizeNumericValue(prop.keyValue(index)),
+    };
+  } catch (e) {
+    return null;
+  }
+  if (!entry || entry.value === null) return null;
+  try {
+    entry.inInterpolationType = pkfInterpName(prop.keyInInterpolationType(index));
+  } catch (e2) {}
+  try {
+    entry.outInterpolationType = pkfInterpName(prop.keyOutInterpolationType(index));
+  } catch (e3) {}
+  try {
+    entry.inEase = pkfSerializeEase(prop.keyInTemporalEase(index));
+  } catch (e4) {}
+  try {
+    entry.outEase = pkfSerializeEase(prop.keyOutTemporalEase(index));
+  } catch (e5) {}
+  try {
+    entry.temporalContinuous = !!prop.keyTemporalContinuous(index);
+  } catch (e6) {}
+  try {
+    entry.temporalAutoBezier = !!prop.keyTemporalAutoBezier(index);
+  } catch (e7) {}
+  if (info.spatial) {
+    try {
+      entry.inSpatialTangent = pkfNormalizeNumericValue(prop.keyInSpatialTangent(index));
+    } catch (e8) {}
+    try {
+      entry.outSpatialTangent = pkfNormalizeNumericValue(prop.keyOutSpatialTangent(index));
+    } catch (e9) {}
+    try {
+      entry.spatialContinuous = !!prop.keySpatialContinuous(index);
+    } catch (e10) {}
+    try {
+      entry.spatialAutoBezier = !!prop.keySpatialAutoBezier(index);
+    } catch (e11) {}
+    try {
+      entry.roving = !!prop.keyRoving(index);
+    } catch (e12) {}
+  }
+  return entry;
+}
+
+function pkfReadTimelineSnapshot(prop, info) {
+  var numKeys = 0;
+  try {
+    numKeys = prop.numKeys;
+  } catch (e) {
+    return null;
+  }
+  var entries = [];
+  for (var k = 1; k <= numKeys; k++) {
+    var entry = pkfReadKeyEntry(prop, k, info);
+    if (!entry) return null;
+    entries.push(entry);
+  }
+  return { numKeys: numKeys, keyframes: entries };
+}
+
+// Authored-animation equality for stale detection and sibling preservation.
+// Compares key times, values, interpolation types, and ease only on Bezier sides.
+// AE-derived metadata (auto ease on linear keys, spatial tangents/continuity/roving
+// flags) is excluded: AE may recompute it during evaluation, and it is not something
+// the caller authored. Full metadata still appears in before/after evidence.
+function pkfKeyEntriesEqual(ka, kb) {
+  if (Math.abs(ka.time - kb.time) > PKF_TIME_EPSILON) return false;
+  if (!pkfValuesEqual(ka.value, kb.value, PKF_VALUE_EPSILON)) return false;
+  if (ka.inInterpolationType !== kb.inInterpolationType) return false;
+  if (ka.outInterpolationType !== kb.outInterpolationType) return false;
+  if (ka.inInterpolationType === "BEZIER" && !pkfEaseArraysEqual(ka.inEase, kb.inEase)) {
+    return false;
+  }
+  if (ka.outInterpolationType === "BEZIER" && !pkfEaseArraysEqual(ka.outEase, kb.outEase)) {
+    return false;
+  }
+  return true;
+}
+
+function pkfSnapshotsEqual(a, b) {
+  if (!a || !b) return false;
+  if (a.numKeys !== b.numKeys) return false;
+  for (var i = 0; i < a.numKeys; i++) {
+    if (!pkfKeyEntriesEqual(a.keyframes[i], b.keyframes[i])) return false;
+  }
+  return true;
+}
+
+// Desired-state comparison: deterministic timeline including normalization flags
+// (temporal continuous/auto-Bezier off; spatial keys normalized to straight paths).
+function pkfTimelineMatchesDesired(snapshot, desiredEntries, info) {
+  if (!snapshot) return false;
+  if (snapshot.numKeys !== desiredEntries.length) return false;
+  for (var i = 0; i < desiredEntries.length; i++) {
+    var want = desiredEntries[i];
+    var got = snapshot.keyframes[i];
+    if (Math.abs(got.time - want.time) > PKF_TIME_EPSILON) return false;
+    if (!pkfValuePrefixMatches(got.value, want.value, PKF_VALUE_EPSILON)) return false;
+    if (got.inInterpolationType !== want.inType) return false;
+    if (got.outInterpolationType !== want.outType) return false;
+    if (want.inType === "BEZIER" && (!got.inEase || !pkfEaseArraysEqual(got.inEase, want.inEase))) {
+      return false;
+    }
+    if (
+      want.outType === "BEZIER" &&
+      (!got.outEase || !pkfEaseArraysEqual(got.outEase, want.outEase))
+    ) {
+      return false;
+    }
+    if (got.temporalContinuous !== false) return false;
+    if (got.temporalAutoBezier !== false) return false;
+    if (info.spatial) {
+      if (!pkfTangentsNormalized(got.inSpatialTangent)) return false;
+      if (!pkfTangentsNormalized(got.outSpatialTangent)) return false;
+      if (got.spatialContinuous !== false) return false;
+      if (got.spatialAutoBezier !== false) return false;
+      if (got.roving !== false) return false;
+    }
+  }
+  return true;
+}
+
+function pkfReadExpressionState(prop) {
+  var state = { expression: "", expressionEnabled: false };
+  try {
+    state.expression = String(prop.expression || "");
+  } catch (e) {}
+  try {
+    state.expressionEnabled = !!prop.expressionEnabled;
+  } catch (e2) {}
+  return state;
+}
+
+function pkfExpressionStatesEqual(a, b) {
+  return a.expression === b.expression && a.expressionEnabled === b.expressionEnabled;
+}
+
+function pkfInterpolationSupported(prop, name) {
+  try {
+    return !!prop.isInterpolationTypeValid(pkfInterpEnum(name));
+  } catch (e) {
+    return false;
+  }
+}
+
+function pkfWalkPreservation(group, indexPath, matchPath, targetIndexPath, state) {
+  var count = 0;
+  try {
+    count = group.numProperties;
+  } catch (e) {
+    return;
+  }
+  for (var i = 1; i <= count; i++) {
+    if (state.error) return;
+    state.nodes++;
+    if (state.nodes > PKF_MAX_PRESERVATION_NODES) {
+      state.error =
+        "Preservation walk exceeded " +
+        PKF_MAX_PRESERVATION_NODES +
+        " property nodes on the target layer";
+      return;
+    }
+    var child = null;
+    try {
+      child = group.property(i);
+    } catch (ce) {
+      continue;
+    }
+    if (!child) continue;
+    var childIndex = indexPath.concat([i]);
+    var childMatch = "";
+    try {
+      childMatch = String(child.matchName || "");
+    } catch (me) {}
+    var childMatchPath = matchPath.concat([childMatch]);
+    var isGroup = false;
+    try {
+      isGroup = child.propertyType !== PropertyType.PROPERTY;
+    } catch (pe) {
+      continue;
+    }
+    if (isGroup) {
+      pkfWalkPreservation(child, childIndex, childMatchPath, targetIndexPath, state);
+      continue;
+    }
+    var numKeys = 0;
+    try {
+      numKeys = child.numKeys;
+    } catch (ke) {
+      continue;
+    }
+    if (!numKeys) continue;
+    if (pkfIndexPathsEqual(childIndex, targetIndexPath)) continue;
+    var info = pkfValueTypeInfo(child);
+    if (!info) {
+      var t = null;
+      try {
+        t = child.propertyValueType;
+      } catch (te) {}
+      state.error =
+        "Cannot faithfully compare keyed sibling property (unsupported value type " +
+        pkfValueTypeName(t) +
+        "): " +
+        childMatchPath.join("/");
+      return;
+    }
+    state.checkedKeys += numKeys;
+    if (state.checkedKeys > PKF_MAX_PRESERVATION_KEYS) {
+      state.error =
+        "Preservation walk exceeded " +
+        PKF_MAX_PRESERVATION_KEYS +
+        " sibling keys on the target layer";
+      return;
+    }
+    var keys = [];
+    for (var k = 1; k <= numKeys; k++) {
+      var entry = pkfReadKeyEntry(child, k, info);
+      if (!entry) {
+        state.error = "Could not read sibling keyframes for: " + childMatchPath.join("/");
+        return;
+      }
+      keys.push(entry);
+    }
+    state.entries.push({
+      key: childIndex.join("."),
+      matchNames: childMatchPath,
+      numKeys: numKeys,
+      keys: keys,
+    });
+    state.checkedProperties++;
+  }
+}
+
+function pkfIndexPathsEqual(a, b) {
+  if (a.length !== b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+// Snapshot keyed siblings of the target leaf (position-based index paths are
+// unique even under duplicate effect instances). Opaque keyed siblings fail
+// closed; budgets bound the walk before any evidence is built.
+function pkfCapturePreservation(layer, targetIndexPath) {
+  var state = {
+    error: null,
+    entries: [],
+    checkedProperties: 0,
+    checkedKeys: 0,
+    nodes: 0,
+  };
+  pkfWalkPreservation(layer, [], [], targetIndexPath, state);
+  return state;
+}
+
+function pkfPreservationsEqual(baseline, after) {
+  var drift = [];
+  var truncated = false;
+  function pushDrift(matchNames, beforeTime, afterTime) {
+    if (drift.length >= PKF_DRIFT_CAP) {
+      truncated = true;
+      return;
+    }
+    drift.push({
+      matchNames: matchNames,
+      beforeTime: beforeTime,
+      afterTime: afterTime,
+    });
+  }
+  var afterByKey = {};
+  var baselineByKey = {};
+  var ai;
+  var bi;
+  for (ai = 0; ai < after.entries.length; ai++) {
+    afterByKey[after.entries[ai].key] = after.entries[ai];
+  }
+  for (bi = 0; bi < baseline.entries.length; bi++) {
+    baselineByKey[baseline.entries[bi].key] = baseline.entries[bi];
+  }
+  for (bi = 0; bi < baseline.entries.length; bi++) {
+    var entry = baseline.entries[bi];
+    var afterEntry = afterByKey[entry.key];
+    if (!afterEntry) {
+      pushDrift(entry.matchNames, entry.keys.length ? entry.keys[0].time : null, null);
+      continue;
+    }
+    if (entry.numKeys !== afterEntry.numKeys) {
+      pushDrift(
+        entry.matchNames,
+        entry.keys.length ? entry.keys[0].time : null,
+        afterEntry.keys.length ? afterEntry.keys[0].time : null,
+      );
+      continue;
+    }
+    for (var k = 0; k < entry.keys.length; k++) {
+      if (!pkfKeyEntriesEqual(entry.keys[k], afterEntry.keys[k])) {
+        pushDrift(
+          entry.matchNames,
+          entry.keys[k].time,
+          afterEntry.keys[k] ? afterEntry.keys[k].time : null,
+        );
+        break;
+      }
+    }
+  }
+  for (ai = 0; ai < after.entries.length; ai++) {
+    var extra = after.entries[ai];
+    if (!baselineByKey[extra.key]) {
+      pushDrift(extra.matchNames, null, extra.keys.length ? extra.keys[0].time : null);
+    }
+  }
+  return { unchanged: drift.length === 0, drift: drift, truncated: truncated };
+}
+
+// Full no-write preflight: runs at resolve time, before the batch undo group,
+// so an invalid keyframe op never lets earlier batch ops mutate first.
+export function preflightSetPropertyKeyframes(op, comp, layer) {
+  var segments = null;
+  if (op.matchNames && op.matchNames.length > 0) {
+    segments = op.matchNames;
+  } else if (op.propertyPath) {
+    segments = parsePropertyPathSegments(op.propertyPath);
+  } else {
+    return { error: "Provide exactly one of matchNames or propertyPath" };
+  }
+  if (segments.length > PKF_MAX_PATH_SEGMENTS) {
+    return {
+      error: "Property path exceeds " + PKF_MAX_PATH_SEGMENTS + " segments",
+    };
+  }
+  var resolved = pkfResolveSegments(layer, segments);
+  if (resolved.error) return { error: resolved.error };
+  var prop = resolved.prop;
+  var leafMatchName = resolved.matchNames[resolved.matchNames.length - 1];
+  if (leafMatchName === "ADBE Time Remap") {
+    return {
+      error: "Time Remap is not supported by set_property_keyframes (structural side effects)",
+    };
+  }
+  try {
+    if (prop.isSeparationFollower) {
+      return {
+        error: "Separation follower properties are not supported: " + leafMatchName,
+      };
+    }
+  } catch (se) {}
+  try {
+    if (prop.isSeparationLeader && prop.dimensionsSeparated) {
+      return {
+        error: "Property has separated dimensions; consolidate them first: " + leafMatchName,
+      };
+    }
+  } catch (se2) {}
+  var canVary = false;
+  try {
+    canVary = !!prop.canVaryOverTime;
+  } catch (ce) {}
+  if (!canVary) {
+    return {
+      error: "Property cannot vary over time (not keyframeable): " + leafMatchName,
+    };
+  }
+  var info = pkfValueTypeInfo(prop);
+  if (!info) {
+    var vt = null;
+    try {
+      vt = prop.propertyValueType;
+    } catch (ve) {}
+    return {
+      error: "Unsupported property value type (" + pkfValueTypeName(vt) + "): " + leafMatchName,
+    };
+  }
+  var expressionState = pkfReadExpressionState(prop);
+  var wantClear = op.expressionHandling === "clear";
+  if (!wantClear && expressionState.expressionEnabled && expressionState.expression.length > 0) {
+    return {
+      error:
+        'Target property has an enabled expression; pass expressionHandling "clear" or clear it via set_property_expression: ' +
+        leafMatchName,
+    };
+  }
+  var snapshot = pkfReadTimelineSnapshot(prop, info);
+  if (!snapshot) return { error: "Could not read current keyframes for: " + leafMatchName };
+  if (snapshot.numKeys > PKF_MAX_KEYS) {
+    return {
+      error: "Observed timeline exceeds " + PKF_MAX_KEYS + " keys: " + leafMatchName,
+    };
+  }
+  // Expected-state guards run before idempotence so a stale guard refuses even
+  // when the desired state is already present.
+  var expected = op.expected;
+  if (expected) {
+    if (expected.numKeys !== undefined && expected.numKeys !== snapshot.numKeys) {
+      return {
+        error:
+          "Expected-state guard failed: " +
+          leafMatchName +
+          " has " +
+          snapshot.numKeys +
+          " keys, expected " +
+          expected.numKeys,
+      };
+    }
+    if (expected.keyframes) {
+      if (expected.keyframes.length !== snapshot.numKeys) {
+        return {
+          error:
+            "Expected-state guard failed: " +
+            leafMatchName +
+            " has " +
+            snapshot.numKeys +
+            " keys, expected timeline has " +
+            expected.keyframes.length,
+        };
+      }
+      for (var ei = 0; ei < expected.keyframes.length; ei++) {
+        var want = expected.keyframes[ei];
+        var got = snapshot.keyframes[ei];
+        if (Math.abs(got.time - want.time) > PKF_TIME_EPSILON) {
+          return {
+            error:
+              "Expected-state guard failed: key " +
+              (ei + 1) +
+              " time is " +
+              got.time +
+              ", expected " +
+              want.time,
+          };
+        }
+        if (!pkfValuePrefixMatches(got.value, want.value, PKF_VALUE_EPSILON)) {
+          return {
+            error:
+              "Expected-state guard failed: key " + (ei + 1) + " value does not match expectation",
+          };
+        }
+        if (
+          want.inInterpolationType !== undefined &&
+          got.inInterpolationType !== want.inInterpolationType
+        ) {
+          return {
+            error:
+              "Expected-state guard failed: key " +
+              (ei + 1) +
+              " inInterpolationType is " +
+              got.inInterpolationType +
+              ", expected " +
+              want.inInterpolationType,
+          };
+        }
+        if (
+          want.outInterpolationType !== undefined &&
+          got.outInterpolationType !== want.outInterpolationType
+        ) {
+          return {
+            error:
+              "Expected-state guard failed: key " +
+              (ei + 1) +
+              " outInterpolationType is " +
+              got.outInterpolationType +
+              ", expected " +
+              want.outInterpolationType,
+          };
+        }
+        if (want.inEase !== undefined && !pkfEaseArraysEqual(got.inEase, want.inEase)) {
+          return {
+            error:
+              "Expected-state guard failed: key " + (ei + 1) + " inEase does not match expectation",
+          };
+        }
+        if (want.outEase !== undefined && !pkfEaseArraysEqual(got.outEase, want.outEase)) {
+          return {
+            error:
+              "Expected-state guard failed: key " +
+              (ei + 1) +
+              " outEase does not match expectation",
+          };
+        }
+      }
+    }
+  }
+  // Desired state validation.
+  var mode = "timeline";
+  if (op.keyframes === undefined || op.keyframes === null) mode = "static";
+  var desiredEntries = [];
+  var sampleTime = null;
+  var sample = null;
+  var i;
+  if (mode === "timeline") {
+    if (op.keyframes.length > PKF_MAX_KEYS) {
+      return { error: "Desired timeline exceeds " + PKF_MAX_KEYS + " keys" };
+    }
+    var prevTime = null;
+    for (i = 0; i < op.keyframes.length; i++) {
+      var d = op.keyframes[i];
+      if (prevTime !== null && !(d.time > prevTime + PKF_TIME_EPSILON)) {
+        return {
+          error: "Desired key times must be strictly increasing at index " + i,
+        };
+      }
+      prevTime = d.time;
+      if (!pkfValueShapeOk(d.value, info)) {
+        return {
+          error:
+            "Unsupported value shape at key time " +
+            d.time +
+            " for " +
+            info.typeName +
+            " (expected " +
+            (info.dim === 1
+              ? "a number"
+              : info.typeName === "COLOR"
+                ? "4 components"
+                : "2 or 3 components") +
+            ")",
+        };
+      }
+      var inType = d.inInterpolationType || "LINEAR";
+      var outType = d.outInterpolationType || "LINEAR";
+      if (!pkfInterpolationSupported(prop, inType)) {
+        return {
+          error: leafMatchName + " does not support " + inType + " interpolation",
+        };
+      }
+      if (!pkfInterpolationSupported(prop, outType)) {
+        return {
+          error: leafMatchName + " does not support " + outType + " interpolation",
+        };
+      }
+      var inEase = null;
+      var outEase = null;
+      // AE forces BOTH sides to BEZIER when ease is applied; mirror the schema guard.
+      if (
+        (d.inEase !== undefined || d.outEase !== undefined) &&
+        (inType !== "BEZIER" || outType !== "BEZIER")
+      ) {
+        return {
+          error:
+            "Temporal ease requires BEZIER interpolation on both sides (AE forces this): " +
+            leafMatchName,
+        };
+      }
+      if (inType === "BEZIER") {
+        if (!d.inEase || d.inEase.length !== info.easeDim) {
+          return {
+            error: "inEase must contain " + info.easeDim + " ease point(s) for this property type",
+          };
+        }
+        inEase = d.inEase;
+      }
+      if (outType === "BEZIER") {
+        if (!d.outEase || d.outEase.length !== info.easeDim) {
+          return {
+            error: "outEase must contain " + info.easeDim + " ease point(s) for this property type",
+          };
+        }
+        outEase = d.outEase;
+      }
+      desiredEntries.push({
+        time: d.time,
+        value: d.value,
+        inType: inType,
+        outType: outType,
+        inEase: inEase,
+        outEase: outEase,
+      });
+    }
+  } else {
+    sampleTime = op.staticValueAtTime;
+    try {
+      sample = pkfNormalizeNumericValue(prop.valueAtTime(sampleTime, true));
+    } catch (serr) {}
+    if (sample === null || sample === undefined) {
+      return {
+        error:
+          "Could not sample the authored value at time " + sampleTime + " for: " + leafMatchName,
+      };
+    }
+  }
+  var expressionNeedsClear =
+    wantClear && (expressionState.expression.length > 0 || expressionState.expressionEnabled);
+  var alreadySatisfied = false;
+  if (mode === "static") {
+    alreadySatisfied = snapshot.numKeys === 0 && !expressionNeedsClear;
+  } else {
+    alreadySatisfied =
+      pkfTimelineMatchesDesired(snapshot, desiredEntries, info) && !expressionNeedsClear;
+  }
+  // Preservation walkability: refuse before mutation when sibling keyframes
+  // cannot be faithfully compared or budgets are exceeded.
+  var pres = pkfCapturePreservation(layer, resolved.indexPath);
+  if (pres.error) return { error: pres.error };
+  return {
+    error: null,
+    prop: prop,
+    identity: resolved.identity,
+    matchNames: resolved.matchNames,
+    requestedSegments: segments,
+    indexPath: resolved.indexPath,
+    info: info,
+    before: {
+      numKeys: snapshot.numKeys,
+      keyframes: snapshot.keyframes,
+      expression: expressionState,
+    },
+    mode: mode,
+    desiredEntries: desiredEntries,
+    sampleTime: sampleTime,
+    sample: sample,
+    wantClear: wantClear,
+    alreadySatisfied: alreadySatisfied,
+  };
+}
+
+export function applySetPropertyKeyframes(plan, opResult) {
+  var t = plan.targets[0];
+  var op = plan.op;
+  var kf = plan.kf;
+  var targetResult = {
+    compId: t.comp.id,
+    layerId: t.layer.id,
+    compName: t.comp.name,
+    layerName: t.layer.name,
+    status: "failed",
+    selector: {},
+  };
+  if (op.matchNames && op.matchNames.length > 0) targetResult.selector.matchNames = op.matchNames;
+  if (op.propertyPath) targetResult.selector.propertyPath = op.propertyPath;
+  targetResult.resolvedMatchNames = kf.matchNames;
+  targetResult.resolvedPath = kf.identity;
+  targetResult.propertyValueType = kf.info.typeName;
+  targetResult.mode = kf.mode;
+  if (kf.mode === "static") targetResult.sampleTime = kf.sampleTime;
+  targetResult.before = kf.before;
+
+  function readAfterEvidence(prop) {
+    var snap = null;
+    try {
+      snap = pkfReadTimelineSnapshot(prop, kf.info);
+    } catch (e) {}
+    var expr = null;
+    try {
+      expr = pkfReadExpressionState(prop);
+    } catch (e2) {}
+    if (!snap) {
+      return { expression: expr };
+    }
+    var evidence = {
+      numKeys: snap.numKeys,
+      keyframes: snap.keyframes,
+      expression: expr,
+    };
+    if (kf.mode === "static") {
+      var sv = null;
+      try {
+        sv = pkfNormalizeNumericValue(prop.value);
+      } catch (e3) {}
+      if (sv !== null) evidence.staticValue = sv;
+    }
+    return evidence;
+  }
+
+  function fail(message, mutated) {
+    targetResult.status = "failed";
+    targetResult.message = message;
+    opResult.targets.push(targetResult);
+    return { anyChanged: mutated, anyFailed: true, applyError: message };
+  }
+
+  // Revalidate the plan: another batch op may have touched this property. Walk the
+  // caller's original segments (a resolved matchNames path can be ambiguous when
+  // two effect instances share a matchName).
+  var reResolved = pkfResolveSegments(t.layer, kf.requestedSegments);
+  if (reResolved.error) {
+    return fail("Planned property changed before apply: " + reResolved.error, false);
+  }
+  var prop = reResolved.prop;
+  var exprNow = pkfReadExpressionState(prop);
+  if (!kf.wantClear && exprNow.expressionEnabled && exprNow.expression.length > 0) {
+    return fail("Target property gained an enabled expression after preflight", false);
+  }
+  var snapshotNow = pkfReadTimelineSnapshot(prop, kf.info);
+  if (!snapshotNow) {
+    return fail("Could not re-read the planned property before apply", false);
+  }
+  if (!pkfSnapshotsEqual(snapshotNow, kf.before)) {
+    return fail(
+      "Planned property changed before apply (stale plan); re-inspect and retry in a separate call",
+      false,
+    );
+  }
+  if (!pkfExpressionStatesEqual(exprNow, kf.before.expression)) {
+    return fail(
+      "Planned property changed before apply: expression state differs from preflight",
+      false,
+    );
+  }
+  if (kf.mode === "static") {
+    var sampleNow = null;
+    try {
+      sampleNow = pkfNormalizeNumericValue(prop.valueAtTime(kf.sampleTime, true));
+    } catch (se) {}
+    if (sampleNow === null || !pkfValuesEqual(sampleNow, kf.sample, PKF_VALUE_EPSILON)) {
+      return fail("Planned static sample changed before apply (stale plan)", false);
+    }
+  }
+  if (kf.alreadySatisfied) {
+    var baselineNoop = pkfCapturePreservation(t.layer, kf.indexPath);
+    if (baselineNoop.error) {
+      return fail(baselineNoop.error, false);
+    }
+    targetResult.status = "already_satisfied";
+    targetResult.after = {
+      numKeys: snapshotNow.numKeys,
+      keyframes: snapshotNow.keyframes,
+      expression: exprNow,
+    };
+    if (kf.mode === "static") targetResult.after.staticValue = kf.sample;
+    targetResult.preservation = {
+      scope: "other_keyframes_on_target_layer",
+      checkedProperties: baselineNoop.checkedProperties,
+      checkedKeys: baselineNoop.checkedKeys,
+      unchanged: true,
+    };
+    opResult.targets.push(targetResult);
+    return { anyChanged: false, anyFailed: false, applyError: null };
+  }
+  // Fresh preservation baseline immediately before this op's writes, so
+  // legitimate edits by preceding batch ops are not counted as this op's damage.
+  var baseline = pkfCapturePreservation(t.layer, kf.indexPath);
+  if (baseline.error) {
+    return fail(baseline.error, false);
+  }
+  var mutated = false;
+  var writeError = null;
+  try {
+    if (kf.wantClear && (exprNow.expression.length > 0 || exprNow.expressionEnabled)) {
+      prop.expression = "";
+      prop.expressionEnabled = false;
+      mutated = true;
+    }
+    if (kf.mode === "static") {
+      var hadKeys = false;
+      try {
+        hadKeys = prop.numKeys > 0;
+      } catch (hk) {}
+      while (prop.numKeys > 0) {
+        prop.removeKey(1);
+        mutated = true;
+      }
+      if (hadKeys) {
+        prop.setValue(kf.sample);
+        mutated = true;
+      }
+    } else {
+      while (prop.numKeys > 0) {
+        prop.removeKey(1);
+        mutated = true;
+      }
+      for (var wi = 0; wi < kf.desiredEntries.length; wi++) {
+        var d = kf.desiredEntries[wi];
+        var idx = prop.addKey(d.time);
+        mutated = true;
+        prop.setValueAtKey(idx, d.value);
+        prop.setInterpolationTypeAtKey(idx, pkfInterpEnum(d.inType), pkfInterpEnum(d.outType));
+        if (d.inType === "BEZIER" || d.outType === "BEZIER") {
+          if (d.inEase && d.outEase) {
+            prop.setTemporalEaseAtKey(idx, pkfEaseObjects(d.inEase), pkfEaseObjects(d.outEase));
+          } else if (d.inEase) {
+            prop.setTemporalEaseAtKey(idx, pkfEaseObjects(d.inEase));
+          } else {
+            prop.setTemporalEaseAtKey(idx, pkfEaseObjects(d.outEase));
+          }
+        }
+        // Deterministic normalization flags; readback verification decides success.
+        try {
+          prop.setTemporalContinuousAtKey(idx, false);
+        } catch (tc) {}
+        try {
+          prop.setTemporalAutoBezierAtKey(idx, false);
+        } catch (ta) {}
+        if (kf.info.spatial) {
+          var zeroTangent = [0, 0, 0];
+          try {
+            prop.setSpatialTangentsAtKey(idx, zeroTangent, zeroTangent);
+          } catch (st) {}
+          try {
+            prop.setSpatialContinuousAtKey(idx, false);
+          } catch (sc) {}
+          try {
+            prop.setSpatialAutoBezierAtKey(idx, false);
+          } catch (sa) {}
+          try {
+            prop.setRovingAtKey(idx, false);
+          } catch (ro) {}
+        }
+      }
+    }
+  } catch (writeErr) {
+    writeError = String(writeErr);
+  }
+  if (writeError !== null) {
+    targetResult.message = writeError;
+    targetResult.after = readAfterEvidence(prop);
+    targetResult.status = "failed";
+    opResult.targets.push(targetResult);
+    return { anyChanged: mutated, anyFailed: true, applyError: writeError };
+  }
+  var exprAfter = pkfReadExpressionState(prop);
+  if (kf.wantClear && (exprAfter.expression.length > 0 || exprAfter.expressionEnabled)) {
+    targetResult.message = "Post-condition failed: expression was not cleared";
+    targetResult.after = readAfterEvidence(prop);
+    targetResult.status = "failed";
+    opResult.targets.push(targetResult);
+    return {
+      anyChanged: mutated,
+      anyFailed: true,
+      applyError: targetResult.message,
+    };
+  }
+  if (!kf.wantClear && !pkfExpressionStatesEqual(exprAfter, exprNow)) {
+    targetResult.message = "Post-condition failed: expression state changed unexpectedly";
+    targetResult.after = readAfterEvidence(prop);
+    targetResult.status = "failed";
+    opResult.targets.push(targetResult);
+    return {
+      anyChanged: mutated,
+      anyFailed: true,
+      applyError: targetResult.message,
+    };
+  }
+  var afterSnapshot = pkfReadTimelineSnapshot(prop, kf.info);
+  if (!afterSnapshot) {
+    targetResult.message = "Post-condition failed: could not re-read the target property";
+    targetResult.status = "failed";
+    opResult.targets.push(targetResult);
+    return {
+      anyChanged: mutated,
+      anyFailed: true,
+      applyError: targetResult.message,
+    };
+  }
+  var postOk = false;
+  if (kf.mode === "static") {
+    postOk = afterSnapshot.numKeys === 0;
+    var afterStatic = null;
+    try {
+      afterStatic = pkfNormalizeNumericValue(prop.value);
+    } catch (ave) {}
+    if (afterStatic !== null) {
+      postOk = postOk && pkfValuesEqual(afterStatic, kf.sample, PKF_VALUE_EPSILON);
+    } else {
+      postOk = false;
+    }
+  } else {
+    postOk = pkfTimelineMatchesDesired(afterSnapshot, kf.desiredEntries, kf.info);
+  }
+  if (!postOk) {
+    targetResult.message =
+      "Post-condition failed: " +
+      (kf.mode === "static"
+        ? "keys were not removed or the static value does not match the sample"
+        : "written keyframes do not match the requested timeline");
+    targetResult.after = readAfterEvidence(prop);
+    targetResult.status = "failed";
+    opResult.targets.push(targetResult);
+    return {
+      anyChanged: mutated,
+      anyFailed: true,
+      applyError: targetResult.message,
+    };
+  }
+  var afterPres = pkfCapturePreservation(t.layer, kf.indexPath);
+  if (afterPres.error) {
+    targetResult.message = "Post-condition failed: " + afterPres.error;
+    targetResult.after = readAfterEvidence(prop);
+    targetResult.status = "failed";
+    opResult.targets.push(targetResult);
+    return {
+      anyChanged: mutated,
+      anyFailed: true,
+      applyError: targetResult.message,
+    };
+  }
+  var presDiff = pkfPreservationsEqual(baseline, afterPres);
+  if (!presDiff.unchanged) {
+    targetResult.message = "Post-condition failed: unrelated keyframes on the target layer changed";
+    targetResult.after = readAfterEvidence(prop);
+    targetResult.preservation = {
+      scope: "other_keyframes_on_target_layer",
+      checkedProperties: baseline.checkedProperties,
+      checkedKeys: baseline.checkedKeys,
+      unchanged: false,
+      drift: presDiff.drift,
+    };
+    if (presDiff.truncated) targetResult.preservation.driftTruncated = true;
+    targetResult.status = "failed";
+    opResult.targets.push(targetResult);
+    return {
+      anyChanged: mutated,
+      anyFailed: true,
+      applyError: targetResult.message,
+    };
+  }
+  targetResult.status = "changed";
+  targetResult.after = {
+    numKeys: afterSnapshot.numKeys,
+    keyframes: afterSnapshot.keyframes,
+    expression: exprAfter,
+  };
+  if (kf.mode === "static") targetResult.after.staticValue = kf.sample;
+  targetResult.preservation = {
+    scope: "other_keyframes_on_target_layer",
+    checkedProperties: afterPres.checkedProperties,
+    checkedKeys: afterPres.checkedKeys,
+    unchanged: true,
+  };
+  opResult.targets.push(targetResult);
+  return { anyChanged: true, anyFailed: false, applyError: null };
+}
+
 export function applyResetLayerSurface(plan, opResult) {
   var t = plan.targets[0];
   var op = plan.op;

@@ -33,6 +33,7 @@ import type {
   SetLayerTimingTargetResult,
   SetLayerTransformTargetResult,
   SetPropertyExpressionTargetResult,
+  SetPropertyKeyframesTargetResult,
   TextStyleTargetResult,
 } from "../src/patch/types.js";
 
@@ -113,6 +114,28 @@ async function mainTextLayer(
   const textLayer = main!.layers.find((l) => l.type === "text");
   expect(textLayer).toBeTruthy();
   return { main: main!, textLayer: textLayer! };
+}
+
+/** hello-world fixture: composition `main` and its solid-sourced "Background" layer. */
+async function mainSolidLayer(
+  host: AeHost,
+): Promise<{ main: InventoryComposition; background: InventoryLayer }> {
+  const inventory = await listComps(host, {}, config.scriptTimeoutMs);
+  const main = inventory.compositions.find((c) => c.name === "main");
+  expect(main).toBeTruthy();
+  const background = main!.layers.find((l) => l.name === "Background");
+  expect(background).toBeTruthy();
+  return { main: main!, background: background! };
+}
+
+/** Human-readable failure detail for patch assertions (surfaces verified evidence). */
+function patchDetail(result: {
+  ok: boolean;
+  error?: string;
+  results?: Array<{ targets?: unknown[] }>;
+}): string {
+  const target = result.results?.[0]?.targets?.[0];
+  return JSON.stringify(target ?? { error: result.error });
 }
 
 type SetTextStyleBag = Extract<
@@ -2419,5 +2442,700 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
       await closeDiscard(host);
       rmSync(otherDir, { recursive: true, force: true });
     }
+  });
+
+  it("set_property_keyframes replaces a timeline with curves, is idempotent, and preserves sibling keys", async (ctx) => {
+    if (!aeReady) {
+      ctx.skip();
+      return;
+    }
+    await openWorkCopy(host, true);
+    const { main, background } = await mainSolidLayer(host);
+
+    const seeded = await host.evalScript(
+      `
+      var comp = null;
+      for (var i = 1; i <= app.project.numItems; i++) {
+        var item = app.project.item(i);
+        if (item instanceof CompItem && item.id === ${main.id}) { comp = item; break; }
+      }
+      if (!comp) throw new Error("main missing");
+      var layer = null;
+      for (var j = 1; j <= comp.numLayers; j++) {
+        if (comp.layer(j).id === ${background.id}) { layer = comp.layer(j); break; }
+      }
+      if (!layer) throw new Error("solid layer missing");
+      var xf = layer.property("ADBE Transform Group");
+      var op = xf.property("ADBE Opacity");
+      op.setValueAtTime(0, 10);
+      op.setValueAtTime(1, 90);
+      var sc = xf.property("ADBE Scale");
+      sc.setValueAtTime(0.5, [80, 80]);
+      return JSON.stringify({ opacityKeys: op.numKeys, scaleKeys: sc.numKeys });
+      `,
+      config.scriptTimeoutMs,
+    );
+    expect(seeded.ok).toBe(true);
+    if (!seeded.ok) return;
+    const seededState = JSON.parse(seeded.result) as {
+      opacityKeys: number;
+      scaleKeys: number;
+    };
+    expect(seededState).toMatchObject({ opacityKeys: 2, scaleKeys: 1 });
+
+    const before = await listProjectContext(host, config.scriptTimeoutMs);
+    const op = {
+      op: "set_property_keyframes" as const,
+      target: { compId: main.id, layerId: background.id },
+      matchNames: ["ADBE Transform Group", "ADBE Opacity"],
+      keyframes: [
+        { time: 0, value: 0 },
+        {
+          time: 1,
+          value: 50,
+          inInterpolationType: "BEZIER" as const,
+          outInterpolationType: "BEZIER" as const,
+          inEase: [{ speed: 0, influence: 33.333 }],
+          outEase: [{ speed: 0, influence: 33.333 }],
+        },
+        {
+          time: 2,
+          value: 100,
+          inInterpolationType: "LINEAR" as const,
+          outInterpolationType: "HOLD" as const,
+        },
+      ],
+      expected: { numKeys: 2 },
+    };
+    const patch = await applyProjectPatch(
+      host,
+      {
+        project: {
+          path: before.projectPath!,
+          fingerprint: before.fingerprint,
+        },
+        operations: [op],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(patch.ok, !patch.ok ? patch.error : undefined).toBe(true);
+    if (!patch.ok) return;
+    const target = patch.results[0]?.targets[0] as SetPropertyKeyframesTargetResult;
+    expect(target.status).toBe("changed");
+    expect(target.mode).toBe("timeline");
+    expect(target.propertyValueType).toBe("OneD");
+    expect(target.before?.numKeys).toBe(2);
+    expect(target.after?.keyframes).toHaveLength(3);
+    expect(target.after?.keyframes?.[1]).toMatchObject({
+      time: 1,
+      inInterpolationType: "BEZIER",
+      outInterpolationType: "BEZIER",
+    });
+    expect(target.after?.keyframes?.[1]?.inEase?.[0]?.influence).toBeCloseTo(33.333, 2);
+    expect(target.after?.keyframes?.[2]?.outInterpolationType).toBe("HOLD");
+    expect(target.after?.keyframes?.[2]?.inInterpolationType).toBe("LINEAR");
+    expect(target.preservation).toMatchObject({
+      scope: "other_keyframes_on_target_layer",
+      unchanged: true,
+    });
+    expect(target.preservation?.checkedProperties ?? 0).toBeGreaterThanOrEqual(1);
+    expect(target.preservation?.checkedKeys ?? 0).toBeGreaterThanOrEqual(1);
+
+    const again = await applyProjectPatch(
+      host,
+      {
+        project: {
+          path: before.projectPath!,
+          fingerprint: patch.fingerprint,
+        },
+        operations: [{ ...op, expected: { numKeys: 3 } }],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(again.ok).toBe(true);
+    if (!again.ok) return;
+    expect(again.results[0]?.targets[0]).toMatchObject({
+      status: "already_satisfied",
+    });
+
+    const stale = await applyProjectPatch(
+      host,
+      {
+        project: {
+          path: before.projectPath!,
+          fingerprint: again.fingerprint,
+        },
+        operations: [{ ...op, expected: { numKeys: 99 } }],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(stale.ok).toBe(false);
+    if (!stale.ok) {
+      expect(stale.code).toBe("validation");
+      expect(stale.error).toMatch(/Expected-state guard failed/);
+    }
+
+    const readback = await host.evalScript(
+      `
+      var comp = null;
+      for (var i = 1; i <= app.project.numItems; i++) {
+        var item = app.project.item(i);
+        if (item instanceof CompItem && item.id === ${main.id}) { comp = item; break; }
+      }
+      var layer = null;
+      for (var j = 1; j <= comp.numLayers; j++) {
+        if (comp.layer(j).id === ${background.id}) { layer = comp.layer(j); break; }
+      }
+      var xf = layer.property("ADBE Transform Group");
+      var sc = xf.property("ADBE Scale");
+      return JSON.stringify({ scaleKeys: sc.numKeys, scaleTime: sc.keyTime(1) });
+      `,
+      config.scriptTimeoutMs,
+    );
+    expect(readback.ok).toBe(true);
+    if (!readback.ok) return;
+    expect(JSON.parse(readback.result)).toMatchObject({ scaleKeys: 1 });
+  });
+
+  it("set_property_keyframes staticValueAtTime removes keys and restores the sampled authored value", async (ctx) => {
+    if (!aeReady) {
+      ctx.skip();
+      return;
+    }
+    await openWorkCopy(host, true);
+    const { main, background } = await mainSolidLayer(host);
+
+    const seeded = await host.evalScript(
+      `
+      var comp = null;
+      for (var i = 1; i <= app.project.numItems; i++) {
+        var item = app.project.item(i);
+        if (item instanceof CompItem && item.id === ${main.id}) { comp = item; break; }
+      }
+      if (!comp) throw new Error("main missing");
+      var layer = null;
+      for (var j = 1; j <= comp.numLayers; j++) {
+        if (comp.layer(j).id === ${background.id}) { layer = comp.layer(j); break; }
+      }
+      var sc = layer.property("ADBE Transform Group").property("ADBE Scale");
+      sc.setValueAtTime(0, [10, 10]);
+      sc.setValueAtTime(1, [90, 90]);
+      return JSON.stringify({ scaleKeys: sc.numKeys });
+      `,
+      config.scriptTimeoutMs,
+    );
+    expect(seeded.ok).toBe(true);
+
+    const before = await listProjectContext(host, config.scriptTimeoutMs);
+    const patch = await applyProjectPatch(
+      host,
+      {
+        project: {
+          path: before.projectPath!,
+          fingerprint: before.fingerprint,
+        },
+        operations: [
+          {
+            op: "set_property_keyframes",
+            target: { compId: main.id, layerId: background.id },
+            matchNames: ["ADBE Transform Group", "ADBE Scale"],
+            staticValueAtTime: 0,
+            expected: { numKeys: 2 },
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(patch.ok, !patch.ok ? patch.error : undefined).toBe(true);
+    if (!patch.ok) return;
+    const target = patch.results[0]?.targets[0] as SetPropertyKeyframesTargetResult;
+    expect(target.status).toBe("changed");
+    expect(target.mode).toBe("static");
+    expect(target.sampleTime).toBe(0);
+    expect(target.after?.numKeys).toBe(0);
+    const staticValue = target.after?.staticValue as number[] | number | undefined;
+    expect(Array.isArray(staticValue)).toBe(true);
+    if (Array.isArray(staticValue)) {
+      expect(staticValue[0]).toBeCloseTo(10, 2);
+      expect(staticValue[1]).toBeCloseTo(10, 2);
+    }
+
+    const readback = await host.evalScript(
+      `
+      var comp = null;
+      for (var i = 1; i <= app.project.numItems; i++) {
+        var item = app.project.item(i);
+        if (item instanceof CompItem && item.id === ${main.id}) { comp = item; break; }
+      }
+      var layer = null;
+      for (var j = 1; j <= comp.numLayers; j++) {
+        if (comp.layer(j).id === ${background.id}) { layer = comp.layer(j); break; }
+      }
+      var sc = layer.property("ADBE Transform Group").property("ADBE Scale");
+      return JSON.stringify({ scaleKeys: sc.numKeys, value: sc.value });
+      `,
+      config.scriptTimeoutMs,
+    );
+    expect(readback.ok).toBe(true);
+    if (!readback.ok) return;
+    const after = JSON.parse(readback.result) as {
+      scaleKeys: number;
+      value: number[];
+    };
+    expect(after.scaleKeys).toBe(0);
+    expect(after.value[0]).toBeCloseTo(10, 2);
+    expect(after.value[1]).toBeCloseTo(10, 2);
+  });
+
+  it("set_property_keyframes expression policy refuses enabled, clears on request, preserves disabled", async (ctx) => {
+    if (!aeReady) {
+      ctx.skip();
+      return;
+    }
+    await openWorkCopy(host, true);
+    const { main, background } = await mainSolidLayer(host);
+
+    let token = await listProjectContext(host, config.scriptTimeoutMs);
+    const installed = await applyProjectPatch(
+      host,
+      {
+        project: { path: token.projectPath!, fingerprint: token.fingerprint },
+        operations: [
+          {
+            op: "set_property_expression",
+            target: { compId: main.id, layerId: background.id },
+            matchNames: ["ADBE Transform Group", "ADBE Opacity"],
+            expression: "50",
+            expressionEnabled: true,
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(installed.ok, !installed.ok ? installed.error : undefined).toBe(true);
+    if (!installed.ok) return;
+    token = {
+      ...token,
+      fingerprint: installed.fingerprint,
+      revision: installed.revision,
+    };
+
+    const refused = await applyProjectPatch(
+      host,
+      {
+        project: { path: token.projectPath!, fingerprint: token.fingerprint },
+        operations: [
+          {
+            op: "set_property_keyframes",
+            target: { compId: main.id, layerId: background.id },
+            matchNames: ["ADBE Transform Group", "ADBE Opacity"],
+            keyframes: [{ time: 0, value: 25 }],
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(refused.ok).toBe(false);
+    if (!refused.ok) {
+      expect(refused.code).toBe("validation");
+      expect(refused.error).toMatch(/enabled expression/);
+    }
+
+    const cleared = await applyProjectPatch(
+      host,
+      {
+        project: { path: token.projectPath!, fingerprint: token.fingerprint },
+        operations: [
+          {
+            op: "set_property_keyframes",
+            target: { compId: main.id, layerId: background.id },
+            matchNames: ["ADBE Transform Group", "ADBE Opacity"],
+            keyframes: [{ time: 0, value: 25 }],
+            expressionHandling: "clear",
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(cleared.ok, !cleared.ok ? cleared.error : undefined).toBe(true);
+    if (!cleared.ok) return;
+    const clearedTarget = cleared.results[0]?.targets[0] as SetPropertyKeyframesTargetResult;
+    expect(clearedTarget.status).toBe("changed");
+    expect(clearedTarget.after?.expression).toMatchObject({
+      expression: "",
+      expressionEnabled: false,
+    });
+    token = {
+      ...token,
+      fingerprint: cleared.fingerprint,
+      revision: cleared.revision,
+    };
+
+    const disabledInstall = await applyProjectPatch(
+      host,
+      {
+        project: { path: token.projectPath!, fingerprint: token.fingerprint },
+        operations: [
+          {
+            op: "set_property_expression",
+            target: { compId: main.id, layerId: background.id },
+            matchNames: ["ADBE Transform Group", "ADBE Scale"],
+            expression: "[100,100]",
+            expressionEnabled: false,
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(disabledInstall.ok).toBe(true);
+    if (!disabledInstall.ok) return;
+    token = {
+      ...token,
+      fingerprint: disabledInstall.fingerprint,
+      revision: disabledInstall.revision,
+    };
+
+    const preserved = await applyProjectPatch(
+      host,
+      {
+        project: { path: token.projectPath!, fingerprint: token.fingerprint },
+        operations: [
+          {
+            op: "set_property_keyframes",
+            target: { compId: main.id, layerId: background.id },
+            matchNames: ["ADBE Transform Group", "ADBE Scale"],
+            keyframes: [
+              { time: 0, value: [100, 100] },
+              { time: 1, value: [120, 120] },
+            ],
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(preserved.ok, !preserved.ok ? preserved.error : undefined).toBe(true);
+    if (!preserved.ok) return;
+    const preservedTarget = preserved.results[0]?.targets[0] as SetPropertyKeyframesTargetResult;
+    expect(preservedTarget.status).toBe("changed");
+    expect(preservedTarget.after?.expression).toMatchObject({
+      expression: "[100,100]",
+      expressionEnabled: false,
+    });
+  });
+
+  it("set_property_keyframes preflight failure leaves earlier batch ops unapplied", async (ctx) => {
+    if (!aeReady) {
+      ctx.skip();
+      return;
+    }
+    await openWorkCopy(host, true);
+    const { main, background } = await mainSolidLayer(host);
+    const before = await listProjectContext(host, config.scriptTimeoutMs);
+
+    const batch = await applyProjectPatch(
+      host,
+      {
+        project: {
+          path: before.projectPath!,
+          fingerprint: before.fingerprint,
+        },
+        operations: [
+          {
+            op: "rename_layer",
+            target: { compId: main.id, layerId: background.id },
+            layerName: "Renamed Solid",
+          },
+          {
+            op: "set_property_keyframes",
+            target: { compId: main.id, layerId: background.id },
+            matchNames: ["ADBE Transform Group", "ADBE No Such Property"],
+            keyframes: [{ time: 0, value: 1 }],
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(batch.ok).toBe(false);
+    if (!batch.ok) {
+      expect(batch.code).toBe("validation");
+      expect(batch.error).toMatch(/Property not found for segment/);
+    }
+
+    const comps = await listComps(host, {}, config.scriptTimeoutMs);
+    const refreshed = comps.compositions.find((c) => c.name === "main");
+    expect(refreshed?.layers.some((l) => l.name === "Renamed Solid")).toBe(false);
+  });
+
+  it("set_property_keyframes refuses a stale plan and reports rollback honestly", async (ctx) => {
+    if (!aeReady) {
+      ctx.skip();
+      return;
+    }
+    await openWorkCopy(host, true);
+    const { main, background } = await mainSolidLayer(host);
+    const before = await listProjectContext(host, config.scriptTimeoutMs);
+
+    const batch = await applyProjectPatch(
+      host,
+      {
+        project: {
+          path: before.projectPath!,
+          fingerprint: before.fingerprint,
+        },
+        operations: [
+          {
+            op: "set_property_expression",
+            target: { compId: main.id, layerId: background.id },
+            matchNames: ["ADBE Transform Group", "ADBE Opacity"],
+            expression: "wiggle(1, 10)",
+            expressionEnabled: true,
+          },
+          {
+            op: "set_property_keyframes",
+            target: { compId: main.id, layerId: background.id },
+            matchNames: ["ADBE Transform Group", "ADBE Opacity"],
+            keyframes: [{ time: 0, value: 25 }],
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(batch.ok).toBe(false);
+    if (!batch.ok) {
+      expect(batch.code).toBe("apply_failed");
+      // The keyframe preflight passed (no expression yet), but applying the earlier
+      // op made the plan stale; the batch must report the failure and rollback state.
+      expect(batch.rollback?.attempted).toBe(true);
+      expect(typeof batch.rollback?.completed).toBe("boolean");
+      expect(batch.error).toMatch(/enabled expression|changed before apply/);
+      const failedOp = batch.results?.find((r) => r.status === "failed");
+      expect(failedOp?.op).toBe("set_property_keyframes");
+    }
+  });
+
+  it("set_property_keyframes normalizes spatial paths and resolves effect-parameter paths strictly", async (ctx) => {
+    if (!aeReady) {
+      ctx.skip();
+      return;
+    }
+    await openWorkCopy(host, true);
+    const { main, background } = await mainSolidLayer(host);
+    let token = await listProjectContext(host, config.scriptTimeoutMs);
+
+    const spatial = await applyProjectPatch(
+      host,
+      {
+        project: { path: token.projectPath!, fingerprint: token.fingerprint },
+        operations: [
+          {
+            op: "set_property_keyframes",
+            target: { compId: main.id, layerId: background.id },
+            matchNames: ["ADBE Transform Group", "ADBE Position"],
+            keyframes: [
+              { time: 0, value: [100, 100] },
+              {
+                time: 1,
+                value: [300, 100],
+                inInterpolationType: "BEZIER",
+                outInterpolationType: "BEZIER",
+                inEase: [{ speed: 0, influence: 50 }],
+                outEase: [{ speed: 0, influence: 50 }],
+              },
+            ],
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(spatial.ok, !spatial.ok ? spatial.error : undefined).toBe(true);
+    if (!spatial.ok) return;
+    const spatialTarget = spatial.results[0]?.targets[0] as SetPropertyKeyframesTargetResult;
+    expect(spatialTarget.status).toBe("changed");
+    expect(spatialTarget.propertyValueType).toMatch(/SPATIAL/);
+    const tangents = spatialTarget.after?.keyframes?.[1]?.inSpatialTangent;
+    expect(Array.isArray(tangents)).toBe(true);
+    if (Array.isArray(tangents)) {
+      for (const component of tangents) expect(Math.abs(component)).toBeLessThan(0.001);
+    }
+    token = {
+      ...token,
+      fingerprint: spatial.fingerprint,
+      revision: spatial.revision,
+    };
+
+    await host.evalScript(
+      `
+      var comp = null;
+      for (var i = 1; i <= app.project.numItems; i++) {
+        var item = app.project.item(i);
+        if (item instanceof CompItem && item.id === ${main.id}) { comp = item; break; }
+      }
+      var layer = null;
+      for (var j = 1; j <= comp.numLayers; j++) {
+        if (comp.layer(j).id === ${background.id}) { layer = comp.layer(j); break; }
+      }
+      var parade = layer.property("ADBE Effect Parade");
+      var first = parade.addProperty("ADBE Slider Control");
+      var second = parade.addProperty("ADBE Slider Control");
+      second.name = "Slider B";
+      return JSON.stringify({ effects: parade.numProperties });
+      `,
+      config.scriptTimeoutMs,
+    );
+    token = await listProjectContext(host, config.scriptTimeoutMs);
+
+    const ambiguous = await applyProjectPatch(
+      host,
+      {
+        project: { path: token.projectPath!, fingerprint: token.fingerprint },
+        operations: [
+          {
+            op: "set_property_keyframes",
+            target: { compId: main.id, layerId: background.id },
+            matchNames: ["ADBE Effect Parade", "ADBE Slider Control"],
+            keyframes: [{ time: 0, value: 5 }],
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(ambiguous.ok).toBe(false);
+    if (!ambiguous.ok) expect(ambiguous.error).toMatch(/Ambiguous property segment/);
+
+    const skippedInstance = await applyProjectPatch(
+      host,
+      {
+        project: { path: token.projectPath!, fingerprint: token.fingerprint },
+        operations: [
+          {
+            op: "set_property_keyframes",
+            target: { compId: main.id, layerId: background.id },
+            matchNames: ["ADBE Effect Parade", "ADBE Slider Control-0001"],
+            keyframes: [{ time: 0, value: 5 }],
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(skippedInstance.ok).toBe(false);
+    if (!skippedInstance.ok) {
+      expect(skippedInstance.error).toMatch(/Property not found for segment/);
+    }
+
+    const byDisplayName = await applyProjectPatch(
+      host,
+      {
+        project: { path: token.projectPath!, fingerprint: token.fingerprint },
+        operations: [
+          {
+            op: "set_property_keyframes",
+            target: { compId: main.id, layerId: background.id },
+            matchNames: ["ADBE Effect Parade", "Slider B", "ADBE Slider Control-0001"],
+            keyframes: [
+              { time: 0, value: 5 },
+              { time: 1, value: 9 },
+            ],
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(byDisplayName.ok, patchDetail(byDisplayName)).toBe(true);
+    if (!byDisplayName.ok) return;
+    const sliderTarget = byDisplayName.results[0]?.targets[0] as SetPropertyKeyframesTargetResult;
+    expect(sliderTarget.status).toBe("changed");
+    expect(sliderTarget.resolvedMatchNames).toEqual([
+      "ADBE Effect Parade",
+      "ADBE Slider Control",
+      "ADBE Slider Control-0001",
+    ]);
+  });
+
+  it("set_property_keyframes refuses opaque keyed siblings until they are removed", async (ctx) => {
+    if (!aeReady) {
+      ctx.skip();
+      return;
+    }
+    await openWorkCopy(host, true);
+    const { main, background } = await mainSolidLayer(host);
+
+    await host.evalScript(
+      `
+      var comp = null;
+      for (var i = 1; i <= app.project.numItems; i++) {
+        var item = app.project.item(i);
+        if (item instanceof CompItem && item.id === ${main.id}) { comp = item; break; }
+      }
+      var layer = null;
+      for (var j = 1; j <= comp.numLayers; j++) {
+        if (comp.layer(j).id === ${background.id}) { layer = comp.layer(j); break; }
+      }
+      layer.property("ADBE Marker").setValueAtTime(0, new MarkerValue("m"));
+      return "ok";
+      `,
+      config.scriptTimeoutMs,
+    );
+    let token = await listProjectContext(host, config.scriptTimeoutMs);
+
+    const refused = await applyProjectPatch(
+      host,
+      {
+        project: { path: token.projectPath!, fingerprint: token.fingerprint },
+        operations: [
+          {
+            op: "set_property_keyframes",
+            target: { compId: main.id, layerId: background.id },
+            matchNames: ["ADBE Transform Group", "ADBE Opacity"],
+            keyframes: [{ time: 0, value: 25 }],
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(refused.ok).toBe(false);
+    if (!refused.ok) {
+      expect(refused.error).toMatch(/Cannot faithfully compare keyed sibling property/);
+      expect(refused.error).toMatch(/MARKER/);
+    }
+
+    await host.evalScript(
+      `
+      var comp = null;
+      for (var i = 1; i <= app.project.numItems; i++) {
+        var item = app.project.item(i);
+        if (item instanceof CompItem && item.id === ${main.id}) { comp = item; break; }
+      }
+      var layer = null;
+      for (var j = 1; j <= comp.numLayers; j++) {
+        if (comp.layer(j).id === ${background.id}) { layer = comp.layer(j); break; }
+      }
+      var markers = layer.property("ADBE Marker");
+      while (markers.numKeys > 0) markers.removeKey(1);
+      return "ok";
+      `,
+      config.scriptTimeoutMs,
+    );
+    token = await listProjectContext(host, config.scriptTimeoutMs);
+
+    const accepted = await applyProjectPatch(
+      host,
+      {
+        project: { path: token.projectPath!, fingerprint: token.fingerprint },
+        operations: [
+          {
+            op: "set_property_keyframes",
+            target: { compId: main.id, layerId: background.id },
+            matchNames: ["ADBE Transform Group", "ADBE Opacity"],
+            keyframes: [{ time: 0, value: 25 }],
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(accepted.ok, !accepted.ok ? accepted.error : undefined).toBe(true);
+    if (!accepted.ok) return;
+    expect(accepted.results[0]?.targets[0]).toMatchObject({
+      status: "changed",
+    });
   });
 });

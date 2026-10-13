@@ -225,6 +225,60 @@ export type SetPropertyExpressionTargetResult = LayerTargetBase & {
   after?: { expression: string; expressionEnabled: boolean };
 };
 
+/** Temporal ease point on a keyframe (AE `KeyframeEase` speed/influence). */
+export type KeyframeEasePoint = {
+  speed: number;
+  influence: number;
+};
+
+/** `set_property_keyframes` keyframe entry (authored numeric value + temporal curve). */
+export type PropertyKeyframeEntry = {
+  time: number;
+  value: number | number[];
+  inInterpolationType?: string;
+  outInterpolationType?: string;
+  inEase?: KeyframeEasePoint[];
+  outEase?: KeyframeEasePoint[];
+  /** Normalization flags / spatial metadata included in before/after evidence. */
+  temporalContinuous?: boolean;
+  temporalAutoBezier?: boolean;
+  inSpatialTangent?: number[];
+  outSpatialTangent?: number[];
+  spatialContinuous?: boolean;
+  spatialAutoBezier?: boolean;
+  roving?: boolean;
+};
+
+/** Authored target-property state evidence for `set_property_keyframes`. */
+export type PropertyKeyframeStateEvidence = {
+  numKeys: number;
+  keyframes?: PropertyKeyframeEntry[];
+  /** Static mode: authored value sampled at `sampleTime` (before) / restored static value (after). */
+  staticValue?: number | number[];
+  expression?: { expression: string; expressionEnabled: boolean };
+};
+
+/** `set_property_keyframes` target evidence (verified before/after authored state). */
+export type SetPropertyKeyframesTargetResult = LayerTargetBase & {
+  selector?: { matchNames?: string[]; propertyPath?: string };
+  resolvedMatchNames?: string[];
+  resolvedPath?: { name?: string; matchName?: string; index?: number }[];
+  propertyValueType?: string;
+  mode?: "timeline" | "static";
+  sampleTime?: number;
+  before?: PropertyKeyframeStateEvidence;
+  after?: PropertyKeyframeStateEvidence;
+  preservation?: {
+    scope: "other_keyframes_on_target_layer";
+    checkedProperties: number;
+    checkedKeys: number;
+    unchanged?: boolean;
+    /** Present when preservation failed; capped drift summary. */
+    drift?: KeyframeDriftEntry[];
+    driftTruncated?: boolean;
+  };
+};
+
 /** Authored/pre-expression 2D Transform allowlist snapshot. */
 export type LayerTransformSnapshot = {
   anchorPoint?: number[];
@@ -299,6 +353,7 @@ export type PatchTargetResult =
   | SetLayerSwitchesTargetResult
   | SetCompSettingsTargetResult
   | SetPropertyExpressionTargetResult
+  | SetPropertyKeyframesTargetResult
   | SetLayerTransformTargetResult
   | ResetLayerSurfaceTargetResult
   | DeleteLayerTargetResult;
