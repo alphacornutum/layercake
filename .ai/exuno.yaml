@@ -1,0 +1,12 @@
+exuno_version: "0.46.0"
+
+tools:
+  enabled:
+    - cursor
+    - zed
+
+outputs: local
+
+gitignore:
+  update: true
+format: 3

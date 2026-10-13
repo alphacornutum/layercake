@@ -85,7 +85,7 @@ Specs under `openspec/specs/<capability>/spec.md` are the behavior contracts. Co
 
 Shared AE DOM helpers live under `src/ae-scripts/shared/` and are inlined into emitted entries. Node inventory/patch modules load those `.jsx` files via `loadAeScript` (plus intentional preambles such as `__itemId`); do not prepend `loadAeHelperScript` blobs onto self-bundled entries. Inventory still owns parse/filter/Zod: `layer-target-schema.ts`, `parse.ts`, `types.ts`, `filter.ts`, `inspect-limit.ts`, `comp-switches.ts`.
 
-Product skill files live at top-level `skills/` (shipped with the npm package). They are independent of contributor AgentSync under `.ai/src/`.
+Product skill files live at top-level `skills/` (shipped with the npm package). They are independent of contributor Exuno under `.ai/src/`.
 
 ## Design constraints
 
@@ -98,7 +98,7 @@ Product skill files live at top-level `skills/` (shipped with the npm package). 
 - **Contracts** — public `ae_*` names/schemas/JSON shapes, `AeHost`, and the eval result-file protocol change through OpenSpec when possible (prefer additive).
 - **After Effects 24.6+** — supported host floor (newer hosts including 26+ work as supersets; older than 24.6 may work but are unsupported).
 - **macOS + Windows host** — `darwin` uses AppleScript and soft-attaches without `activate` when AE is already running (`launch` on cold start); `win32` uses `AfterFX.exe -r`; other platforms report host unavailable without attempting unsupported automation.
-- **Agent guidance** — end-user product skill lives under `skills/`; contributor AgentSync guidance is edited under `.ai/src/` only, then `agentsync sync`.
+- **Agent guidance** — end-user product skill lives under `skills/`; contributor Exuno guidance is edited under `.ai/src/` only, then `exuno sync`.
 
 ## Related docs
 

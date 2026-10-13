@@ -317,7 +317,7 @@ Or symlink:
 ln -s "$(pwd)/skills/drive-after-effects" /path/to/your/agent/skills/drive-after-effects
 ```
 
-The npm package (`layercake`) includes `skills/` alongside `dist/`. No AgentSync required for end-user install.
+The npm package (`layercake`) includes `skills/` alongside `dist/`. No Exuno required for end-user install.
 
 ### MCP resources (SEP-2640)
 

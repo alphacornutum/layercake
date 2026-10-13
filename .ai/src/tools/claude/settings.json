@@ -11,7 +11,7 @@
       "Bash(git log *)",
       "Bash(git show *)",
       "Bash(git branch *)",
-      "Bash(agentsync *)",
+      "Bash(exuno *)",
       "Bash(openspec *)",
       "Bash(ls *)",
       "Bash(cat package.json)",
