@@ -85,6 +85,7 @@ interface PropOptions {
   spatial?: boolean;
   onAddKey?: () => void;
   throwOnSetValueAtKey?: boolean;
+  throwOnSetValue?: boolean;
 }
 
 /** Read-only property fake backed by fixed key/value state. */
@@ -170,6 +171,7 @@ function writableProp(opts: PropOptions = {}): any {
     state.keys[i - 1]!.value = v;
   };
   prop.setValue = (v: number | number[]) => {
+    if (opts.throwOnSetValue) throw new Error("setValue refused (hidden)");
     state.value = v;
   };
   prop.setInterpolationTypeAtKey = (i: number, inT: number, outT?: number) => {
@@ -934,5 +936,114 @@ describe("pkf apply", () => {
     expect(result.status).toBe("failed");
     expect(result.message).toMatch(/setValueAtKey failed/);
     expect(result.after).toBeDefined();
+  });
+});
+
+describe("pkf clear mode", () => {
+  it("preflights clear mode without sampling and treats zero keys as satisfied", () => {
+    const keyed = preflight(
+      timelineOp({ keyframes: undefined, clearKeys: true }),
+      transformLayer(fakeProp({ keys: [key(0, 10), key(1, 90)] })),
+    );
+    expect(keyed.error).toBeNull();
+    expect(keyed.mode).toBe("clear");
+    expect(keyed.alreadySatisfied).toBe(false);
+
+    const empty = preflight(
+      timelineOp({ keyframes: undefined, clearKeys: true }),
+      transformLayer(fakeProp({ keys: [] })),
+    );
+    expect(empty.error).toBeNull();
+    expect(empty.mode).toBe("clear");
+    expect(empty.alreadySatisfied).toBe(true);
+  });
+
+  it("removes every key without writing a value and reports the retained value", () => {
+    const target = writableProp({ keys: [key(0, -8), key(1, -20)], value: -8 });
+    const layer = transformLayer(target);
+    const { outcome, opResult } = runApply(
+      timelineOp({ keyframes: undefined, clearKeys: true }),
+      layer,
+    );
+    expect(outcome.anyFailed).toBe(false);
+    const result = opResult.targets[0];
+    expect(result.status).toBe("changed");
+    expect(result.mode).toBe("clear");
+    expect(result.after.numKeys).toBe(0);
+    expect(result.after.retainedValue).toBe(-8);
+    expect(target.__state.keys).toHaveLength(0);
+  });
+
+  it("clears a property whose value write is refused (hidden) without throwing", () => {
+    const target = writableProp({
+      keys: [key(0, -8), key(1, -20)],
+      value: -8,
+      throwOnSetValue: true,
+    });
+    const layer = transformLayer(target);
+    const { outcome, opResult } = runApply(
+      timelineOp({ keyframes: undefined, clearKeys: true }),
+      layer,
+    );
+    expect(outcome.anyFailed).toBe(false);
+    const result = opResult.targets[0];
+    expect(result.status).toBe("changed");
+    expect(result.after.numKeys).toBe(0);
+    expect(result.after.retainedValue).toBe(-8);
+  });
+
+  it("is idempotent when the property already has no keys", () => {
+    const target = writableProp({ keys: [], value: 5 });
+    const layer = transformLayer(target);
+    const { outcome, opResult } = runApply(
+      timelineOp({ keyframes: undefined, clearKeys: true }),
+      layer,
+    );
+    expect(outcome.anyChanged).toBe(false);
+    expect(outcome.anyFailed).toBe(false);
+    const result = opResult.targets[0];
+    expect(result.status).toBe("already_satisfied");
+    expect(result.mode).toBe("clear");
+    expect(result.after.numKeys).toBe(0);
+    expect(result.after.retainedValue).toBe(5);
+  });
+});
+
+describe("pkf static restore safety", () => {
+  it("restores removed keys in place and reports verified when the static write is refused", () => {
+    const target = writableProp({
+      keys: [key(0, 10), key(1, 90)],
+      value: 0,
+      throwOnSetValue: true,
+    });
+    const layer = transformLayer(target);
+    const { outcome, opResult } = runApply(
+      timelineOp({ keyframes: undefined, staticValueAtTime: 0 }),
+      layer,
+    );
+    expect(outcome.anyFailed).toBe(true);
+    const result = opResult.targets[0];
+    expect(result.status).toBe("failed");
+    expect(result.restore).toEqual({ attempted: true, verified: true });
+    expect(result.after.numKeys).toBe(2);
+    expect(target.__state.keys.map((k: FakeKey) => k.value)).toEqual([10, 90]);
+  });
+
+  it("reports restore verified false when the keys cannot be recreated", () => {
+    const target = writableProp({
+      keys: [key(0, 10), key(1, 90)],
+      value: 0,
+      throwOnSetValue: true,
+      throwOnSetValueAtKey: true,
+    });
+    const layer = transformLayer(target);
+    const { outcome, opResult } = runApply(
+      timelineOp({ keyframes: undefined, staticValueAtTime: 0 }),
+      layer,
+    );
+    expect(outcome.anyFailed).toBe(true);
+    const result = opResult.targets[0];
+    expect(result.status).toBe("failed");
+    expect(result.restore).toEqual({ attempted: true, verified: false });
   });
 });

@@ -193,7 +193,8 @@ export function createServer(
         "place before set_layer_timing in mixed batches); " +
         "set_property_expression (exactly one of matchNames|propertyPath; effect params need Effect Parade + effect instance + param — not parade→param alone); " +
         "set_property_keyframes (one property by exact unique matchNames|propertyPath incl. intermediate groups; complete timeline replacement with LINEAR/BEZIER/HOLD + explicit temporal ease, " +
-        "or staticValueAtTime sampled authored restore; optional expected numKeys/timeline guards; enabled expressions refused unless expressionHandling: clear; " +
+        "staticValueAtTime sampled authored restore, or clearKeys to remove every key without a value write (works on hidden properties and reports the retained `retainedValue`); optional expected numKeys/timeline guards; " +
+        "enabled expressions refused unless expressionHandling: clear; a refused static restore restores the removed keys in place (restore evidence); " +
         "sibling keyframes verified unchanged; bounded — refuses opaque keyed siblings like markers); " +
         "set_layer_transform (partial transform bag; authored value evidence; fingerprint guards for stale apply); " +
         "reset_layer_surface (resetTransforms verifies AE defaults with value evidence; clearExpressions separate); " +

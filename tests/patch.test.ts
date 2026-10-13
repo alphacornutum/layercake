@@ -908,6 +908,63 @@ describe("patchProjectInputSchema", () => {
     expect(op.expected?.keyframes).toHaveLength(1);
   });
 
+  it("accepts set_property_keyframes clearKeys and keeps the desired-state union strict", () => {
+    const accepted = patchProjectInputSchema.parse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "set_property_keyframes",
+          target: { compId: 1, layerId: 2 },
+          matchNames: ["ADBE Audio Group", "ADBE Audio Levels"],
+          clearKeys: true,
+        },
+      ],
+    });
+    const op = accepted.operations[0] as SetPropertyKeyframesOp;
+    expect(op.clearKeys).toBe(true);
+
+    const withKeys = patchProjectInputSchema.safeParse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "set_property_keyframes",
+          target: { compId: 1, layerId: 2 },
+          matchNames: ["ADBE Opacity"],
+          clearKeys: true,
+          keyframes: [{ time: 0, value: 1 }],
+        },
+      ],
+    });
+    expect(withKeys.success).toBe(false);
+
+    const withStatic = patchProjectInputSchema.safeParse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "set_property_keyframes",
+          target: { compId: 1, layerId: 2 },
+          matchNames: ["ADBE Opacity"],
+          clearKeys: true,
+          staticValueAtTime: 0,
+        },
+      ],
+    });
+    expect(withStatic.success).toBe(false);
+
+    const falseFlag = patchProjectInputSchema.safeParse({
+      project: guardedProject(),
+      operations: [
+        {
+          op: "set_property_keyframes",
+          target: { compId: 1, layerId: 2 },
+          matchNames: ["ADBE Opacity"],
+          clearKeys: false,
+        },
+      ],
+    });
+    expect(falseFlag.success).toBe(false);
+  });
+
   it("rejects set_property_keyframes selector and desired-state unions", () => {
     const bothSelectors = patchProjectInputSchema.safeParse({
       project: guardedProject(),

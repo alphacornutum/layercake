@@ -32,7 +32,11 @@ function resolvePropertySegments(layer, segments) {
   for (var i = 0; i < segments.length; i++) {
     var seg = String(segments[i]);
     if (!seg) {
-      return { error: "Empty property path segment", prop: null, matchNames: resolved };
+      return {
+        error: "Empty property path segment",
+        prop: null,
+        matchNames: resolved,
+      };
     }
     var next;
     try {
@@ -503,7 +507,11 @@ export function applyRenameProjectItem(plan, opResult) {
     targetResult.status = "failed";
     targetResult.message = "Post-condition failed: item name did not match after write";
     opResult.targets.push(targetResult);
-    return { anyChanged: true, anyFailed: true, applyError: targetResult.message };
+    return {
+      anyChanged: true,
+      anyFailed: true,
+      applyError: targetResult.message,
+    };
   } catch (re) {
     targetResult.status = "failed";
     targetResult.message = String(re);
@@ -565,7 +573,11 @@ export function applySetLayerIndex(plan, opResult) {
     targetResult.message =
       "Post-condition failed: layer index is " + afterIndex + ", expected " + desired;
     opResult.targets.push(targetResult);
-    return { anyChanged: true, anyFailed: true, applyError: targetResult.message };
+    return {
+      anyChanged: true,
+      anyFailed: true,
+      applyError: targetResult.message,
+    };
   } catch (ie) {
     targetResult.status = "failed";
     targetResult.message = String(ie);
@@ -646,7 +658,11 @@ export function applyCreateSolid(plan, opResult) {
     targetResult.status = "failed";
     targetResult.message = "Post-condition failed: created solid identity did not match request";
     opResult.targets.push(targetResult);
-    return { anyChanged: true, anyFailed: true, applyError: targetResult.message };
+    return {
+      anyChanged: true,
+      anyFailed: true,
+      applyError: targetResult.message,
+    };
   } catch (ce) {
     targetResult.message = String(ce);
     if (solidLayer) {
@@ -665,7 +681,11 @@ export function applyCreateSolid(plan, opResult) {
       } catch (e3) {}
     }
     opResult.targets.push(targetResult);
-    return { anyChanged: !!createdItem, anyFailed: true, applyError: String(ce) };
+    return {
+      anyChanged: !!createdItem,
+      anyFailed: true,
+      applyError: String(ce),
+    };
   }
 }
 
@@ -699,7 +719,11 @@ export function applyReplaceLayerSource(plan, opResult) {
       targetResult.status = "unsupported";
       targetResult.message = "Layer is not an AVLayer; cannot replaceSource";
       opResult.targets.push(targetResult);
-      return { anyChanged: false, anyFailed: true, applyError: targetResult.message };
+      return {
+        anyChanged: false,
+        anyFailed: true,
+        applyError: targetResult.message,
+      };
     }
     try {
       layer.replaceSource(sourceItem, fixExpressions);
@@ -760,7 +784,11 @@ export function applyReplaceLayerSource(plan, opResult) {
     targetResult.status = "failed";
     targetResult.message = "Post-condition failed after recreate replace";
     opResult.targets.push(targetResult);
-    return { anyChanged: true, anyFailed: true, applyError: targetResult.message };
+    return {
+      anyChanged: true,
+      anyFailed: true,
+      applyError: targetResult.message,
+    };
   } catch (re) {
     targetResult.status = "failed";
     targetResult.message = String(re);
@@ -1142,7 +1170,11 @@ export function applySetLayerTiming(plan, opResult) {
       targetResult.keyframesPreserved =
         keySnapshot.length === 0 || layerKeysMatchSnapshot(t.layer, keySnapshot);
       opResult.targets.push(targetResult);
-      return { anyChanged: true, anyFailed: true, applyError: targetResult.message };
+      return {
+        anyChanged: true,
+        anyFailed: true,
+        applyError: targetResult.message,
+      };
     }
     if (keySnapshot.length > 0 && !layerKeysMatchSnapshot(t.layer, keySnapshot)) {
       var driftInfo = collectKeyframeDrift(t.layer, keySnapshot);
@@ -1152,7 +1184,11 @@ export function applySetLayerTiming(plan, opResult) {
       targetResult.keyframeDrift = driftInfo.drift;
       if (driftInfo.truncated) targetResult.keyframeDriftTruncated = true;
       opResult.targets.push(targetResult);
-      return { anyChanged: true, anyFailed: true, applyError: targetResult.message };
+      return {
+        anyChanged: true,
+        anyFailed: true,
+        applyError: targetResult.message,
+      };
     }
     targetResult.status = "changed";
     targetResult.keyframesPreserved = true;
@@ -1170,7 +1206,11 @@ export function applySetLayerTiming(plan, opResult) {
       timingMutated = true;
     }
     opResult.targets.push(targetResult);
-    return { anyChanged: timingMutated, anyFailed: true, applyError: String(te) };
+    return {
+      anyChanged: timingMutated,
+      anyFailed: true,
+      applyError: String(te),
+    };
   }
 }
 
@@ -1191,7 +1231,11 @@ export function applySetLayerSwitches(plan, opResult) {
   if (writeKeys.length === 0) {
     targetResult.message = "No switch keys supplied";
     opResult.targets.push(targetResult);
-    return { anyChanged: false, anyFailed: true, applyError: targetResult.message };
+    return {
+      anyChanged: false,
+      anyFailed: true,
+      applyError: targetResult.message,
+    };
   }
   var inapplicable = [];
   var i;
@@ -1204,7 +1248,11 @@ export function applySetLayerSwitches(plan, opResult) {
     targetResult.after = before;
     targetResult.message = "Switch key(s) not applicable on this layer: " + inapplicable.join(", ");
     opResult.targets.push(targetResult);
-    return { anyChanged: false, anyFailed: true, applyError: targetResult.message };
+    return {
+      anyChanged: false,
+      anyFailed: true,
+      applyError: targetResult.message,
+    };
   }
   var already = true;
   for (i = 0; i < writeKeys.length; i++) {
@@ -1241,7 +1289,11 @@ export function applySetLayerSwitches(plan, opResult) {
     targetResult.message =
       "Post-condition failed: switch(es) did not match request: " + mismatched.join(", ");
     opResult.targets.push(targetResult);
-    return { anyChanged: true, anyFailed: true, applyError: targetResult.message };
+    return {
+      anyChanged: true,
+      anyFailed: true,
+      applyError: targetResult.message,
+    };
   } catch (se) {
     targetResult.status = "failed";
     targetResult.message = String(se);
@@ -1253,7 +1305,11 @@ export function applySetLayerSwitches(plan, opResult) {
       switchMutated = true;
     }
     opResult.targets.push(targetResult);
-    return { anyChanged: switchMutated, anyFailed: true, applyError: String(se) };
+    return {
+      anyChanged: switchMutated,
+      anyFailed: true,
+      applyError: String(se),
+    };
   }
 }
 
@@ -1274,7 +1330,11 @@ export function applySetLayerTransform(plan, opResult) {
   if (writeKeys.length === 0) {
     targetResult.message = "No transform keys supplied";
     opResult.targets.push(targetResult);
-    return { anyChanged: false, anyFailed: true, applyError: targetResult.message };
+    return {
+      anyChanged: false,
+      anyFailed: true,
+      applyError: targetResult.message,
+    };
   }
   var i;
   var key;
@@ -1313,7 +1373,11 @@ export function applySetLayerTransform(plan, opResult) {
     targetResult.message =
       "Transform key(s) not applicable on this layer: " + inapplicable.join(", ");
     opResult.targets.push(targetResult);
-    return { anyChanged: false, anyFailed: true, applyError: targetResult.message };
+    return {
+      anyChanged: false,
+      anyFailed: true,
+      applyError: targetResult.message,
+    };
   }
   var keyframed = keyframedTransformKeys(t.layer, writeKeys);
   if (keyframed.length > 0) {
@@ -1325,13 +1389,21 @@ export function applySetLayerTransform(plan, opResult) {
       keyframed.join(", ") +
       "; clear keys first via reset_layer_surface (clearKeyframes)";
     opResult.targets.push(targetResult);
-    return { anyChanged: false, anyFailed: true, applyError: targetResult.message };
+    return {
+      anyChanged: false,
+      anyFailed: true,
+      applyError: targetResult.message,
+    };
   }
   if (lengthMismatch.length > 0) {
     targetResult.after = before;
     targetResult.message = "Transform array length mismatch for: " + lengthMismatch.join(", ");
     opResult.targets.push(targetResult);
-    return { anyChanged: false, anyFailed: true, applyError: targetResult.message };
+    return {
+      anyChanged: false,
+      anyFailed: true,
+      applyError: targetResult.message,
+    };
   }
   var already = true;
   for (i = 0; i < writeKeys.length; i++) {
@@ -1355,7 +1427,11 @@ export function applySetLayerTransform(plan, opResult) {
       targetResult.message = written.writeError;
       var xfMutated = JSON.stringify(written.after) !== JSON.stringify(before);
       opResult.targets.push(targetResult);
-      return { anyChanged: xfMutated, anyFailed: true, applyError: targetResult.message };
+      return {
+        anyChanged: xfMutated,
+        anyFailed: true,
+        applyError: targetResult.message,
+      };
     }
     if (written.mismatched.length === 0) {
       targetResult.status = "changed";
@@ -1367,7 +1443,11 @@ export function applySetLayerTransform(plan, opResult) {
       "Post-condition failed: transform key(s) did not match request: " +
       written.mismatched.join(", ");
     opResult.targets.push(targetResult);
-    return { anyChanged: true, anyFailed: true, applyError: targetResult.message };
+    return {
+      anyChanged: true,
+      anyFailed: true,
+      applyError: targetResult.message,
+    };
   } catch (xe) {
     targetResult.status = "failed";
     targetResult.message = String(xe);
@@ -1380,7 +1460,11 @@ export function applySetLayerTransform(plan, opResult) {
       xfCatchMutated = true;
     }
     opResult.targets.push(targetResult);
-    return { anyChanged: xfCatchMutated, anyFailed: true, applyError: String(xe) };
+    return {
+      anyChanged: xfCatchMutated,
+      anyFailed: true,
+      applyError: String(xe),
+    };
   }
 }
 
@@ -1417,13 +1501,19 @@ export function applySetPropertyExpression(plan, opResult) {
   try {
     beforeEnabled = !!prop.expressionEnabled;
   } catch (e2) {}
-  targetResult.before = { expression: beforeExpr, expressionEnabled: beforeEnabled };
+  targetResult.before = {
+    expression: beforeExpr,
+    expressionEnabled: beforeEnabled,
+  };
   var wantClear = op.expression === null;
   var wantExpr = wantClear ? "" : String(op.expression);
   var wantEnabled = wantClear ? false : op.expressionEnabled !== false;
   if (beforeExpr === wantExpr && beforeEnabled === wantEnabled) {
     targetResult.status = "already_satisfied";
-    targetResult.after = { expression: beforeExpr, expressionEnabled: beforeEnabled };
+    targetResult.after = {
+      expression: beforeExpr,
+      expressionEnabled: beforeEnabled,
+    };
     opResult.targets.push(targetResult);
     return { anyChanged: false, anyFailed: false, applyError: null };
   }
@@ -1443,7 +1533,10 @@ export function applySetPropertyExpression(plan, opResult) {
     try {
       afterEnabled = !!prop.expressionEnabled;
     } catch (ae2) {}
-    targetResult.after = { expression: afterExpr, expressionEnabled: afterEnabled };
+    targetResult.after = {
+      expression: afterExpr,
+      expressionEnabled: afterEnabled,
+    };
     if (afterExpr === wantExpr && afterEnabled === wantEnabled) {
       targetResult.status = "changed";
       opResult.targets.push(targetResult);
@@ -1452,7 +1545,11 @@ export function applySetPropertyExpression(plan, opResult) {
     targetResult.status = "failed";
     targetResult.message = "Post-condition failed: authored expression fields did not match";
     opResult.targets.push(targetResult);
-    return { anyChanged: true, anyFailed: true, applyError: targetResult.message };
+    return {
+      anyChanged: true,
+      anyFailed: true,
+      applyError: targetResult.message,
+    };
   } catch (xe) {
     targetResult.status = "failed";
     targetResult.message = String(xe);
@@ -1834,6 +1931,87 @@ function pkfSnapshotsEqual(a, b) {
     if (!pkfKeyEntriesEqual(a.keyframes[i], b.keyframes[i])) return false;
   }
   return true;
+}
+
+// Read the property's current static value. Returns null when AE refuses the
+// read or yields a non-numeric value; clear-mode evidence stays honest either way.
+function pkfReadStaticValue(prop) {
+  var v = null;
+  try {
+    v = pkfNormalizeNumericValue(prop.value);
+  } catch (e) {}
+  return v;
+}
+
+// In-place recreation of an earlier timeline after a refused write (AE refuses
+// setValue on a hidden property once its keys are gone). Field writes are
+// best-effort; the re-read comparison is the contract, so a partial or refused
+// write reports verified:false instead of claiming a restoration that did not land.
+function pkfRestoreTimeline(prop, snapshot, info) {
+  try {
+    while (prop.numKeys > 0) prop.removeKey(1);
+  } catch (e0) {}
+  for (var i = 0; i < snapshot.keyframes.length; i++) {
+    var entry = snapshot.keyframes[i];
+    var idx = null;
+    try {
+      idx = prop.addKey(entry.time);
+    } catch (ea) {
+      break;
+    }
+    try {
+      prop.setValueAtKey(idx, entry.value);
+    } catch (ev) {}
+    try {
+      if (entry.inInterpolationType) {
+        var inEnum = pkfInterpEnum(entry.inInterpolationType);
+        var outEnum = entry.outInterpolationType
+          ? pkfInterpEnum(entry.outInterpolationType)
+          : inEnum;
+        prop.setInterpolationTypeAtKey(idx, inEnum, outEnum);
+      }
+    } catch (ei) {}
+    try {
+      if (entry.inInterpolationType === "BEZIER" && entry.inEase && entry.outEase) {
+        prop.setTemporalEaseAtKey(idx, pkfEaseObjects(entry.inEase), pkfEaseObjects(entry.outEase));
+      }
+    } catch (ee) {}
+    try {
+      if (entry.temporalContinuous !== undefined) {
+        prop.setTemporalContinuousAtKey(idx, entry.temporalContinuous);
+      }
+    } catch (tc) {}
+    try {
+      if (entry.temporalAutoBezier !== undefined) {
+        prop.setTemporalAutoBezierAtKey(idx, entry.temporalAutoBezier);
+      }
+    } catch (ta) {}
+    if (info.spatial) {
+      try {
+        if (entry.inSpatialTangent && entry.outSpatialTangent) {
+          prop.setSpatialTangentsAtKey(idx, entry.inSpatialTangent, entry.outSpatialTangent);
+        }
+      } catch (st) {}
+      try {
+        if (entry.spatialContinuous !== undefined) {
+          prop.setSpatialContinuousAtKey(idx, entry.spatialContinuous);
+        }
+      } catch (sc) {}
+      try {
+        if (entry.spatialAutoBezier !== undefined) {
+          prop.setSpatialAutoBezierAtKey(idx, entry.spatialAutoBezier);
+        }
+      } catch (sa) {}
+      try {
+        if (entry.roving !== undefined) prop.setRovingAtKey(idx, entry.roving);
+      } catch (ro) {}
+    }
+  }
+  var now = pkfReadTimelineSnapshot(prop, info);
+  return {
+    attempted: true,
+    verified: !!now && pkfSnapshotsEqual(now, snapshot),
+  };
 }
 
 // Desired-state comparison: deterministic timeline including normalization flags
@@ -2231,7 +2409,11 @@ export function preflightSetPropertyKeyframes(op, comp, layer) {
   }
   // Desired state validation.
   var mode = "timeline";
-  if (op.keyframes === undefined || op.keyframes === null) mode = "static";
+  if (op.clearKeys === true) {
+    mode = "clear";
+  } else if (op.keyframes === undefined || op.keyframes === null) {
+    mode = "static";
+  }
   var desiredEntries = [];
   var sampleTime = null;
   var sample = null;
@@ -2315,7 +2497,7 @@ export function preflightSetPropertyKeyframes(op, comp, layer) {
         outEase: outEase,
       });
     }
-  } else {
+  } else if (mode === "static") {
     sampleTime = op.staticValueAtTime;
     try {
       sample = pkfNormalizeNumericValue(prop.valueAtTime(sampleTime, true));
@@ -2330,7 +2512,7 @@ export function preflightSetPropertyKeyframes(op, comp, layer) {
   var expressionNeedsClear =
     wantClear && (expressionState.expression.length > 0 || expressionState.expressionEnabled);
   var alreadySatisfied = false;
-  if (mode === "static") {
+  if (mode === "static" || mode === "clear") {
     alreadySatisfied = snapshot.numKeys === 0 && !expressionNeedsClear;
   } else {
     alreadySatisfied =
@@ -2400,12 +2582,15 @@ export function applySetPropertyKeyframes(plan, opResult) {
       keyframes: snap.keyframes,
       expression: expr,
     };
-    if (kf.mode === "static") {
+    if (kf.mode === "static" || kf.mode === "clear") {
       var sv = null;
       try {
         sv = pkfNormalizeNumericValue(prop.value);
       } catch (e3) {}
-      if (sv !== null) evidence.staticValue = sv;
+      if (sv !== null) {
+        if (kf.mode === "static") evidence.staticValue = sv;
+        else evidence.retainedValue = sv;
+      }
     }
     return evidence;
   }
@@ -2466,6 +2651,10 @@ export function applySetPropertyKeyframes(plan, opResult) {
       expression: exprNow,
     };
     if (kf.mode === "static") targetResult.after.staticValue = kf.sample;
+    if (kf.mode === "clear") {
+      var retainedNoop = pkfReadStaticValue(prop);
+      if (retainedNoop !== null) targetResult.after.retainedValue = retainedNoop;
+    }
     targetResult.preservation = {
       scope: "other_keyframes_on_target_layer",
       checkedProperties: baselineNoop.checkedProperties,
@@ -2499,7 +2688,37 @@ export function applySetPropertyKeyframes(plan, opResult) {
         mutated = true;
       }
       if (hadKeys) {
-        prop.setValue(kf.sample);
+        try {
+          prop.setValue(kf.sample);
+          mutated = true;
+        } catch (setErr) {
+          // AE refuses setValue once a hidden property's keys are gone. Restore
+          // the removed keys in place and report the refusal honestly instead of
+          // leaving the property partially mutated for batch undo to recover.
+          var restored = pkfRestoreTimeline(prop, kf.before, kf.info);
+          targetResult.restore = {
+            attempted: true,
+            verified: restored.verified,
+          };
+          targetResult.message =
+            "Static restore refused after removing keys: " +
+            String(setErr) +
+            (restored.verified
+              ? " (removed keys restored in place)"
+              : " (could not verify restoration of removed keys)");
+          targetResult.after = readAfterEvidence(prop);
+          targetResult.status = "failed";
+          opResult.targets.push(targetResult);
+          return {
+            anyChanged: mutated,
+            anyFailed: true,
+            applyError: targetResult.message,
+          };
+        }
+      }
+    } else if (kf.mode === "clear") {
+      while (prop.numKeys > 0) {
+        prop.removeKey(1);
         mutated = true;
       }
     } else {
@@ -2602,6 +2821,8 @@ export function applySetPropertyKeyframes(plan, opResult) {
     } else {
       postOk = false;
     }
+  } else if (kf.mode === "clear") {
+    postOk = afterSnapshot.numKeys === 0;
   } else {
     postOk = pkfTimelineMatchesDesired(afterSnapshot, kf.desiredEntries, kf.info);
   }
@@ -2610,7 +2831,9 @@ export function applySetPropertyKeyframes(plan, opResult) {
       "Post-condition failed: " +
       (kf.mode === "static"
         ? "keys were not removed or the static value does not match the sample"
-        : "written keyframes do not match the requested timeline");
+        : kf.mode === "clear"
+          ? "keys were not removed from the property"
+          : "written keyframes do not match the requested timeline");
     targetResult.after = readAfterEvidence(prop);
     targetResult.status = "failed";
     opResult.targets.push(targetResult);
@@ -2659,6 +2882,10 @@ export function applySetPropertyKeyframes(plan, opResult) {
     expression: exprAfter,
   };
   if (kf.mode === "static") targetResult.after.staticValue = kf.sample;
+  if (kf.mode === "clear") {
+    var retainedFinal = pkfReadStaticValue(prop);
+    if (retainedFinal !== null) targetResult.after.retainedValue = retainedFinal;
+  }
   targetResult.preservation = {
     scope: "other_keyframes_on_target_layer",
     checkedProperties: afterPres.checkedProperties,
@@ -2852,7 +3079,11 @@ export function applyResetLayerSurface(plan, opResult) {
       targetResult.message = "Post-condition failed: layer surface counts/flags not cleared";
     }
     opResult.targets.push(targetResult);
-    return { anyChanged: true, anyFailed: true, applyError: targetResult.message };
+    return {
+      anyChanged: true,
+      anyFailed: true,
+      applyError: targetResult.message,
+    };
   } catch (rse) {
     targetResult.status = "failed";
     targetResult.message = String(rse);
@@ -2889,7 +3120,11 @@ export function applyDeleteLayer(plan, opResult) {
     targetResult.status = "failed";
     targetResult.message = "Post-condition failed: layer id still present after delete";
     opResult.targets.push(targetResult);
-    return { anyChanged: true, anyFailed: true, applyError: targetResult.message };
+    return {
+      anyChanged: true,
+      anyFailed: true,
+      applyError: targetResult.message,
+    };
   } catch (de) {
     targetResult.status = "failed";
     targetResult.message = String(de);
@@ -3011,7 +3246,11 @@ export function applySafeDeleteProjectItem(plan, opResult) {
     }
   }
 
-  return { anyChanged: anyChanged, anyFailed: anyFailed, applyError: applyError };
+  return {
+    anyChanged: anyChanged,
+    anyFailed: anyFailed,
+    applyError: applyError,
+  };
 }
 
 function readCompSettingsSnapshot(comp) {
@@ -3132,7 +3371,11 @@ export function applySetCompSettings(plan, opResult) {
       targetResult.message = "renderer is not in comp.renderers: " + settings.renderer;
       targetResult.after = before;
       opResult.targets.push(targetResult);
-      return { anyChanged: false, anyFailed: true, applyError: targetResult.message };
+      return {
+        anyChanged: false,
+        anyFailed: true,
+        applyError: targetResult.message,
+      };
     }
   }
   try {
@@ -3210,7 +3453,11 @@ export function applySetCompSettings(plan, opResult) {
     targetResult.status = "failed";
     targetResult.message = "Post-condition failed: composition settings did not match request";
     opResult.targets.push(targetResult);
-    return { anyChanged: true, anyFailed: true, applyError: targetResult.message };
+    return {
+      anyChanged: true,
+      anyFailed: true,
+      applyError: targetResult.message,
+    };
   } catch (ce) {
     targetResult.status = "failed";
     targetResult.message = String(ce);

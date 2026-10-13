@@ -177,9 +177,9 @@ Success evidence includes `resolvedMatchNames` with the normalized matchName cha
 }
 ```
 
-#### `set_property_keyframes` — property timelines and sampled restore
+#### `set_property_keyframes` — property timelines, sampled restore, and clear
 
-Replace **one property's** complete keyframe timeline, or remove its keys and restore the pre-expression value sampled at a composition time. Selectors are an exact, unique matchName/display-name path (or `propertyPath` with `.` / `->`), including intermediate groups; each segment must resolve to exactly one child, so duplicate effect instances need a display-name or deeper segment.
+Replace **one property's** complete keyframe timeline, remove its keys and restore the pre-expression value sampled at a composition time, or clear all keys without writing a value. Selectors are an exact, unique matchName/display-name path (or `propertyPath` with `.` / `->`), including intermediate groups; each segment must resolve to exactly one child, so duplicate effect instances need a display-name or deeper segment.
 
 ```json
 {
@@ -207,13 +207,14 @@ Replace **one property's** complete keyframe timeline, or remove its keys and re
 }
 ```
 
-- **Two desired states** (exactly one): `keyframes` (non-empty complete replacement — omitted keys are deleted) or `staticValueAtTime` (composition seconds; samples the authored pre-expression value, removes every key, then restores the sample as the static value).
+- **Three desired states** (exactly one): `keyframes` (non-empty complete replacement — omitted keys are deleted); `staticValueAtTime` (composition seconds; samples the authored pre-expression value, removes every key, then restores the sample as the static value); or `clearKeys: true` (removes every key and writes no value).
+- **Clear mode** never writes a value, so it also works when After Effects hides the property — for example `Audio Levels` on an audio-less solid (issue [#32](https://github.com/alphacornutum/layercake/issues/32)). After Effects chooses the value the property retains (observed: the last key's value); evidence reports it as `retainedValue`, a read-back, not a sampled or restored value. A property that already has zero keys reports `already_satisfied`. On a hidden property `removeKey` and reads always work and `setValue` is refused; whether keys can be added while hidden is host-dependent, so clear mode never depends on it.
 - **Targets** follow the id-or-unique-name rules above; the property path is resolved strictly (ambiguous or unresolved segments refuse before mutation).
 - **Values** are finite numbers or 2/3-component vectors (`COLOR` is exactly 4). AE may normalize extra components (for example Scale keeps its default z on 2D layers); LayerCake writes what you supply and verifies those components. Complex AE-native values (shape, text document, marker, custom) and special properties (Time Remap, separated dimensions) are refused.
 - **Curves**: incoming/outgoing `LINEAR`/`BEZIER`/`HOLD` (omitted = `LINEAR`); each Bezier side requires an ease array of `{speed, influence}` (`influence` 0.1–100). Because AE forces **both** sides to Bezier whenever ease is applied, mixed or HOLD interpolation with ease is rejected. Spatial properties (Position/Anchor) get straight paths — zero tangents, roving/auto-Bezier/continuity off; author spatial curves with `ae_eval_script`.
 - **Expressions** are preserved by default; a property with an **enabled** expression refuses the op. Pass `expressionHandling: "clear"` to clear only that property's expression (verified empty/disabled).
 - **Expected-state guards** are optional (`numKeys`, a complete ordered `keyframes` timeline with optional curve assertions, or both). Both must agree and pass; a stale guard refuses even when the desired state already matches.
-- **Safety**: full preflight before any batch mutation (invalid later ops never let earlier ops apply), bounded timelines (≤ 1024 keys; ≤ 4096 sibling nodes/keys), stale-plan refusal instead of silent recapture, and **sibling key preservation** verified on the target layer (key times, values, interpolation, and authored Bezier ease). Layers whose keyed siblings cannot be faithfully compared (markers, animated mask paths/text) are refused — LayerCake never claims preservation it did not check. No implicit save.
+- **Safety**: full preflight before any batch mutation (invalid later ops never let earlier ops apply), bounded timelines (≤ 1024 keys; ≤ 4096 sibling nodes/keys), stale-plan refusal instead of silent recapture, and **sibling key preservation** verified on the target layer (key times, values, interpolation, and authored Bezier ease). Layers whose keyed siblings cannot be faithfully compared (markers, animated mask paths/text) are refused — LayerCake never claims preservation it did not check. If a `staticValueAtTime` restore is refused after the keys are removed (a hidden property), the removed keys are restored in place and the target's `restore` evidence reports whether that restoration verified. No implicit save.
 
 To remove animation but keep a chosen value (issue [#28](https://github.com/alphacornutum/layercake/issues/28) — e.g. Audio Levels keys on a solid):
 
@@ -224,6 +225,17 @@ To remove animation but keep a chosen value (issue [#28](https://github.com/alph
   "matchNames": ["ADBE Audio Group", "ADBE Audio Levels"],
   "staticValueAtTime": 0,
   "expected": { "numKeys": 2 }
+}
+```
+
+To clear the keys with no value write — required when the property is hidden, such as an audio-less solid whose `Audio Levels` refuses `setValue` — use `clearKeys`:
+
+```json
+{
+  "op": "set_property_keyframes",
+  "target": { "compId": 1, "layerId": 15 },
+  "matchNames": ["ADBE Audio Group", "ADBE Audio Levels"],
+  "clearKeys": true
 }
 ```
 

@@ -159,6 +159,25 @@ The tool MUST return a single JSON object suitable for agent consumption (string
 - **WHEN** `ae_get_layer` runs successfully
 - **THEN** the result MUST include the resolved composition and layer identity, the effective `detail`, `atTime`, and `preExpression`, and the property-tree payload
 
+### Requirement: Layer name-assignment state
+
+`ae_get_layer` MUST expose the resolved layer’s explicit-name state as read-only identity metadata, independently of the requested property detail tier. Where After Effects exposes the fields, the result MUST include `isNameSet` and `isNameFromSource`; it MUST continue to include the layer source identity when a source exists.
+
+#### Scenario: Inspect inherited name
+
+- **WHEN** `ae_get_layer` inspects a layer whose visible name is inherited from its source
+- **THEN** the result MUST include the visible `name`, `isNameSet: false`, `isNameFromSource: true` when exposed by After Effects, and its source identity
+
+#### Scenario: Inspect explicitly assigned name after reopening
+
+- **WHEN** a project with an explicitly named layer is saved, closed, reopened, and inspected with `ae_get_layer`
+- **THEN** the result MUST show the saved visible name and `isNameSet: true`, and MUST report the current source identity when a source exists
+
+#### Scenario: Name-state property unavailable
+
+- **WHEN** After Effects does not expose `isNameFromSource` for a resolved layer
+- **THEN** `ae_get_layer` MAY omit or return null for `isNameFromSource` and MUST NOT infer its value from visible name equality
+
 ### Requirement: Dual authored and evaluated transform samples
 
 For `detail` values `extended` and `full`, when the property walk includes Transform properties that support `valueAtTime` (at least Scale; and Anchor Point, Position, Rotation/Orientation, and Opacity when included), the property node MUST expose dual samples when the property has an expression and/or keyframes: `authoredValue` from `valueAtTime(..., true)` (pre-expression) and `evaluatedValue` from `valueAtTime(..., false)` (post-expression) at the effective `atTime`. The existing `value` field MUST continue to reflect the caller’s `preExpression` flag (default `true`) so current clients remain valid. Operator documentation MUST state that authored/wrapper purity checks MUST use `authoredValue` (or `value` with `preExpression: true`), not post-expression samples alone.

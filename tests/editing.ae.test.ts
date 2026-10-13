@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdtempSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -126,6 +126,85 @@ async function mainSolidLayer(
   const background = main!.layers.find((l) => l.name === "Background");
   expect(background).toBeTruthy();
   return { main: main!, background: background! };
+}
+
+/** Minimal 8-bit mono PCM WAV (silence) so a host can build an audio-capable source. */
+function writeSilentWav(dir: string, name: string): string {
+  const sampleRate = 8000;
+  const dataSize = sampleRate; // one second, 1 byte per frame (8-bit mono)
+  const buf = Buffer.alloc(44 + dataSize);
+  buf.write("RIFF", 0, "ascii");
+  buf.writeUInt32LE(36 + dataSize, 4);
+  buf.write("WAVE", 8, "ascii");
+  buf.write("fmt ", 12, "ascii");
+  buf.writeUInt32LE(16, 16);
+  buf.writeUInt16LE(1, 20); // PCM
+  buf.writeUInt16LE(1, 22); // mono
+  buf.writeUInt32LE(sampleRate, 24);
+  buf.writeUInt32LE(sampleRate, 28); // byteRate
+  buf.writeUInt16LE(1, 32); // blockAlign
+  buf.writeUInt16LE(8, 34); // bits per sample
+  buf.write("data", 36, "ascii");
+  buf.writeUInt32LE(dataSize, 40);
+  buf.fill(128, 44); // 8-bit silence
+  const path = join(dir, name);
+  writeFileSync(path, buf);
+  return path;
+}
+
+/**
+ * Build issue #32's hidden fixture in the open work copy: replace the solid
+ * source with a WAV so Audio Levels is keyable, add keys, then replace the source
+ * back to the solid. `hasAudio` returns to false while the keys are retained, so
+ * the property is hidden and refuses a value write.
+ */
+async function seedHiddenAudioLevels(
+  host: AeHost,
+  main: InventoryComposition,
+  background: InventoryLayer,
+  wavPath: string,
+): Promise<{
+  hasAudioAfterAudio: boolean;
+  hasAudioBack: boolean;
+  numKeys: number;
+}> {
+  const resolved = await host.evalScript(
+    `
+    var comp = null;
+    for (var i = 1; i <= app.project.numItems; i++) {
+      var item = app.project.item(i);
+      if (item instanceof CompItem && item.id === ${main.id}) { comp = item; break; }
+    }
+    if (!comp) throw new Error("main missing");
+    var layer = null;
+    for (var j = 1; j <= comp.numLayers; j++) {
+      if (comp.layer(j).id === ${background.id}) { layer = comp.layer(j); break; }
+    }
+    if (!layer) throw new Error("solid layer missing");
+    var solidSource = layer.source;
+    var audioItem = app.project.importFile(new ImportOptions(new File(${JSON.stringify(wavPath)})));
+    layer.replaceSource(audioItem, false);
+    var hasAudioAfterAudio = !!layer.hasAudio;
+    var al = layer.property("ADBE Audio Group").property("ADBE Audio Levels");
+    al.setValueAtTime(0, [-20, -20]);
+    al.setValueAtTime(1, [-8, -8]);
+    layer.replaceSource(solidSource, false);
+    var hasAudioBack = !!layer.hasAudio;
+    var al2 = layer.property("ADBE Audio Group").property("ADBE Audio Levels");
+    return JSON.stringify({
+      hasAudioAfterAudio: hasAudioAfterAudio,
+      hasAudioBack: hasAudioBack,
+      numKeys: al2.numKeys
+    });
+    `,
+    config.scriptTimeoutMs,
+  );
+  if (!resolved.ok) throw new Error(`seed hidden fixture failed: ${resolved.error}`);
+  return JSON.parse(resolved.result) as {
+    hasAudioAfterAudio: boolean;
+    hasAudioBack: boolean;
+    numKeys: number;
+  };
 }
 
 /** Human-readable failure detail for patch assertions (surfaces verified evidence). */
@@ -2685,6 +2764,240 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
     expect(after.scaleKeys).toBe(0);
     expect(after.value[0]).toBeCloseTo(10, 2);
     expect(after.value[1]).toBeCloseTo(10, 2);
+  });
+
+  it("set_property_keyframes clearKeys clears a hidden Audio Levels property without a value write", async (ctx) => {
+    if (!aeReady) {
+      ctx.skip();
+      return;
+    }
+    await openWorkCopy(host, true);
+    const { main, background } = await mainSolidLayer(host);
+
+    const wavPath = writeSilentWav(workDir, "silence-clear.wav");
+    const seeded = await seedHiddenAudioLevels(host, main, background, wavPath);
+    expect(seeded.hasAudioAfterAudio).toBe(true);
+    expect(seeded.hasAudioBack).toBe(false);
+    expect(seeded.numKeys).toBe(2);
+
+    // Seed a sibling keyed property so clear mode must prove preservation.
+    const siblingSeed = await host.evalScript(
+      `
+        var comp = null;
+        for (var i = 1; i <= app.project.numItems; i++) {
+          var item = app.project.item(i);
+          if (item instanceof CompItem && item.id === ${main.id}) { comp = item; break; }
+        }
+        var layer = null;
+        for (var j = 1; j <= comp.numLayers; j++) {
+          if (comp.layer(j).id === ${background.id}) { layer = comp.layer(j); break; }
+        }
+        var op = layer.property("ADBE Transform Group").property("ADBE Opacity");
+        op.setValueAtTime(0.5, [42]);
+        return JSON.stringify({ opacityKeys: op.numKeys });
+        `,
+      config.scriptTimeoutMs,
+    );
+    expect(siblingSeed.ok).toBe(true);
+
+    const before = await listProjectContext(host, config.scriptTimeoutMs);
+    const op = {
+      op: "set_property_keyframes" as const,
+      target: { compId: main.id, layerId: background.id },
+      matchNames: ["ADBE Audio Group", "ADBE Audio Levels"],
+      clearKeys: true as const,
+      expected: { numKeys: 2 },
+    };
+    const patch = await applyProjectPatch(
+      host,
+      {
+        project: {
+          path: before.projectPath!,
+          fingerprint: before.fingerprint,
+        },
+        operations: [op],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(patch.ok, !patch.ok ? patch.error : patchDetail(patch)).toBe(true);
+    if (!patch.ok) return;
+    const target = patch.results[0]?.targets[0] as SetPropertyKeyframesTargetResult;
+    expect(target.status).toBe("changed");
+    expect(target.mode).toBe("clear");
+    expect(target.after?.numKeys).toBe(0);
+    expect(target.after?.keyframes ?? []).toHaveLength(0);
+    // AE chooses the retained value; it is reported as read-back, not a restore.
+    expect(target.after?.retainedValue).toBeDefined();
+    expect(target.preservation).toMatchObject({
+      scope: "other_keyframes_on_target_layer",
+      unchanged: true,
+    });
+
+    const again = await applyProjectPatch(
+      host,
+      {
+        project: {
+          path: before.projectPath!,
+          fingerprint: patch.fingerprint,
+        },
+        operations: [{ ...op, expected: { numKeys: 0 } }],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(again.ok, !again.ok ? again.error : undefined).toBe(true);
+    if (!again.ok) return;
+    expect(again.results[0]?.targets[0]).toMatchObject({
+      status: "already_satisfied",
+      mode: "clear",
+    });
+  });
+
+  it("set_property_keyframes staticValueAtTime restores a visible property and reports restore evidence on a hidden one", async (ctx) => {
+    if (!aeReady) {
+      ctx.skip();
+      return;
+    }
+    await openWorkCopy(host, true);
+    const { main, background } = await mainSolidLayer(host);
+
+    // Visible property: unchanged behavior — keys removed, sampled value restored.
+    await host.evalScript(
+      `
+        var comp = null;
+        for (var i = 1; i <= app.project.numItems; i++) {
+          var item = app.project.item(i);
+          if (item instanceof CompItem && item.id === ${main.id}) { comp = item; break; }
+        }
+        var layer = null;
+        for (var j = 1; j <= comp.numLayers; j++) {
+          if (comp.layer(j).id === ${background.id}) { layer = comp.layer(j); break; }
+        }
+        var sc = layer.property("ADBE Transform Group").property("ADBE Scale");
+        sc.setValueAtTime(0, [10, 10]);
+        sc.setValueAtTime(1, [90, 90]);
+        return JSON.stringify({ scaleKeys: sc.numKeys });
+        `,
+      config.scriptTimeoutMs,
+    );
+    let token = await listProjectContext(host, config.scriptTimeoutMs);
+    const visible = await applyProjectPatch(
+      host,
+      {
+        project: { path: token.projectPath!, fingerprint: token.fingerprint },
+        operations: [
+          {
+            op: "set_property_keyframes",
+            target: { compId: main.id, layerId: background.id },
+            matchNames: ["ADBE Transform Group", "ADBE Scale"],
+            staticValueAtTime: 0,
+            expected: { numKeys: 2 },
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(visible.ok, !visible.ok ? visible.error : patchDetail(visible)).toBe(true);
+    if (!visible.ok) return;
+    const visibleTarget = visible.results[0]?.targets[0] as SetPropertyKeyframesTargetResult;
+    expect(visibleTarget.status).toBe("changed");
+    expect(visibleTarget.mode).toBe("static");
+    expect(visibleTarget.after?.numKeys).toBe(0);
+    expect(visibleTarget.restore).toBeUndefined();
+
+    // Hidden property: the restore write is refused, so the op fails and reports
+    // whether its in-place restoration verified rather than claiming success.
+    const wavPath = writeSilentWav(workDir, "silence-static.wav");
+    const seeded = await seedHiddenAudioLevels(host, main, background, wavPath);
+    expect(seeded.hasAudioBack).toBe(false);
+    expect(seeded.numKeys).toBe(2);
+
+    token = await listProjectContext(host, config.scriptTimeoutMs);
+    const hidden = await applyProjectPatch(
+      host,
+      {
+        project: { path: token.projectPath!, fingerprint: token.fingerprint },
+        operations: [
+          {
+            op: "set_property_keyframes",
+            target: { compId: main.id, layerId: background.id },
+            matchNames: ["ADBE Audio Group", "ADBE Audio Levels"],
+            staticValueAtTime: 0,
+            expected: { numKeys: 2 },
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(hidden.ok).toBe(false);
+    if (hidden.ok) return;
+    const failed = hidden.results?.find((r) => r.status === "failed")?.targets[0] as
+      | SetPropertyKeyframesTargetResult
+      | undefined;
+    expect(failed).toBeDefined();
+    expect(failed?.mode).toBe("static");
+    expect(failed?.restore?.attempted).toBe(true);
+    expect(typeof failed?.restore?.verified).toBe("boolean");
+    if (failed?.restore?.verified) {
+      // Clean in-place recovery: keys are back and match the before snapshot.
+      expect(failed.after?.numKeys).toBe(2);
+      expect(failed.after?.keyframes).toEqual(failed.before?.keyframes);
+    }
+  });
+
+  it("probes addKey/setValueAtKey on a hidden property", async (ctx) => {
+    if (!aeReady) {
+      ctx.skip();
+      return;
+    }
+    await openWorkCopy(host, true);
+    const { main, background } = await mainSolidLayer(host);
+    const wavPath = writeSilentWav(workDir, "silence-probe.wav");
+    const seeded = await seedHiddenAudioLevels(host, main, background, wavPath);
+    expect(seeded.hasAudioBack).toBe(false);
+    expect(seeded.numKeys).toBe(2);
+
+    const probe = await host.evalScript(
+      `
+        var comp = null;
+        for (var i = 1; i <= app.project.numItems; i++) {
+          var item = app.project.item(i);
+          if (item instanceof CompItem && item.id === ${main.id}) { comp = item; break; }
+        }
+        var layer = null;
+        for (var j = 1; j <= comp.numLayers; j++) {
+          if (comp.layer(j).id === ${background.id}) { layer = comp.layer(j); break; }
+        }
+        if (layer.hasAudio) throw new Error("fixture not hidden");
+        var al = layer.property("ADBE Audio Group").property("ADBE Audio Levels");
+        var addKeyOk = true;
+        try { al.addKey(2); } catch (e) { addKeyOk = false; }
+        var setValueAtKeyOk = true;
+        try { al.setValueAtKey(1, [-1, -1]); } catch (e2) { setValueAtKeyOk = false; }
+        var setValueOk = true;
+        try { al.setValue([-1, -1]); } catch (e3) { setValueOk = false; }
+        return JSON.stringify({
+          addKeyOk: addKeyOk,
+          setValueAtKeyOk: setValueAtKeyOk,
+          setValueOk: setValueOk
+        });
+        `,
+      config.scriptTimeoutMs,
+    );
+    expect(probe.ok, !probe.ok ? probe.error : undefined).toBe(true);
+    if (!probe.ok) return;
+    const observed = JSON.parse(probe.result) as {
+      addKeyOk: boolean;
+      setValueAtKeyOk: boolean;
+      setValueOk: boolean;
+    };
+    // Observed host behavior (AE 26.5x89): setValue is refused on a hidden
+    // property. addKey/setValueAtKey availability there is host-dependent, so
+    // clear mode never relies on either write; static-mode restore reports whether
+    // the in-place recreation verified. Record the observed booleans in the
+    // operator docs when this runs on a new AE version.
+    expect(observed.setValueOk).toBe(false);
+    expect(typeof observed.addKeyOk).toBe("boolean");
+    expect(typeof observed.setValueAtKeyOk).toBe("boolean");
   });
 
   it("set_property_keyframes expression policy refuses enabled, clears on request, preserves disabled", async (ctx) => {
