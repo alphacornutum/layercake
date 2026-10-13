@@ -183,7 +183,8 @@ export function createServer(
         "Requires project.path + project.fingerprint guards from ae_project_context. " +
         "Ops: set_text_style (partial TextDocument style bag — font, size, leading/autoLeading, fill/stroke, " +
         "justification, text, box geometry, …; omit key = preserve; authored + evaluatedStyle evidence); " +
-        "rename_layer; rename_project_item; set_layer_index; create_solid (always-create; optional name); " +
+        "rename_layer (ensures an explicit layer name, even when the visible text already matches); rename_project_item; " +
+        "set_layer_index; create_solid (always-create; optional name); " +
         "create_text (target.compId|compName + layout point|box + text; box requires boxTextSize; " +
         "optional name/style; no in-place point↔box convert — recreate + delete_layer); " +
         "replace_layer_source; set_layer_timing (integer frames only); set_layer_switches " +
@@ -248,7 +249,10 @@ export function createServer(
         const result = await saveProject(
           host,
           { mode, expectedFingerprint, path, allowOverwrite, projectPath },
-          { artifactDir: config.artifactDir, timeoutMs: config.scriptTimeoutMs },
+          {
+            artifactDir: config.artifactDir,
+            timeoutMs: config.scriptTimeoutMs,
+          },
         );
         return textResult(JSON.stringify(result, null, 2), !result.ok);
       } catch (err) {
@@ -487,6 +491,7 @@ export function createServer(
       title: "Inspect one composition layer",
       description:
         "Read-only deep dump of one layer's property tree as JSON. " +
+        "Identity metadata includes isNameSet and, for AVLayers when available, isNameFromSource. " +
         "Provide exactly one of compId|compName and exactly one of layerId|layerName (case-sensitive exact names; ambiguous names fail with candidate id lists). " +
         'detail defaults to "overview": skeleton fields plus numKeys/hasExpression/expressionEnabled — no expression bodies, keyframe arrays, or sampled values. ' +
         'Use detail "extended" or "full" (and/or matchNames) to retrieve full expression text, sampled values at atTime (default composition CTI), and keyframe timelines. ' +

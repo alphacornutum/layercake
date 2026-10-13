@@ -26,6 +26,7 @@ import type {
   DeleteProjectItemTargetResult,
   MoveProjectItemTargetResult,
   ReplaceLayerSourceTargetResult,
+  RenameLayerTargetResult,
   ResetLayerSurfaceTargetResult,
   SetCompSettingsTargetResult,
   SetLayerSwitchesTargetResult,
@@ -76,7 +77,10 @@ let aeReady = false;
 
 async function closeDiscard(host: AeHost): Promise<void> {
   try {
-    await closeProject(host, { policy: "discard", timeoutMs: config.scriptTimeoutMs });
+    await closeProject(host, {
+      policy: "discard",
+      timeoutMs: config.scriptTimeoutMs,
+    });
   } catch {
     // vacant or already closed
   }
@@ -287,8 +291,17 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
     const create = await applyProjectPatch(
       host,
       {
-        project: { path: before.projectPath!, fingerprint: before.fingerprint },
-        operations: [{ op: "create_folder", name: "LC_PanelProbe", parentFolderId: rootId }],
+        project: {
+          path: before.projectPath!,
+          fingerprint: before.fingerprint,
+        },
+        operations: [
+          {
+            op: "create_folder",
+            name: "LC_PanelProbe",
+            parentFolderId: rootId,
+          },
+        ],
       },
       config.scriptTimeoutMs,
     );
@@ -312,7 +325,10 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
     const move = await applyProjectPatch(
       host,
       {
-        project: { path: midCtx.projectPath!, fingerprint: midCtx.fingerprint },
+        project: {
+          path: midCtx.projectPath!,
+          fingerprint: midCtx.fingerprint,
+        },
         operations: [
           {
             op: "move_project_item",
@@ -339,7 +355,10 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
     const moveAgain = await applyProjectPatch(
       host,
       {
-        project: { path: afterMove.projectPath!, fingerprint: afterMove.fingerprint },
+        project: {
+          path: afterMove.projectPath!,
+          fingerprint: afterMove.fingerprint,
+        },
         operations: [
           {
             op: "move_project_item",
@@ -378,8 +397,17 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
     const nestedCreate = await applyProjectPatch(
       host,
       {
-        project: { path: afterRestore.projectPath!, fingerprint: afterRestore.fingerprint },
-        operations: [{ op: "create_folder", name: "LC_NestedLeaf", parentFolderId: folderId! }],
+        project: {
+          path: afterRestore.projectPath!,
+          fingerprint: afterRestore.fingerprint,
+        },
+        operations: [
+          {
+            op: "create_folder",
+            name: "LC_NestedLeaf",
+            parentFolderId: folderId!,
+          },
+        ],
       },
       config.scriptTimeoutMs,
     );
@@ -390,7 +418,10 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
     const del = await applyProjectPatch(
       host,
       {
-        project: { path: afterNested.projectPath!, fingerprint: afterNested.fingerprint },
+        project: {
+          path: afterNested.projectPath!,
+          fingerprint: afterNested.fingerprint,
+        },
         operations: [
           {
             op: "delete_project_item",
@@ -414,7 +445,10 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
     const rootRefuse = await applyProjectPatch(
       host,
       {
-        project: { path: afterDel.projectPath!, fingerprint: afterDel.fingerprint },
+        project: {
+          path: afterDel.projectPath!,
+          fingerprint: afterDel.fingerprint,
+        },
         operations: [
           {
             op: "delete_project_item",
@@ -480,7 +514,10 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
     const first = await applyProjectPatch(
       host,
       {
-        project: { path: ctxBind.projectPath!, fingerprint: ctxBind.fingerprint },
+        project: {
+          path: ctxBind.projectPath!,
+          fingerprint: ctxBind.fingerprint,
+        },
         operations: [
           {
             op: "set_text_style",
@@ -531,7 +568,10 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
     const byLayerNames = await applyProjectPatch(
       host,
       {
-        project: { path: before.projectPath!, fingerprint: before.fingerprint },
+        project: {
+          path: before.projectPath!,
+          fingerprint: before.fingerprint,
+        },
         operations: [
           {
             op: "set_text_style",
@@ -583,7 +623,10 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
     const patch = await applyProjectPatch(
       host,
       {
-        project: { path: before.projectPath!, fingerprint: before.fingerprint },
+        project: {
+          path: before.projectPath!,
+          fingerprint: before.fingerprint,
+        },
         operations: [
           {
             op: "set_text_style",
@@ -619,7 +662,10 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
     ): { kind?: string; style?: { autoLeading?: boolean } } | null => {
       for (const n of nodes) {
         if (n.propertyValueType === "TEXT_DOCUMENT" && n.value && typeof n.value === "object") {
-          return n.value as { kind?: string; style?: { autoLeading?: boolean } };
+          return n.value as {
+            kind?: string;
+            style?: { autoLeading?: boolean };
+          };
         }
         if (n.properties) {
           const nested = findTextDoc(n.properties);
@@ -763,7 +809,10 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
     const byId = await applyProjectPatch(
       host,
       {
-        project: { path: before.projectPath!, fingerprint: before.fingerprint },
+        project: {
+          path: before.projectPath!,
+          fingerprint: before.fingerprint,
+        },
         operations: [
           {
             op: "rename_layer",
@@ -823,6 +872,205 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
     expect(after.projectPath).toBe(before.projectPath);
   });
 
+  it("pins an inherited same-text solid name through save/reopen and source replacement", async (ctx) => {
+    if (!aeReady) {
+      ctx.skip();
+      return;
+    }
+    await openWorkCopy(host, true);
+    const inventory = await listComps(host, {}, config.scriptTimeoutMs);
+    const main = inventory.compositions.find((comp) => comp.name === "main");
+    expect(main).toBeTruthy();
+    if (!main) return;
+
+    const created = await host.evalScript(
+      `
+      var comp = null;
+      for (var i = 1; i <= app.project.numItems; i++) {
+        var item = app.project.item(i);
+        if (item instanceof CompItem && item.id === ${main.id}) { comp = item; break; }
+      }
+      if (!comp) throw new Error("main composition missing");
+      var seed = comp.layers.addSolid([0.2,0.3,0.4], "Name Seed", 8, 8, 1);
+      var source = seed.source;
+      seed.remove();
+      source.name = "{music}";
+      var layer = comp.layers.add(source);
+      return JSON.stringify({
+        layerId: layer.id,
+        sourceId: source.id,
+        name: layer.name,
+        isNameSet: layer.isNameSet,
+        isNameFromSource: layer.isNameFromSource
+      });
+      `,
+      config.scriptTimeoutMs,
+    );
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    const inherited = JSON.parse(created.result) as {
+      layerId: number;
+      sourceId: number;
+      name: string;
+      isNameSet: boolean;
+      isNameFromSource: boolean;
+    };
+    expect(inherited).toMatchObject({
+      name: "{music}",
+      isNameSet: false,
+      isNameFromSource: true,
+    });
+
+    const before = await listProjectContext(host, config.scriptTimeoutMs);
+    const patch = await applyProjectPatch(
+      host,
+      {
+        project: {
+          path: before.projectPath!,
+          fingerprint: before.fingerprint,
+        },
+        operations: [
+          {
+            op: "rename_layer",
+            target: { compId: main.id, layerId: inherited.layerId },
+            layerName: "{music}",
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(patch.ok).toBe(true);
+    if (!patch.ok) return;
+    const renamed = patch.results[0]?.targets[0] as RenameLayerTargetResult;
+    expect(renamed).toMatchObject({
+      status: "changed",
+      before: {
+        name: "{music}",
+        isNameSet: false,
+        isNameFromSource: true,
+        sourceId: inherited.sourceId,
+      },
+      after: {
+        name: "{music}",
+        isNameSet: true,
+        isNameFromSource: false,
+        sourceId: inherited.sourceId,
+      },
+    });
+
+    const inspected = await getLayer(
+      host,
+      { compId: main.id, layerId: inherited.layerId },
+      config.scriptTimeoutMs,
+      config.inspectMaxBytes,
+    );
+    expect(inspected.layer).toMatchObject({
+      name: "{music}",
+      isNameSet: true,
+      isNameFromSource: false,
+      source: { id: inherited.sourceId },
+    });
+
+    const repeated = await applyProjectPatch(
+      host,
+      {
+        project: {
+          path: before.projectPath!,
+          fingerprint: patch.fingerprint,
+        },
+        operations: [
+          {
+            op: "rename_layer",
+            target: { compId: main.id, layerId: inherited.layerId },
+            layerName: "{music}",
+          },
+        ],
+      },
+      config.scriptTimeoutMs,
+    );
+    expect(repeated.ok).toBe(true);
+    if (!repeated.ok) return;
+    expect(repeated.results[0]?.targets[0]).toMatchObject({
+      status: "already_satisfied",
+      after: {
+        name: "{music}",
+        isNameSet: true,
+        sourceId: inherited.sourceId,
+      },
+    });
+
+    const artifactDir = mkdtempSync(join(tmpdir(), "lc-ae-explicit-name-"));
+    try {
+      copyFileSync(committedFixturePng, join(artifactDir, "1x1.png"));
+      const dest = join(artifactDir, "explicit-name-copy.aep");
+      const saved = await saveProject(
+        host,
+        {
+          mode: "save_copy",
+          expectedFingerprint: repeated.fingerprint,
+          path: dest,
+          projectPath: before.projectPath ?? undefined,
+        },
+        { artifactDir, timeoutMs: config.scriptTimeoutMs },
+      );
+      expect(saved.ok).toBe(true);
+      if (!saved.ok) return;
+      await closeDiscard(host);
+      await host.openProject(saved.writtenPath);
+
+      const reopened = await getLayer(
+        host,
+        { compId: main.id, layerId: inherited.layerId },
+        config.scriptTimeoutMs,
+        config.inspectMaxBytes,
+      );
+      expect(reopened.layer).toMatchObject({
+        name: "{music}",
+        isNameSet: true,
+        source: { id: inherited.sourceId },
+      });
+
+      const sources = await listSources(host, config.scriptTimeoutMs);
+      const replacement = sources.sources.find((source) => source.name === "1x1.png");
+      expect(replacement).toBeTruthy();
+      if (!replacement) return;
+      const reopenedContext = await listProjectContext(host, config.scriptTimeoutMs);
+      const replaced = await applyProjectPatch(
+        host,
+        {
+          project: {
+            path: reopenedContext.projectPath!,
+            fingerprint: reopenedContext.fingerprint,
+          },
+          operations: [
+            {
+              op: "replace_layer_source",
+              target: { compId: main.id, layerId: inherited.layerId },
+              sourceItemId: replacement.id,
+            },
+          ],
+        },
+        config.scriptTimeoutMs,
+      );
+      expect(replaced.ok).toBe(true);
+      if (!replaced.ok) return;
+      const afterReplace = await getLayer(
+        host,
+        { compId: main.id, layerId: inherited.layerId },
+        config.scriptTimeoutMs,
+        config.inspectMaxBytes,
+      );
+      expect(afterReplace.layer).toMatchObject({
+        name: "{music}",
+        isNameSet: true,
+        source: { id: replacement.id, name: "1x1.png" },
+      });
+    } finally {
+      await closeDiscard(host);
+      rmSync(artifactDir, { recursive: true, force: true });
+    }
+  });
+
   it("set_layer_switches toggles enabled with full switch evidence; no implicit save", async (ctx) => {
     if (!aeReady) {
       ctx.skip();
@@ -836,7 +1084,10 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
     const toggled = await applyProjectPatch(
       host,
       {
-        project: { path: before.projectPath!, fingerprint: before.fingerprint },
+        project: {
+          path: before.projectPath!,
+          fingerprint: before.fingerprint,
+        },
         operations: [
           {
             op: "set_layer_switches",
@@ -889,7 +1140,10 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
     const created = await applyProjectPatch(
       host,
       {
-        project: { path: ctxToken.projectPath!, fingerprint: ctxToken.fingerprint },
+        project: {
+          path: ctxToken.projectPath!,
+          fingerprint: ctxToken.fingerprint,
+        },
         operations: [
           {
             op: "create_solid",
@@ -942,7 +1196,10 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
     const setXf = await applyProjectPatch(
       host,
       {
-        project: { path: ctxToken.projectPath!, fingerprint: ctxToken.fingerprint },
+        project: {
+          path: ctxToken.projectPath!,
+          fingerprint: ctxToken.fingerprint,
+        },
         operations: [
           {
             op: "set_layer_transform",
@@ -976,7 +1233,10 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
     const again = await applyProjectPatch(
       host,
       {
-        project: { path: ctxToken.projectPath!, fingerprint: ctxToken.fingerprint },
+        project: {
+          path: ctxToken.projectPath!,
+          fingerprint: ctxToken.fingerprint,
+        },
         operations: [
           {
             op: "set_layer_transform",
@@ -1023,7 +1283,10 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
     const keyed = await applyProjectPatch(
       host,
       {
-        project: { path: ctxToken.projectPath!, fingerprint: ctxToken.fingerprint },
+        project: {
+          path: ctxToken.projectPath!,
+          fingerprint: ctxToken.fingerprint,
+        },
         operations: [
           {
             op: "set_layer_transform",
@@ -1044,7 +1307,10 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
     const reset = await applyProjectPatch(
       host,
       {
-        project: { path: ctxToken.projectPath!, fingerprint: ctxToken.fingerprint },
+        project: {
+          path: ctxToken.projectPath!,
+          fingerprint: ctxToken.fingerprint,
+        },
         operations: [
           {
             op: "reset_layer_surface",
@@ -1099,7 +1365,10 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
     const patched = await applyProjectPatch(
       host,
       {
-        project: { path: before.projectPath!, fingerprint: before.fingerprint },
+        project: {
+          path: before.projectPath!,
+          fingerprint: before.fingerprint,
+        },
         operations: [
           {
             op: "set_comp_settings",
@@ -1143,7 +1412,10 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
     const patch = await applyProjectPatch(
       host,
       {
-        project: { path: before.projectPath!, fingerprint: before.fingerprint },
+        project: {
+          path: before.projectPath!,
+          fingerprint: before.fingerprint,
+        },
         operations: [
           {
             op: "rename_layer",
@@ -1214,7 +1486,10 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
     );
     expect(dup.ok).toBe(true);
     if (!dup.ok) return;
-    const dupInfo = JSON.parse(dup.result) as { layerName: string; solidId: number };
+    const dupInfo = JSON.parse(dup.result) as {
+      layerName: string;
+      solidId: number;
+    };
 
     const bind = await listProjectContext(host, config.scriptTimeoutMs);
     const refused = await applyProjectPatch(
@@ -1255,7 +1530,10 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
     const patch = await applyProjectPatch(
       host,
       {
-        project: { path: before.projectPath!, fingerprint: before.fingerprint },
+        project: {
+          path: before.projectPath!,
+          fingerprint: before.fingerprint,
+        },
         operations: [
           {
             op: "set_layer_timing",
@@ -1422,7 +1700,13 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
       via: "patch" | "eval";
       expectTimingOk: boolean;
     }> = [
-      { frameRate: 24, inFrame: 0, outFrame: 90, via: "patch", expectTimingOk: true },
+      {
+        frameRate: 24,
+        inFrame: 0,
+        outFrame: 90,
+        via: "patch",
+        expectTimingOk: true,
+      },
       {
         frameRate: 12,
         inFrame: 6,
@@ -1431,8 +1715,20 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
         via: "patch",
         expectTimingOk: true,
       },
-      { frameRate: 29.97, inFrame: 10, outFrame: 120, via: "eval", expectTimingOk: false },
-      { frameRate: 30, inFrame: 0, outFrame: 200, via: "patch", expectTimingOk: true },
+      {
+        frameRate: 29.97,
+        inFrame: 10,
+        outFrame: 120,
+        via: "eval",
+        expectTimingOk: false,
+      },
+      {
+        frameRate: 30,
+        inFrame: 0,
+        outFrame: 200,
+        via: "patch",
+        expectTimingOk: true,
+      },
       {
         frameRate: 23.976,
         inFrame: 5,
@@ -1449,7 +1745,13 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
         via: "patch",
         expectTimingOk: true,
       },
-      { frameRate: 60, inFrame: 0, outFrame: 300, via: "patch", expectTimingOk: true },
+      {
+        frameRate: 60,
+        inFrame: 0,
+        outFrame: 300,
+        via: "patch",
+        expectTimingOk: true,
+      },
       {
         frameRate: 48,
         inFrame: 24,
@@ -1466,7 +1768,13 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
         via: "eval",
         expectTimingOk: false,
       },
-      { frameRate: 15, inFrame: 0, outFrame: 75, via: "patch", expectTimingOk: true },
+      {
+        frameRate: 15,
+        inFrame: 0,
+        outFrame: 75,
+        via: "patch",
+        expectTimingOk: true,
+      },
       {
         frameRate: layerInfo.frameRate || 30,
         inFrame: 0,
@@ -1497,7 +1805,10 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
       if (!set.ok) throw new Error(set.error);
       // Fingerprint changes outside patch — re-bind before the next timing write.
       ctxToken = await listProjectContext(host, config.scriptTimeoutMs);
-      return JSON.parse(set.result) as { frameRate: number; duration: number };
+      return JSON.parse(set.result) as {
+        frameRate: number;
+        duration: number;
+      };
     };
 
     for (const step of churn) {
@@ -1539,7 +1850,10 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
       const patch = await applyProjectPatch(
         host,
         {
-          project: { path: ctxToken.projectPath!, fingerprint: ctxToken.fingerprint },
+          project: {
+            path: ctxToken.projectPath!,
+            fingerprint: ctxToken.fingerprint,
+          },
           operations: ops,
         },
         config.scriptTimeoutMs,
@@ -1646,7 +1960,10 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
     const point = await applyProjectPatch(
       host,
       {
-        project: { path: ctxToken.projectPath!, fingerprint: ctxToken.fingerprint },
+        project: {
+          path: ctxToken.projectPath!,
+          fingerprint: ctxToken.fingerprint,
+        },
         operations: [
           {
             op: "create_text",
@@ -1678,7 +1995,10 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
     const box = await applyProjectPatch(
       host,
       {
-        project: { path: ctxToken.projectPath!, fingerprint: ctxToken.fingerprint },
+        project: {
+          path: ctxToken.projectPath!,
+          fingerprint: ctxToken.fingerprint,
+        },
         operations: [
           {
             op: "create_text",
@@ -1712,7 +2032,10 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
     const badStyle = await applyProjectPatch(
       host,
       {
-        project: { path: ctxToken.projectPath!, fingerprint: ctxToken.fingerprint },
+        project: {
+          path: ctxToken.projectPath!,
+          fingerprint: ctxToken.fingerprint,
+        },
         operations: [
           {
             op: "create_text",
@@ -1747,7 +2070,10 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
     const create = await applyProjectPatch(
       host,
       {
-        project: { path: ctxToken.projectPath!, fingerprint: ctxToken.fingerprint },
+        project: {
+          path: ctxToken.projectPath!,
+          fingerprint: ctxToken.fingerprint,
+        },
         operations: [
           {
             op: "create_solid",
@@ -1776,7 +2102,10 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
     const replace = await applyProjectPatch(
       host,
       {
-        project: { path: ctxToken.projectPath!, fingerprint: ctxToken.fingerprint },
+        project: {
+          path: ctxToken.projectPath!,
+          fingerprint: ctxToken.fingerprint,
+        },
         operations: [
           {
             op: "replace_layer_source",
@@ -1807,7 +2136,10 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
     const safeRefuseInUse = await applyProjectPatch(
       host,
       {
-        project: { path: ctxToken.projectPath!, fingerprint: ctxToken.fingerprint },
+        project: {
+          path: ctxToken.projectPath!,
+          fingerprint: ctxToken.fingerprint,
+        },
         operations: [
           {
             op: "safe_delete_project_item",
@@ -1822,7 +2154,10 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
     const mutate = await applyProjectPatch(
       host,
       {
-        project: { path: ctxToken.projectPath!, fingerprint: ctxToken.fingerprint },
+        project: {
+          path: ctxToken.projectPath!,
+          fingerprint: ctxToken.fingerprint,
+        },
         operations: [
           {
             op: "set_layer_index",
@@ -1872,7 +2207,10 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
     const safeDel = await applyProjectPatch(
       host,
       {
-        project: { path: ctxToken.projectPath!, fingerprint: ctxToken.fingerprint },
+        project: {
+          path: ctxToken.projectPath!,
+          fingerprint: ctxToken.fingerprint,
+        },
         operations: [
           {
             op: "safe_delete_project_item",
@@ -1931,7 +2269,10 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
     const skipInstance = await applyProjectPatch(
       host,
       {
-        project: { path: ctxToken.projectPath!, fingerprint: ctxToken.fingerprint },
+        project: {
+          path: ctxToken.projectPath!,
+          fingerprint: ctxToken.fingerprint,
+        },
         operations: [
           {
             op: "set_property_expression",
@@ -1954,7 +2295,10 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
     const viaMatchName = await applyProjectPatch(
       host,
       {
-        project: { path: ctxToken.projectPath!, fingerprint: ctxToken.fingerprint },
+        project: {
+          path: ctxToken.projectPath!,
+          fingerprint: ctxToken.fingerprint,
+        },
         operations: [
           {
             op: "set_property_expression",
@@ -1984,7 +2328,10 @@ describe.skipIf(!hasHost || !hasFixture)("project editing API (host e2e)", () =>
     const viaDisplayName = await applyProjectPatch(
       host,
       {
-        project: { path: ctxToken.projectPath!, fingerprint: ctxToken.fingerprint },
+        project: {
+          path: ctxToken.projectPath!,
+          fingerprint: ctxToken.fingerprint,
+        },
         operations: [
           {
             op: "set_property_expression",

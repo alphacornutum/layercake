@@ -39,10 +39,17 @@ export type TextStyleTargetResult = LayerTargetBase & {
   };
 };
 
-/** `rename_layer` target evidence (verified before/after names). */
+type LayerNameSnapshot = {
+  name: string;
+  isNameSet?: boolean;
+  isNameFromSource?: boolean;
+  sourceId?: number | null;
+};
+
+/** `rename_layer` target evidence (verified before/after name assignment). */
 export type RenameLayerTargetResult = LayerTargetBase & {
-  before?: { name: string };
-  after?: { name: string };
+  before?: LayerNameSnapshot;
+  after?: LayerNameSnapshot;
 };
 
 export type PanelFolderPlacement = {

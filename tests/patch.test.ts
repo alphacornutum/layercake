@@ -10,7 +10,10 @@ import { patchProjectInputSchema } from "../src/patch/schema.js";
 import { saveProject } from "../src/patch/save.js";
 
 function guardedProject() {
-  return { path: "/tmp/Demo.aep", fingerprint: "rev:1|dirty:0|path:/tmp/Demo.aep" };
+  return {
+    path: "/tmp/Demo.aep",
+    fingerprint: "rev:1|dirty:0|path:/tmp/Demo.aep",
+  };
 }
 
 describe("patchProjectInputSchema", () => {
@@ -72,7 +75,9 @@ describe("patchProjectInputSchema", () => {
           {
             op: "set_text_style",
             selector: { kind: "all_text_layers" },
-            style: { fontCapsOption: "FONT_ALL_CAPS" } as { fontCapsOption: string },
+            style: { fontCapsOption: "FONT_ALL_CAPS" } as {
+              fontCapsOption: string;
+            },
           },
         ],
       }),
@@ -134,7 +139,10 @@ describe("patchProjectInputSchema", () => {
       project: guardedProject(),
       operations: [{ op: "create_folder", parentFolderId: 12 }],
     });
-    expect(folder.operations[0]).toMatchObject({ op: "create_folder", parentFolderId: 12 });
+    expect(folder.operations[0]).toMatchObject({
+      op: "create_folder",
+      parentFolderId: 12,
+    });
     expect((folder.operations[0] as { name?: string }).name).toBeUndefined();
 
     const solid = patchProjectInputSchema.parse({
@@ -393,7 +401,9 @@ describe("patchProjectInputSchema", () => {
   });
 
   it("emits Codex-compatible JSON Schema (no tuple-style items arrays)", () => {
-    const schema = zodToJsonSchema(patchProjectInputSchema, { $refStrategy: "none" });
+    const schema = zodToJsonSchema(patchProjectInputSchema, {
+      $refStrategy: "none",
+    });
     const tupleItemsPaths: string[] = [];
     const walk = (node: unknown, path: string): void => {
       if (!node || typeof node !== "object") return;
@@ -535,7 +545,13 @@ describe("patchProjectInputSchema", () => {
     expect(empty.success).toBe(false);
     const emptySwitches = patchProjectInputSchema.safeParse({
       project: guardedProject(),
-      operations: [{ op: "set_comp_settings", target: { compId: 1 }, settings: { switches: {} } }],
+      operations: [
+        {
+          op: "set_comp_settings",
+          target: { compId: 1 },
+          settings: { switches: {} },
+        },
+      ],
     });
     expect(emptySwitches.success).toBe(false);
     const unknown = patchProjectInputSchema.safeParse({
@@ -562,7 +578,13 @@ describe("patchProjectInputSchema", () => {
     expect(both.success).toBe(false);
     const neither = patchProjectInputSchema.safeParse({
       project: guardedProject(),
-      operations: [{ op: "set_comp_settings", target: {}, settings: { durationFrames: 10 } }],
+      operations: [
+        {
+          op: "set_comp_settings",
+          target: {},
+          settings: { durationFrames: 10 },
+        },
+      ],
     });
     expect(neither.success).toBe(false);
   });
@@ -651,14 +673,22 @@ describe("patchProjectInputSchema", () => {
         {
           op: "set_layer_transform",
           target: { compName: "main", layerName: "Logo" },
-          transform: { anchorPoint: [100, 200, 0], scale: [50, 50, 50], rotation: 15 },
+          transform: {
+            anchorPoint: [100, 200, 0],
+            scale: [50, 50, 50],
+            rotation: 15,
+          },
         },
       ],
     });
     expect(byNames.operations[0]).toMatchObject({
       op: "set_layer_transform",
       target: { compName: "main", layerName: "Logo" },
-      transform: { anchorPoint: [100, 200, 0], scale: [50, 50, 50], rotation: 15 },
+      transform: {
+        anchorPoint: [100, 200, 0],
+        scale: [50, 50, 50],
+        rotation: 15,
+      },
     });
   });
 
@@ -977,7 +1007,15 @@ describe("buildPatchApplyScript", () => {
     expect(script).toContain("function resolveComp");
     expect(script).toContain("function resolveLayer");
     expect(script).toContain("ambiguous_layer_name");
-    expect(script).toContain("Post-condition failed: layer name did not match after write");
+    expect(script).toContain("function readLayerNameState");
+    expect(script).toContain("isNameSet");
+    expect(script).toContain("sourceId");
+    expect(script).toContain(
+      "Post-condition failed: layer name, explicit-name state, or source identity did not match after assignment",
+    );
+    expect(script).toContain("before.name === desired && before.isNameSet");
+    expect(script).toContain("after.isNameSet === true");
+    expect(script).toContain("before.sourceId === undefined || after.sourceId === before.sourceId");
     expect(script).not.toContain("function resolveFootage");
   });
 });
@@ -1036,7 +1074,7 @@ describe("parsePatchApplyResult", () => {
     });
   });
 
-  it("shapes rename_layer evidence with before/after names", () => {
+  it("shapes rename_layer evidence with before/after assignment state", () => {
     const parsed = parsePatchApplyResult(
       JSON.stringify({
         ok: true,
@@ -1052,8 +1090,18 @@ describe("parsePatchApplyResult", () => {
                 compName: "main",
                 layerName: "{message_10}",
                 status: "changed",
-                before: { name: "Hello World" },
-                after: { name: "{message_10}" },
+                before: {
+                  name: "Hello World",
+                  isNameSet: false,
+                  isNameFromSource: true,
+                  sourceId: 14,
+                },
+                after: {
+                  name: "{message_10}",
+                  isNameSet: true,
+                  isNameFromSource: false,
+                  sourceId: 14,
+                },
               },
             ],
           },
@@ -1066,8 +1114,8 @@ describe("parsePatchApplyResult", () => {
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
     expect(parsed.results[0]?.targets[0]).toMatchObject({
-      before: { name: "Hello World" },
-      after: { name: "{message_10}" },
+      before: { name: "Hello World", isNameSet: false, sourceId: 14 },
+      after: { name: "{message_10}", isNameSet: true, sourceId: 14 },
       status: "changed",
     });
   });
