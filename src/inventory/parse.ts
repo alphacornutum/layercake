@@ -517,6 +517,7 @@ function parseLayerInspectLayer(raw: unknown, path: string): LayerInspectLayer {
     id: assertNumber(raw.id, `${path}.id`),
     index: assertNumber(raw.index, `${path}.index`),
     name: assertString(raw.name, `${path}.name`),
+    isNameSet: assertBoolean(raw.isNameSet, `${path}.isNameSet`),
     type,
     inPoint: assertNumber(raw.inPoint, `${path}.inPoint`),
     outPoint: assertNumber(raw.outPoint, `${path}.outPoint`),
@@ -534,6 +535,9 @@ function parseLayerInspectLayer(raw: unknown, path: string): LayerInspectLayer {
   if (raw.solo !== undefined) layer.solo = assertBoolean(raw.solo, `${path}.solo`);
   if (raw.shy !== undefined) layer.shy = assertBoolean(raw.shy, `${path}.shy`);
   if (raw.locked !== undefined) layer.locked = assertBoolean(raw.locked, `${path}.locked`);
+  if (raw.isNameFromSource !== undefined) {
+    layer.isNameFromSource = assertBoolean(raw.isNameFromSource, `${path}.isNameFromSource`);
+  }
   if (raw.source !== undefined) {
     layer.source = parseSourceRef(raw.source, `${path}.source`);
   }

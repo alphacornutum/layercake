@@ -25,6 +25,8 @@ const overviewSample: LayerInspectResult = {
     id: 42,
     index: 1,
     name: "Logo",
+    isNameSet: false,
+    isNameFromSource: true,
     type: "av",
     inPoint: 0,
     outPoint: 5,
@@ -276,6 +278,8 @@ describe("parseLayerInspect", () => {
   it("parses overview without expression bodies or keyframes", () => {
     const parsed = parseLayerInspect(JSON.stringify(overviewSample));
     expect(parsed.detail).toBe("overview");
+    expect(parsed.layer.isNameSet).toBe(false);
+    expect(parsed.layer.isNameFromSource).toBe(true);
     const pos = parsed.layer.properties[0]!.properties![0]!;
     expect(pos.hasExpression).toBe(true);
     expect(pos.expression).toBeUndefined();
@@ -308,7 +312,10 @@ describe("parseLayerInspect", () => {
     expect(pos.authoredValue).toEqual([10, 20, 0]);
     expect(pos.evaluatedValue).toEqual([10, 20, 0]);
     const shape = props[1]!;
-    expect(shape.value).toEqual({ unserializable: true, propertyValueType: "SHAPE" });
+    expect(shape.value).toEqual({
+      unserializable: true,
+      propertyValueType: "SHAPE",
+    });
   });
 
   it("parses TEXT_DOCUMENT style projection and keeps shape unserializable", () => {
@@ -417,11 +424,17 @@ describe("formatInspectScriptError", () => {
 
 describe("inspect scripts", () => {
   it("embed shared helpers and resolution probes", () => {
-    const layerScript = buildGetLayerScript({ compId: 1, layerId: 2, detail: "extended" });
+    const layerScript = buildGetLayerScript({
+      compId: 1,
+      layerId: 2,
+      detail: "extended",
+    });
     expect(layerScript).toContain("function projectNameOf");
     expect(layerScript).toContain("function serializeSourceRef");
     expect(layerScript).toContain("function walkLayerProperties");
     expect(layerScript).toContain("resolveComp");
+    expect(layerScript).toContain("isNameSet: layer.isNameSet");
+    expect(layerScript).toContain("payload.isNameFromSource = layer.isNameFromSource");
     expect(layerScript).toContain("unserializable");
     expect(layerScript).toContain('"detail":"extended"');
     expect(layerScript).toContain("authoredValue");

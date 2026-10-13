@@ -223,6 +223,8 @@ export type LayerInspectLayer = {
   id: number;
   index: number;
   name: string;
+  isNameSet: boolean;
+  isNameFromSource?: boolean;
   type: LayerType;
   inPoint: number;
   outPoint: number;
