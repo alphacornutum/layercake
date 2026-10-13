@@ -453,6 +453,12 @@ export const setPropertyKeyframesOpSchema = z
       .finite()
       .optional()
       .describe("Composition seconds; sample authored value, remove keys, restore as static"),
+    clearKeys: z
+      .literal(true)
+      .optional()
+      .describe(
+        "Remove every keyframe without writing a value (works when After Effects hides the property)",
+      ),
     expected: z
       .object({
         numKeys: z.number().int().min(0).max(PROPERTY_KEYFRAME_MAX_KEYS).optional(),
@@ -502,11 +508,13 @@ export const setPropertyKeyframesOpSchema = z
     }
     const hasKeys = v.keyframes !== undefined;
     const hasStatic = v.staticValueAtTime !== undefined;
-    if (hasKeys === hasStatic) {
+    const hasClear = v.clearKeys === true;
+    const desiredStates = (hasKeys ? 1 : 0) + (hasStatic ? 1 : 0) + (hasClear ? 1 : 0);
+    if (desiredStates !== 1) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message:
-          "Provide exactly one of keyframes (non-empty complete timeline) or staticValueAtTime",
+          "Provide exactly one of keyframes (non-empty complete timeline), staticValueAtTime, or clearKeys",
       });
     }
     if (!keyframeTimesStrictlyIncreasing(v.keyframes)) {

@@ -255,6 +255,10 @@ export type PropertyKeyframeStateEvidence = {
   keyframes?: PropertyKeyframeEntry[];
   /** Static mode: authored value sampled at `sampleTime` (before) / restored static value (after). */
   staticValue?: number | number[];
+  /** Clear mode: no value write is performed; the value After Effects retains is read-back evidence. */
+  valueWritten?: false;
+  /** Clear mode: the value After Effects retained after removing keys (read-back, not a restore). */
+  retainedValue?: number | number[];
   expression?: { expression: string; expressionEnabled: boolean };
 };
 
@@ -264,10 +268,12 @@ export type SetPropertyKeyframesTargetResult = LayerTargetBase & {
   resolvedMatchNames?: string[];
   resolvedPath?: { name?: string; matchName?: string; index?: number }[];
   propertyValueType?: string;
-  mode?: "timeline" | "static";
+  mode?: "timeline" | "static" | "clear";
   sampleTime?: number;
   before?: PropertyKeyframeStateEvidence;
   after?: PropertyKeyframeStateEvidence;
+  /** Static mode: in-place recovery of removed keys after a refused static restore write. */
+  restore?: { attempted: boolean; verified: boolean };
   preservation?: {
     scope: "other_keyframes_on_target_layer";
     checkedProperties: number;
