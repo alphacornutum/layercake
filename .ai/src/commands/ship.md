@@ -31,6 +31,7 @@ npm run docs:allowlist
 ```
 
 - Run full QA. Prefer running gates so a single failure does not hide later ones (e.g. chain with `;` / record exit codes, or run steps sequentially and continue after failures). In Cursor, use Shell `required_permissions: ["all"]` — `exuno check` always fails in the sandbox (`Failed to prepare temporary workspace for check`); do not attempt a sandboxed first try.
+- Give `npm run test:ae` a 180-second tool timeout (`timeout_ms: 180000`). This suite takes about 153 seconds locally, so a 120-second timeout is insufficient.
 
 ```bash
 exuno check
