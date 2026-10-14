@@ -442,7 +442,7 @@ export function createServer(
       description:
         "Read-only project passport as JSON — call after open when you need orientation or health/portability context. " +
         "Returns identity (name, path, AE version), counts (comps/footage/folders/layers), cheap settings (bitsPerChannel, timeDisplayType), " +
-        "effect dependencies unique by matchName with origin (firstParty|thirdParty via Scripting Guide allowlist), available (installed in app.effects), " +
+        "effect dependencies unique by matchName with origin (ADBE-prefixed effects are first-party; other known first-party effects use the Scripting Guide fallback list), available (installed in app.effects), " +
         "hasThirdPartyEffects, missing footage rollup, and missing/substituted fonts (soft-fails if Fonts API unavailable). " +
         "Prefer ae_project_context for cheap fingerprint binding; this tool is the heavier health/portability passport. " +
         "Does not replace ae_list_comps / ae_list_sources for structure or media detail.",
