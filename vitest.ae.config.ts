@@ -12,6 +12,7 @@ try {
 export default defineConfig({
   test: {
     include: ["tests/**/*.ae.test.ts"],
+    globalSetup: ["./tests/ae-global-setup.ts"],
     environment: "node",
     testTimeout: 120_000,
     hookTimeout: 120_000,
