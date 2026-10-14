@@ -10,9 +10,11 @@ export function getFirstPartyEffectAllowlist(): ReadonlySet<string> {
   return cachedAllowlist;
 }
 
-/** Classify a used effect matchName against the vendored first-party allowlist. */
+/** Classify a used effect matchName using the ADBE prefix and vendored fallback allowlist. */
 export function classifyEffectOrigin(matchName: string): EffectOrigin {
-  return getFirstPartyEffectAllowlist().has(matchName) ? "firstParty" : "thirdParty";
+  return matchName.startsWith("ADBE") || getFirstPartyEffectAllowlist().has(matchName)
+    ? "firstParty"
+    : "thirdParty";
 }
 
 export type { EffectOrigin };

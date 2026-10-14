@@ -43,7 +43,9 @@ while ((m = matchNameRe.exec(markdown)) !== null) {
   }
 }
 
-const sorted = [...names].sort((a, b) => a.localeCompare(b));
+const sorted = [...names]
+  .filter((name) => !name.startsWith("ADBE"))
+  .sort((a, b) => a.localeCompare(b));
 if (sorted.length < 50) {
   console.error(
     `Expected many first-party match names; got ${sorted.length}. Is firstparty.md malformed?`,

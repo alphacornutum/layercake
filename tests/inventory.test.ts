@@ -681,7 +681,7 @@ describe("LIST_FOLDERS_SCRIPT", () => {
 
 describe("classifyEffectOrigin", () => {
   it("classifies ADBE and non-ADBE stock effects as first-party", () => {
-    expect(classifyEffectOrigin("ADBE Gaussian Blur 2")).toBe("firstParty");
+    expect(classifyEffectOrigin("ADBE CM CropEdges")).toBe("firstParty");
     expect(classifyEffectOrigin("CC Radial Blur")).toBe("firstParty");
     expect(classifyEffectOrigin("EXtractoR")).toBe("firstParty");
   });
@@ -694,6 +694,10 @@ describe("classifyEffectOrigin", () => {
   it("loads a non-empty allowlist from the generated corpus", () => {
     expect(getFirstPartyEffectAllowlist().size).toBeGreaterThan(50);
     expect(getFirstPartyEffectAllowlist().has("CC Radial Blur")).toBe(true);
+    expect(getFirstPartyEffectAllowlist().has("ADBE CM CropEdges")).toBe(false);
+    expect([...getFirstPartyEffectAllowlist()].every((name) => !name.startsWith("ADBE"))).toBe(
+      true,
+    );
   });
 });
 
